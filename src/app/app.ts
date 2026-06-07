@@ -6,7 +6,14 @@ import {
   registerLocaleData,
 } from '@angular/common';
 import localeEnIn from '@angular/common/locales/en-IN';
-import { Component, OnDestroy, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  OnDestroy,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatChipsModule } from '@angular/material/chips';
@@ -97,6 +104,7 @@ function monthOptions(centerMonth: string): string[] {
   ],
   templateUrl: './app.html',
   styleUrl: './app.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class App implements OnDestroy {
   private readonly dialog = inject(MatDialog);
@@ -122,8 +130,36 @@ export class App implements OnDestroy {
   protected readonly loans = signal<Loan[]>([]);
 
   protected readonly monthOptions = computed(() => monthOptions(this.selectedMonth()));
+  protected readonly hasBudgetData = computed(
+    () =>
+      this.categories().length +
+        this.incomes().length +
+        this.templates().length +
+        this.expenses().length +
+        this.loans().length >
+      0,
+  );
+  protected readonly showDashboardSkeleton = computed(
+    () => this.isSyncing() && !this.hasBudgetData(),
+  );
   protected readonly canWrite = computed(
     () => this.firebase.mode !== 'firebase' || (!!this.workspaceId() && !this.isSyncing()),
+  );
+  protected readonly statusIcon = computed(() =>
+    this.syncError()
+      ? 'sync_problem'
+      : this.isSyncing()
+        ? 'sync'
+        : this.firebase.mode === 'firebase' && this.workspaceId()
+          ? 'cloud_done'
+          : 'cloud_off',
+  );
+  protected readonly statusTone = computed(() =>
+    this.syncError()
+      ? 'danger'
+      : this.firebase.mode === 'firebase' && this.workspaceId()
+        ? 'success'
+        : 'neutral',
   );
   protected readonly monthLabel = computed(() => monthLabel(this.selectedMonth()));
   protected readonly monthlyIncome = computed(() =>
@@ -269,6 +305,26 @@ export class App implements OnDestroy {
     }
 
     return ideas;
+  });
+  protected readonly leadingCategory = computed(() => {
+    const [category] = [...this.categoryStats()].sort((a, b) => b.spent - a.spent);
+    return category ?? null;
+  });
+  protected readonly runwayLabel = computed(() => {
+    if (this.monthlyIncome() <= 0) {
+      return 'Add income';
+    }
+
+    const ratio = this.remainingFunds() / this.monthlyIncome();
+    if (ratio < 0) {
+      return 'Over plan';
+    }
+
+    if (ratio < 0.12) {
+      return 'Tight runway';
+    }
+
+    return 'Healthy runway';
   });
 
   constructor() {

@@ -1,258 +1,300 @@
-<mat-toolbar class="topbar">
-  <div class="brand">
-    <span class="brand-mark">B</span>
-    <span>
-      <strong>Budget Battowski</strong>
-      <small>Monthly expense command center</small>
-    </span>
-  </div>
-
-  <span class="toolbar-spacer"></span>
-
-  <div class="auth-actions">
-    @if (firebase.mode === 'firebase' && workspaceId()) {
-      <span class="user-summary">
-        <mat-icon>account_circle</mat-icon>
-        <span>{{ userName() || userEmail() || 'Google user' }}</span>
+<header class="app-chrome" role="banner">
+  <mat-toolbar class="topbar" aria-label="Budget Battowski workspace">
+    <a class="brand" href="/" aria-label="Budget Battowski home">
+      <span class="brand-mark" aria-hidden="true">B</span>
+      <span class="brand-copy">
+        <strong>Budget Battowski</strong>
+        <small>Private finance command center</small>
       </span>
-      <button mat-stroked-button type="button" (click)="logout()" [disabled]="isSyncing()">
-        <mat-icon>logout</mat-icon>
-        Logout
-      </button>
-    } @else if (firebase.mode === 'firebase') {
-      <button
-        mat-flat-button
-        color="primary"
-        type="button"
-        (click)="loginWithGoogle()"
-        [disabled]="isSyncing()"
+    </a>
+
+    <span class="toolbar-spacer"></span>
+
+    <mat-chip-set class="sync-chipset" aria-label="Cloud sync status">
+      <mat-chip
+        highlighted
+        class="sync-chip"
+        [class.success]="statusTone() === 'success'"
+        [class.danger]="statusTone() === 'danger'"
       >
-        <mat-icon>login</mat-icon>
-        Sign in with Google
-      </button>
-    }
-  </div>
+        <mat-icon aria-hidden="true">{{ statusIcon() }}</mat-icon>
+        {{ syncStatus() }}
+      </mat-chip>
+    </mat-chip-set>
 
-  <mat-chip-set aria-label="Firebase status">
-    <mat-chip highlighted>
-      <mat-icon>
-        {{
-          syncError()
-            ? 'sync_problem'
-            : isSyncing()
-              ? 'sync'
-              : firebase.mode === 'firebase' && workspaceId()
-                ? 'cloud_done'
-                : 'cloud_off'
-        }}
-      </mat-icon>
-      {{ syncStatus() }}
-    </mat-chip>
-  </mat-chip-set>
-</mat-toolbar>
-
-<main class="shell">
-  @if (syncError()) {
-    <section class="sync-banner error">
-      <mat-icon>error</mat-icon>
-      <span>{{ syncError() }}</span>
-    </section>
-  } @else if (firebase.mode === 'firebase' && workspaceId()) {
-    <section class="sync-banner">
-      <mat-icon>person</mat-icon>
-      <span>Signed in as {{ userEmail() || userName() || workspaceId() }}</span>
-    </section>
-  } @else if (firebase.mode === 'firebase') {
-    <section class="sync-banner">
-      <mat-icon>login</mat-icon>
-      <span>Sign in with Google to load and save your budget data.</span>
-    </section>
-  } @else {
-    <section class="sync-banner">
-      <mat-icon>settings</mat-icon>
-      <span
-        >Add your Firebase web config in src/environments/environment.ts to enable cloud
-        persistence.</span
-      >
-    </section>
-  }
-
-  <section class="overview-band">
-    <div class="month-tools">
-      <div>
-        <p class="eyebrow">Planning month</p>
-        <h1>{{ monthLabel() }}</h1>
-      </div>
-
-      <div class="month-actions">
+    <div class="auth-actions" aria-label="Account actions">
+      @if (firebase.mode === 'firebase' && workspaceId()) {
+        <span class="user-summary">
+          <mat-icon aria-hidden="true">account_circle</mat-icon>
+          <span>{{ userName() || userEmail() || 'Google user' }}</span>
+        </span>
         <button
-          mat-icon-button
+          mat-stroked-button
           type="button"
-          aria-label="Previous month"
-          matTooltip="Previous month"
-          (click)="moveMonth(-1)"
+          (click)="logout()"
+          [disabled]="isSyncing()"
+          aria-label="Log out of Budget Battowski"
         >
-          <mat-icon>chevron_left</mat-icon>
+          <mat-icon aria-hidden="true">logout</mat-icon>
+          Logout
         </button>
-
-        <mat-form-field appearance="outline" subscriptSizing="dynamic">
-          <mat-label>Expense month</mat-label>
-          <mat-select [value]="selectedMonth()" (selectionChange)="setMonth($event.value)">
-            @for (month of monthOptions(); track month) {
-              <mat-option [value]="month">{{ formatMonth(month) }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
-
-        <button
-          mat-icon-button
-          type="button"
-          aria-label="Next month"
-          matTooltip="Next month"
-          (click)="moveMonth(1)"
-        >
-          <mat-icon>chevron_right</mat-icon>
-        </button>
-
+      } @else if (firebase.mode === 'firebase') {
         <button
           mat-flat-button
-          color="primary"
           type="button"
-          matTooltip="Copies saved recurring expenses and investments into the selected month. Existing copied items are not duplicated."
-          (click)="prefillMonth()"
-          [disabled]="!canWrite()"
+          (click)="loginWithGoogle()"
+          [disabled]="isSyncing()"
+          aria-label="Sign in with Google to sync your budget"
         >
-          <mat-icon>auto_awesome</mat-icon>
-          Prefill fixed items
+          <mat-icon aria-hidden="true">login</mat-icon>
+          Sign in
         </button>
-      </div>
+      }
+    </div>
+  </mat-toolbar>
+</header>
+
+<main class="shell" id="main-content">
+  <section class="status-banner" [class.error]="syncError()" aria-live="polite">
+    <mat-icon aria-hidden="true">
+      @if (syncError()) {
+        error
+      } @else if (firebase.mode === 'firebase' && workspaceId()) {
+        verified_user
+      } @else if (firebase.mode === 'firebase') {
+        login
+      } @else {
+        settings
+      }
+    </mat-icon>
+    <span>
+      @if (syncError()) {
+        {{ syncError() }}
+      } @else if (firebase.mode === 'firebase' && workspaceId()) {
+        Signed in as {{ userEmail() || userName() || workspaceId() }}
+      } @else if (firebase.mode === 'firebase') {
+        Sign in with Google to load, save, and protect your budget workspace.
+      } @else {
+        Add Firebase config in src/environments/environment.ts to enable cloud persistence.
+      }
+    </span>
+  </section>
+
+  <section class="hero-panel" aria-labelledby="dashboard-title">
+    <div class="hero-copy">
+      <p class="eyebrow">Planning month</p>
+      <h1 id="dashboard-title">{{ monthLabel() }}</h1>
+      <p class="hero-summary">
+        {{ runwayLabel() }} with
+        {{ remainingFunds() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }} unallocated after
+        this month&apos;s expenses and investments.
+      </p>
     </div>
 
-    <div class="metric-grid">
-      <mat-card class="metric-card income">
-        <mat-card-content>
+    <div class="month-actions" aria-label="Month controls">
+      <button
+        mat-icon-button
+        type="button"
+        aria-label="Previous month"
+        matTooltip="Previous month"
+        (click)="moveMonth(-1)"
+      >
+        <mat-icon aria-hidden="true">chevron_left</mat-icon>
+      </button>
+
+      <mat-form-field appearance="outline" subscriptSizing="dynamic">
+        <mat-label>Expense month</mat-label>
+        <mat-select
+          [value]="selectedMonth()"
+          (selectionChange)="setMonth($event.value)"
+          aria-label="Select expense month"
+        >
+          @for (month of monthOptions(); track month) {
+            <mat-option [value]="month">{{ formatMonth(month) }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+
+      <button
+        mat-icon-button
+        type="button"
+        aria-label="Next month"
+        matTooltip="Next month"
+        (click)="moveMonth(1)"
+      >
+        <mat-icon aria-hidden="true">chevron_right</mat-icon>
+      </button>
+
+      <button
+        mat-flat-button
+        type="button"
+        matTooltip="Copies saved recurring expenses and investments into the selected month. Existing copied items are not duplicated."
+        (click)="prefillMonth()"
+        [disabled]="!canWrite()"
+      >
+        <mat-icon aria-hidden="true">auto_awesome</mat-icon>
+        Prefill fixed items
+      </button>
+    </div>
+
+    <div class="metric-grid" aria-label="Monthly financial summary">
+      @if (showDashboardSkeleton()) {
+        @for (item of [1, 2, 3, 4]; track item) {
+          <div class="metric-card skeleton-card" aria-hidden="true">
+            <span class="skeleton-line short"></span>
+            <span class="skeleton-line value"></span>
+            <span class="skeleton-line"></span>
+          </div>
+        }
+      } @else {
+        <article class="metric-card hero-metric">
           <span>Monthly income</span>
           <strong>{{ monthlyIncome() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</strong>
           <small>{{ incomes().length }} saved income sources</small>
-        </mat-card-content>
-      </mat-card>
+        </article>
 
-      <mat-card class="metric-card">
-        <mat-card-content>
+        <article class="metric-card">
           <span>Total outflow</span>
           <strong>{{ outflowTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</strong>
           <small>{{ selectedEntries().length }} entries this month</small>
-        </mat-card-content>
-      </mat-card>
+        </article>
 
-      <mat-card class="metric-card remaining" [class.warning]="remainingFunds() < 0">
-        <mat-card-content>
+        <article class="metric-card" [class.warning]="remainingFunds() < 0">
           <span>Funds left</span>
           <strong>{{ remainingFunds() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</strong>
           <small>After expenses and investments</small>
-        </mat-card-content>
-      </mat-card>
+        </article>
 
-      <mat-card class="metric-card">
-        <mat-card-content>
+        <article class="metric-card">
           <span>Salary burnout</span>
           <strong>{{ burnoutRatio() | percent: '1.0-0' }}</strong>
           <mat-progress-bar
             mode="determinate"
             [value]="clampPercent(burnoutRatio())"
+            aria-label="Salary burnout percentage"
           ></mat-progress-bar>
-        </mat-card-content>
-      </mat-card>
+        </article>
+      }
     </div>
   </section>
 
-  <mat-tab-group animationDuration="180ms" mat-stretch-tabs="false">
+  <mat-tab-group class="workspace-tabs" animationDuration="220ms" mat-stretch-tabs="false">
     <mat-tab label="Dashboard">
-      <section class="dashboard-grid">
+      <section class="dashboard-grid" aria-label="Dashboard insights">
         <mat-card class="panel chart-panel">
           <mat-card-header>
-            <mat-card-title>Expense Bifurcation</mat-card-title>
-            <mat-card-subtitle>By category for {{ monthLabel() }}</mat-card-subtitle>
+            <mat-card-title>Expense Mix</mat-card-title>
+            <mat-card-subtitle>Category spread for {{ monthLabel() }}</mat-card-subtitle>
           </mat-card-header>
           <mat-card-content>
-            <div class="donut-wrap">
-              <div class="donut" [style.background]="donutStyle()">
-                <span>{{ outflowTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
+            @if (showDashboardSkeleton()) {
+              <div class="donut-skeleton" aria-label="Loading expense mix"></div>
+            } @else {
+              <div class="donut-wrap">
+                <div
+                  class="donut"
+                  [style.background]="donutStyle()"
+                  role="img"
+                  [attr.aria-label]="'Expense total ' + formatMoney(outflowTotal())"
+                >
+                  <span>{{ outflowTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
+                </div>
+                <div class="type-stack">
+                  <div>
+                    <span class="legend-dot recurring" aria-hidden="true"></span>
+                    <p>Recurring</p>
+                    <strong>{{
+                      recurringTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                    }}</strong>
+                  </div>
+                  <div>
+                    <span class="legend-dot one-time" aria-hidden="true"></span>
+                    <p>One-time</p>
+                    <strong>{{
+                      oneTimeTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                    }}</strong>
+                  </div>
+                  <div>
+                    <span class="legend-dot investment" aria-hidden="true"></span>
+                    <p>Investments</p>
+                    <strong>{{
+                      investmentTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                    }}</strong>
+                  </div>
+                </div>
               </div>
-              <div class="type-stack">
-                <div>
-                  <span class="legend-dot recurring"></span>
-                  <p>Recurring</p>
-                  <strong>{{
-                    recurringTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
-                  }}</strong>
-                </div>
-                <div>
-                  <span class="legend-dot one-time"></span>
-                  <p>One-time</p>
-                  <strong>{{
-                    oneTimeTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
-                  }}</strong>
-                </div>
-                <div>
-                  <span class="legend-dot investment"></span>
-                  <p>Investments</p>
-                  <strong>{{
-                    investmentTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
-                  }}</strong>
-                </div>
-              </div>
-            </div>
+            }
           </mat-card-content>
         </mat-card>
 
-        <mat-card class="panel">
+        <mat-card class="panel budget-panel">
           <mat-card-header>
             <mat-card-title>Budget Health</mat-card-title>
-            <mat-card-subtitle>Category budgets versus actuals</mat-card-subtitle>
+            <mat-card-subtitle>
+              @if (leadingCategory()) {
+                Highest spend: {{ leadingCategory()?.name }}
+              } @else {
+                Category budgets versus actuals
+              }
+            </mat-card-subtitle>
           </mat-card-header>
           <mat-card-content class="budget-list">
-            @for (category of categoryStats(); track category.id) {
-              <div class="budget-row">
-                <div class="row-heading">
-                  <span class="swatch" [style.background]="category.color"></span>
-                  <strong>{{ category.name }}</strong>
-                  <span>{{ category.spent | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
+            @if (showDashboardSkeleton()) {
+              @for (item of [1, 2, 3, 4]; track item) {
+                <div class="row-skeleton" aria-hidden="true">
+                  <span class="skeleton-line"></span>
+                  <span class="skeleton-line value"></span>
                 </div>
-                <mat-progress-bar
-                  mode="determinate"
-                  [value]="clampPercent(category.used)"
-                  [class.over]="category.used > 1"
-                ></mat-progress-bar>
-                <small>
-                  Budget
-                  {{ category.monthlyBudget | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }} -
-                  {{ category.remaining >= 0 ? 'Left' : 'Over' }}
-                  {{
-                    (category.remaining >= 0 ? category.remaining : -category.remaining)
-                      | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
-                  }}
-                </small>
-              </div>
-            } @empty {
-              <div class="empty-state">
-                <mat-icon>category</mat-icon>
-                <span>No categories yet</span>
-              </div>
+              }
+            } @else {
+              @for (category of categoryStats(); track category.id) {
+                <article class="budget-row" [class.over-budget]="category.used > 1">
+                  <div class="row-heading">
+                    <span
+                      class="swatch"
+                      [style.background]="category.color"
+                      aria-hidden="true"
+                    ></span>
+                    <strong>{{ category.name }}</strong>
+                    <span>{{
+                      category.spent | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                    }}</span>
+                  </div>
+                  <mat-progress-bar
+                    mode="determinate"
+                    [value]="clampPercent(category.used)"
+                    [attr.aria-label]="category.name + ' budget used'"
+                  ></mat-progress-bar>
+                  <small>
+                    Budget
+                    {{ category.monthlyBudget | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}
+                    · {{ category.remaining >= 0 ? 'Left' : 'Over' }}
+                    {{
+                      (category.remaining >= 0 ? category.remaining : -category.remaining)
+                        | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                    }}
+                  </small>
+                </article>
+              } @empty {
+                <div class="empty-state">
+                  <mat-icon aria-hidden="true">category</mat-icon>
+                  <span>No categories yet</span>
+                </div>
+              }
             }
           </mat-card-content>
         </mat-card>
 
         <mat-card class="panel suggestions">
           <mat-card-header>
-            <mat-card-title>Suggestions</mat-card-title>
-            <mat-card-subtitle>Signals from your current month</mat-card-subtitle>
+            <mat-card-title>Advisor Signals</mat-card-title>
+            <mat-card-subtitle>Automated prompts from current month data</mat-card-subtitle>
           </mat-card-header>
           <mat-card-content>
-            <mat-list>
+            <mat-list aria-label="Budget suggestions">
               @for (idea of suggestions(); track idea) {
                 <mat-list-item>
-                  <mat-icon matListItemIcon>tips_and_updates</mat-icon>
+                  <mat-icon matListItemIcon aria-hidden="true">tips_and_updates</mat-icon>
                   <span matListItemTitle>{{ idea }}</span>
                 </mat-list-item>
               }
@@ -263,8 +305,8 @@
     </mat-tab>
 
     <mat-tab label="Monthly Entry">
-      <section class="work-grid">
-        <mat-card class="panel">
+      <section class="work-grid" aria-label="Monthly entry workspace">
+        <mat-card class="panel action-panel">
           <mat-card-header>
             <mat-card-title>Monthly Data</mat-card-title>
             <mat-card-subtitle>Expenses and fixed items for month-end entry</mat-card-subtitle>
@@ -272,12 +314,11 @@
           <mat-card-content class="management-panel">
             <button
               mat-flat-button
-              color="primary"
               type="button"
               (click)="openBulkEditor('monthly')"
               [disabled]="!canWrite()"
             >
-              <mat-icon>edit_note</mat-icon>
+              <mat-icon aria-hidden="true">edit_note</mat-icon>
               Edit monthly tables
             </button>
 
@@ -292,25 +333,25 @@
                 aria-label="Explain fixed items"
                 matTooltip="Save rent, bills, SIPs, EMIs, or other repeated items here. Prefill copies them into the selected month."
               >
-                <mat-icon>help</mat-icon>
+                <mat-icon aria-hidden="true">help</mat-icon>
               </button>
             </div>
 
             <div class="fixed-list">
               @for (item of templates(); track item.id) {
-                <div class="fixed-row">
-                  <mat-icon>{{
+                <article class="data-row">
+                  <mat-icon aria-hidden="true">{{
                     item.type === 'investment' ? 'trending_up' : 'event_repeat'
                   }}</mat-icon>
                   <div>
                     <strong>{{ item.name }}</strong>
-                    <small>{{ categoryName(item.categoryId) }} - {{ item.type }}</small>
+                    <small>{{ categoryName(item.categoryId) }} · {{ item.type }}</small>
                   </div>
                   <span>{{ item.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
-                </div>
+                </article>
               } @empty {
                 <div class="empty-state">
-                  <mat-icon>event_repeat</mat-icon>
+                  <mat-icon aria-hidden="true">event_repeat</mat-icon>
                   <span>No fixed items saved</span>
                 </div>
               }
@@ -327,8 +368,8 @@
           </mat-card-header>
           <mat-card-content class="entry-list">
             @for (expense of selectedEntries(); track expense.id) {
-              <div class="entry-row">
-                <mat-icon>
+              <article class="data-row">
+                <mat-icon aria-hidden="true">
                   {{
                     expense.type === 'investment'
                       ? 'trending_up'
@@ -339,13 +380,13 @@
                 </mat-icon>
                 <div>
                   <strong>{{ expense.name }}</strong>
-                  <small>{{ categoryName(expense.categoryId) }} - {{ expense.type }}</small>
+                  <small>{{ categoryName(expense.categoryId) }} · {{ expense.type }}</small>
                 </div>
                 <span>{{ expense.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
-              </div>
+              </article>
             } @empty {
               <div class="empty-state">
-                <mat-icon>receipt_long</mat-icon>
+                <mat-icon aria-hidden="true">receipt_long</mat-icon>
                 <span>No expenses for this month</span>
               </div>
             }
@@ -355,8 +396,8 @@
     </mat-tab>
 
     <mat-tab label="Income & Budgets">
-      <section class="work-grid">
-        <mat-card class="panel">
+      <section class="work-grid" aria-label="Income and budget planning">
+        <mat-card class="panel action-panel">
           <mat-card-header>
             <mat-card-title>Saved Income</mat-card-title>
             <mat-card-subtitle>Stored for planning and future comparisons</mat-card-subtitle>
@@ -364,25 +405,24 @@
           <mat-card-content class="management-panel">
             <button
               mat-flat-button
-              color="primary"
               type="button"
               (click)="openBulkEditor('planning')"
               [disabled]="!canWrite()"
             >
-              <mat-icon>edit_note</mat-icon>
+              <mat-icon aria-hidden="true">edit_note</mat-icon>
               Edit income & budgets
             </button>
 
             <div class="compact-list">
               @for (income of incomes(); track income.id) {
-                <div>
+                <article>
                   <strong>{{ income.source }}</strong>
                   <span>{{ income.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
-                  <small>{{ income.cadence }} - {{ income.notes }}</small>
-                </div>
+                  <small>{{ income.cadence }} · {{ income.notes }}</small>
+                </article>
               } @empty {
                 <div class="empty-state">
-                  <mat-icon>payments</mat-icon>
+                  <mat-icon aria-hidden="true">payments</mat-icon>
                   <span>No income sources saved</span>
                 </div>
               }
@@ -398,8 +438,12 @@
           <mat-card-content>
             <div class="category-list">
               @for (category of categories(); track category.id) {
-                <div class="category-row">
-                  <span class="swatch" [style.background]="category.color"></span>
+                <article class="category-row">
+                  <span
+                    class="swatch"
+                    [style.background]="category.color"
+                    aria-hidden="true"
+                  ></span>
                   <div>
                     <strong>{{ category.name }}</strong>
                     <small
@@ -409,10 +453,10 @@
                       monthly budget</small
                     >
                   </div>
-                </div>
+                </article>
               } @empty {
                 <div class="empty-state">
-                  <mat-icon>category</mat-icon>
+                  <mat-icon aria-hidden="true">category</mat-icon>
                   <span>No categories yet</span>
                 </div>
               }
@@ -423,7 +467,7 @@
     </mat-tab>
 
     <mat-tab label="Trends">
-      <section class="dashboard-grid trends-grid">
+      <section class="dashboard-grid trends-grid" aria-label="Budget trends">
         <mat-card class="panel trends-panel">
           <mat-card-header>
             <mat-card-title>Six Month Trend</mat-card-title>
@@ -433,7 +477,7 @@
             @for (row of trendRows(); track row.month) {
               <div class="trend-row">
                 <span>{{ row.label }}</span>
-                <div class="trend-bars">
+                <div class="trend-bars" role="img" [attr.aria-label]="row.label + ' outflow trend'">
                   <i class="bar outflow" [style.width.%]="clampPercent(row.burn)"></i>
                   <i
                     class="bar invested"
@@ -443,7 +487,7 @@
                 <strong>{{ row.outflow | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</strong>
               </div>
             }
-            <div class="chart-key">
+            <div class="chart-key" aria-hidden="true">
               <span><i class="bar outflow"></i> Outflow</span>
               <span><i class="bar invested"></i> Investments</span>
             </div>
@@ -486,7 +530,7 @@
     </mat-tab>
 
     <mat-tab label="Loans & EMI">
-      <section class="work-grid single-panel">
+      <section class="work-grid single-panel" aria-label="Loans and EMI planning">
         <mat-card class="panel">
           <mat-card-header>
             <mat-card-title>Debt Overview</mat-card-title>
@@ -498,34 +542,34 @@
           <mat-card-content class="management-panel loan-list">
             <button
               mat-flat-button
-              color="primary"
               type="button"
               (click)="openBulkEditor('loans')"
               [disabled]="!canWrite()"
             >
-              <mat-icon>edit_note</mat-icon>
+              <mat-icon aria-hidden="true">edit_note</mat-icon>
               Edit loans
             </button>
 
             @for (loan of loanPlans(); track loan.id) {
-              <div class="loan-card">
+              <article class="loan-card">
                 <div>
                   <strong>{{ loan.loanType }}</strong>
-                  <small>{{ loan.lender }} - {{ loan.annualRate }}% APR</small>
+                  <small>{{ loan.lender }} · {{ loan.annualRate }}% APR</small>
                 </div>
                 <span>{{ loan.outstanding | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
                 <mat-progress-bar
                   mode="determinate"
                   [value]="clampPercent(loan.paidRatio)"
+                  [attr.aria-label]="loan.loanType + ' paid percentage'"
                 ></mat-progress-bar>
                 <small>
-                  EMI {{ loan.emi | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }} -
-                  {{ loan.monthsLeft }} months left - completes {{ loan.payoff | date: 'MMM y' }}
+                  EMI {{ loan.emi | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }} ·
+                  {{ loan.monthsLeft }} months left · completes {{ loan.payoff | date: 'MMM y' }}
                 </small>
-              </div>
+              </article>
             } @empty {
               <div class="empty-state">
-                <mat-icon>account_balance</mat-icon>
+                <mat-icon aria-hidden="true">account_balance</mat-icon>
                 <span>No loans saved</span>
               </div>
             }
