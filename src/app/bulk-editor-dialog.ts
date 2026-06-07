@@ -171,6 +171,18 @@ export class BulkEditorDialog {
     });
   }
 
+  protected visibleRowCount(): number {
+    return this.visibleRows().length;
+  }
+
+  protected activeRowCount(): number {
+    return this.visibleRows().filter((row) => !row.pendingDelete).length;
+  }
+
+  protected deletedRowCount(): number {
+    return this.visibleRows().filter((row) => row.pendingDelete).length;
+  }
+
   protected toggleDelete(row: DraftRow<{ id: string }>): void {
     row.pendingDelete = !row.pendingDelete;
   }
@@ -226,6 +238,18 @@ export class BulkEditorDialog {
         loans: this.deletedIds(this.loans),
       },
     });
+  }
+
+  private visibleRows(): Array<DraftRow<{ id: string }>> {
+    if (this.showMonthlyTables) {
+      return [...this.expenses, ...this.templates];
+    }
+
+    if (this.showPlanningTables) {
+      return [...this.incomes, ...this.categories];
+    }
+
+    return this.loans;
   }
 
   private activeRows<T extends { id: string }>(rows: Array<DraftRow<T>>): T[] {

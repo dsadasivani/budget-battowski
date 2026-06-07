@@ -1,6 +1,33 @@
-<h2 mat-dialog-title>{{ title }}</h2>
+<div class="dialog-title" mat-dialog-title>
+  <div class="title-mark" aria-hidden="true">
+    <mat-icon>grid_on</mat-icon>
+  </div>
+  <div>
+    <p class="eyebrow">Excel-style bulk editing</p>
+    <h2>{{ title }}</h2>
+    <span>Update multiple records in a spreadsheet-like workspace.</span>
+  </div>
+</div>
 
 <mat-dialog-content class="bulk-dialog">
+  <section class="sheet-summary" aria-label="Editor summary">
+    <div class="summary-card">
+      <span>Visible rows</span>
+      <strong>{{ visibleRowCount() }}</strong>
+    </div>
+    <div class="summary-card">
+      <span>Active rows</span>
+      <strong>{{ activeRowCount() }}</strong>
+    </div>
+    <div class="summary-card delete-card">
+      <span>Marked delete</span>
+      <strong>{{ deletedRowCount() }}</strong>
+    </div>
+    <div class="formula-bar" aria-label="Spreadsheet tips">
+      <span class="fx">fx</span>
+      <p>Click a cell to edit, tab across columns, and use the trash icon to stage deletions.</p>
+    </div>
+  </section>
   <mat-tab-group animationDuration="160ms" mat-stretch-tabs="false">
     @if (showMonthlyTables) {
       <mat-tab label="Expenses">
@@ -15,7 +42,18 @@
         <div class="table-wrap">
           <table class="bulk-table">
             <thead>
+              <tr class="sheet-letters" aria-hidden="true">
+                <th class="corner-cell"></th>
+                <th>A</th>
+                <th>B</th>
+                <th>C</th>
+                <th>D</th>
+                <th>E</th>
+                <th>F</th>
+                <th></th>
+              </tr>
               <tr>
+                <th class="row-number-col">#</th>
                 <th>Name</th>
                 <th>Month</th>
                 <th>Category</th>
@@ -26,8 +64,9 @@
               </tr>
             </thead>
             <tbody>
-              @for (expense of expenses; track expense.id) {
+              @for (expense of expenses; track expense.id; let rowIndex = $index) {
                 <tr [class.marked-delete]="expense.pendingDelete">
+                  <td class="row-number">{{ rowIndex + 1 }}</td>
                   <td>
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
@@ -121,7 +160,16 @@
         <div class="table-wrap">
           <table class="bulk-table">
             <thead>
+              <tr class="sheet-letters" aria-hidden="true">
+                <th class="corner-cell"></th>
+                <th>A</th>
+                <th>B</th>
+                <th>C</th>
+                <th>D</th>
+                <th></th>
+              </tr>
               <tr>
+                <th class="row-number-col">#</th>
                 <th>Source</th>
                 <th>Amount</th>
                 <th>Cadence</th>
@@ -130,8 +178,9 @@
               </tr>
             </thead>
             <tbody>
-              @for (income of incomes; track income.id) {
+              @for (income of incomes; track income.id; let rowIndex = $index) {
                 <tr [class.marked-delete]="income.pendingDelete">
+                  <td class="row-number">{{ rowIndex + 1 }}</td>
                   <td>
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
@@ -202,7 +251,15 @@
         <div class="table-wrap">
           <table class="bulk-table">
             <thead>
+              <tr class="sheet-letters" aria-hidden="true">
+                <th class="corner-cell"></th>
+                <th>A</th>
+                <th>B</th>
+                <th>C</th>
+                <th></th>
+              </tr>
               <tr>
+                <th class="row-number-col">#</th>
                 <th>Name</th>
                 <th>Monthly Budget</th>
                 <th>Color</th>
@@ -210,8 +267,9 @@
               </tr>
             </thead>
             <tbody>
-              @for (category of categories; track category.id) {
+              @for (category of categories; track category.id; let rowIndex = $index) {
                 <tr [class.marked-delete]="category.pendingDelete">
+                  <td class="row-number">{{ rowIndex + 1 }}</td>
                   <td>
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
@@ -276,7 +334,20 @@
         <div class="table-wrap">
           <table class="bulk-table wide-table">
             <thead>
+              <tr class="sheet-letters" aria-hidden="true">
+                <th class="corner-cell"></th>
+                <th>A</th>
+                <th>B</th>
+                <th>C</th>
+                <th>D</th>
+                <th>E</th>
+                <th>F</th>
+                <th>G</th>
+                <th>H</th>
+                <th></th>
+              </tr>
               <tr>
+                <th class="row-number-col">#</th>
                 <th>Lender</th>
                 <th>Type</th>
                 <th>Principal</th>
@@ -289,8 +360,9 @@
               </tr>
             </thead>
             <tbody>
-              @for (loan of loans; track loan.id) {
+              @for (loan of loans; track loan.id; let rowIndex = $index) {
                 <tr [class.marked-delete]="loan.pendingDelete">
+                  <td class="row-number">{{ rowIndex + 1 }}</td>
                   <td>
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input matInput [(ngModel)]="loan.lender" [disabled]="!!loan.pendingDelete" />
@@ -396,7 +468,16 @@
         <div class="table-wrap">
           <table class="bulk-table">
             <thead>
+              <tr class="sheet-letters" aria-hidden="true">
+                <th class="corner-cell"></th>
+                <th>A</th>
+                <th>B</th>
+                <th>C</th>
+                <th>D</th>
+                <th></th>
+              </tr>
               <tr>
+                <th class="row-number-col">#</th>
                 <th>Name</th>
                 <th>Category</th>
                 <th>Amount</th>
@@ -405,8 +486,9 @@
               </tr>
             </thead>
             <tbody>
-              @for (template of templates; track template.id) {
+              @for (template of templates; track template.id; let rowIndex = $index) {
                 <tr [class.marked-delete]="template.pendingDelete">
+                  <td class="row-number">{{ rowIndex + 1 }}</td>
                   <td>
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
@@ -471,7 +553,7 @@
   </mat-tab-group>
 </mat-dialog-content>
 
-<mat-dialog-actions align="end">
+<mat-dialog-actions class="sheet-actions" align="end">
   <button mat-stroked-button type="button" mat-dialog-close>
     <mat-icon>close</mat-icon>
     Cancel
