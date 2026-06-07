@@ -1,0 +1,170 @@
+[debug] [2026-06-07T04:41:22.002Z] ----------------------------------------------------------------------
+[debug] [2026-06-07T04:41:22.005Z] Command:       C:\nvm4w\nodejs\node.exe C:\Users\dilic\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js deploy --only hosting,firestore:rules --project budget-battowski --non-interactive
+[debug] [2026-06-07T04:41:22.006Z] CLI Version:   14.2.1
+[debug] [2026-06-07T04:41:22.006Z] Platform:      win32
+[debug] [2026-06-07T04:41:22.006Z] Node Version:  v24.15.0
+[debug] [2026-06-07T04:41:22.006Z] Time:          Sun Jun 07 2026 10:11:22 GMT+0530 (India Standard Time)
+[debug] [2026-06-07T04:41:22.006Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-06-07T04:41:22.199Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-06-07T04:41:22.200Z] > authorizing via signed-in user (dili.cherry77@gmail.com)
+[debug] [2026-06-07T04:41:22.200Z] [iam] checking project budget-battowski for permissions ["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebasehosting.sites.update"]
+[debug] [2026-06-07T04:41:22.202Z] Checked if tokens are valid: false, expires at: 1780806596226
+[debug] [2026-06-07T04:41:22.203Z] Checked if tokens are valid: false, expires at: 1780806596226
+[debug] [2026-06-07T04:41:22.203Z] > refreshing access token with scopes: []
+[debug] [2026-06-07T04:41:22.205Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-06-07T04:41:22.206Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-06-07T04:41:22.386Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-06-07T04:41:22.386Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-06-07T04:41:22.416Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/budget-battowski:testIamPermissions [none]
+[debug] [2026-06-07T04:41:22.416Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/budget-battowski:testIamPermissions x-goog-quota-user=projects/budget-battowski
+[debug] [2026-06-07T04:41:22.417Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/budget-battowski:testIamPermissions {"permissions":["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebasehosting.sites.update"]}
+[debug] [2026-06-07T04:41:23.714Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/budget-battowski:testIamPermissions 200
+[debug] [2026-06-07T04:41:23.714Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/budget-battowski:testIamPermissions {"permissions":["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebasehosting.sites.update"]}
+[debug] [2026-06-07T04:41:23.715Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:23.715Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:23.716Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/budget-battowski [none]
+[debug] [2026-06-07T04:41:24.157Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/budget-battowski 200
+[debug] [2026-06-07T04:41:24.157Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/budget-battowski {"projectId":"budget-battowski","projectNumber":"124157519209","displayName":"budget-battowski","name":"projects/budget-battowski","resources":{"hostingSite":"budget-battowski"},"state":"ACTIVE","etag":"1_3588b79c-b8fe-4a66-ad5b-0082499dd53b"}
+[info] 
+[info] === Deploying to 'budget-battowski'...
+[info] 
+[info] i  deploying firestore, hosting 
+[info] i  cloud.firestore: checking firestore.rules for compilation errors... 
+[debug] [2026-06-07T04:41:24.162Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:24.162Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:24.163Z] >>> [apiv2][query] POST https://firebaserules.googleapis.com/v1/projects/budget-battowski:test [none]
+[debug] [2026-06-07T04:41:24.163Z] >>> [apiv2][body] POST https://firebaserules.googleapis.com/v1/projects/budget-battowski:test [omitted]
+[debug] [2026-06-07T04:41:25.692Z] <<< [apiv2][status] POST https://firebaserules.googleapis.com/v1/projects/budget-battowski:test 200
+[debug] [2026-06-07T04:41:25.692Z] <<< [apiv2][body] POST https://firebaserules.googleapis.com/v1/projects/budget-battowski:test {}
+[info] +  cloud.firestore: rules file firestore.rules compiled successfully 
+[debug] [2026-06-07T04:41:25.696Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:25.696Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:25.697Z] >>> [apiv2][query] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/budget-battowski/versions [none]
+[debug] [2026-06-07T04:41:25.697Z] >>> [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/budget-battowski/versions {"status":"CREATED","labels":{"deployment-tool":"cli-firebase"}}
+[debug] [2026-06-07T04:41:27.876Z] <<< [apiv2][status] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/budget-battowski/versions 200
+[debug] [2026-06-07T04:41:27.876Z] <<< [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/budget-battowski/versions {"name":"projects/124157519209/sites/budget-battowski/versions/18b33c9c6094f7d8","status":"CREATED","config":{},"labels":{"deployment-tool":"cli-firebase"}}
+[debug] [2026-06-07T04:41:27.877Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:27.877Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:27.878Z] >>> [apiv2][query] GET https://firebaserules.googleapis.com/v1/projects/budget-battowski/releases pageSize=10&pageToken=
+[debug] [2026-06-07T04:41:29.209Z] <<< [apiv2][status] GET https://firebaserules.googleapis.com/v1/projects/budget-battowski/releases 200
+[debug] [2026-06-07T04:41:29.209Z] <<< [apiv2][body] GET https://firebaserules.googleapis.com/v1/projects/budget-battowski/releases {"releases":[{"name":"projects/budget-battowski/releases/cloud.firestore","rulesetName":"projects/budget-battowski/rulesets/7ad48765-1341-4d45-9416-df1dceea7d1b","createTime":"2026-06-06T14:43:08.837426Z","updateTime":"2026-06-07T03:30:02.982700Z"}]}
+[debug] [2026-06-07T04:41:29.209Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:29.210Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:29.210Z] >>> [apiv2][query] GET https://firebaserules.googleapis.com/v1/projects/budget-battowski/rulesets/7ad48765-1341-4d45-9416-df1dceea7d1b [none]
+[debug] [2026-06-07T04:41:30.516Z] <<< [apiv2][status] GET https://firebaserules.googleapis.com/v1/projects/budget-battowski/rulesets/7ad48765-1341-4d45-9416-df1dceea7d1b 200
+[debug] [2026-06-07T04:41:30.516Z] <<< [apiv2][body] GET https://firebaserules.googleapis.com/v1/projects/budget-battowski/rulesets/7ad48765-1341-4d45-9416-df1dceea7d1b [omitted]
+[info] i  firestore: latest version of firestore.rules already up to date, skipping upload... 
+[info] i  hosting[budget-battowski]: beginning deploy... 
+[info] i  hosting[budget-battowski]: found 7 files in dist/budget-battowski/browser 
+[debug] [2026-06-07T04:41:30.532Z] [hosting] uploading with 200 concurrency
+[debug] [2026-06-07T04:41:30.533Z] [hosting] hash cache [ZGlzdFxidWRnZXQtYmF0dG93c2tpXGJyb3dzZXI] not populated
+[debug] [2026-06-07T04:41:30.573Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:30.574Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:30.576Z] [hosting] hash cache [ZGlzdFxidWRnZXQtYmF0dG93c2tpXGJyb3dzZXI] stored for 7 files
+[debug] [2026-06-07T04:41:30.577Z] [hosting][hash queue][FINAL] {"max":38,"min":10,"avg":16.571428571428573,"active":0,"complete":7,"success":7,"errored":0,"retried":0,"total":7,"elapsed":43}
+[debug] [2026-06-07T04:41:30.577Z] >>> [apiv2][query] POST https://firebasehosting.googleapis.com/v1beta1/projects/124157519209/sites/budget-battowski/versions/18b33c9c6094f7d8:populateFiles [none]
+[debug] [2026-06-07T04:41:30.578Z] >>> [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/124157519209/sites/budget-battowski/versions/18b33c9c6094f7d8:populateFiles {"files":{"/styles-OPUTW5UJ.css":"8127a985f68495d1dd32083e027781715203456f6fa4aaa813d1a63562317947","/index.html":"fd4d28db6fb260bc8e1e00ff1a50ee274441214e106b1a5a489ff05218570437","/chunk-DRl9u8ZF.js":"cfe60d9b6fa640f7eedf163c5f9a23cb84a9a34fdedf3b9e43a0e1b813531b58","/chunk-EkfnnnaF.js":"05ac70a389f2a0de89d729c290b2a5f83d345b68f717c0ba3646320dfb099e8a","/favicon.ico":"a905b13e228420df3dbe746dfb656d37a49736494c0737d00e007c8dc7319912","/chunk-DbB9aTCg.js":"e27bbd414c63aad044b3d0232bad006d6b443f477e61f9a9d1d630f4846f31fa","/main-HJTTTNNY.js":"e91adbe0ec82d85027485be52ab5af57437f01f0aecc51bdb7b66301a6e8bc0e"}}
+[debug] [2026-06-07T04:41:31.413Z] <<< [apiv2][status] POST https://firebasehosting.googleapis.com/v1beta1/projects/124157519209/sites/budget-battowski/versions/18b33c9c6094f7d8:populateFiles 200
+[debug] [2026-06-07T04:41:31.413Z] <<< [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/124157519209/sites/budget-battowski/versions/18b33c9c6094f7d8:populateFiles {"uploadRequiredHashes":["05ac70a389f2a0de89d729c290b2a5f83d345b68f717c0ba3646320dfb099e8a","a905b13e228420df3dbe746dfb656d37a49736494c0737d00e007c8dc7319912","e27bbd414c63aad044b3d0232bad006d6b443f477e61f9a9d1d630f4846f31fa","e91adbe0ec82d85027485be52ab5af57437f01f0aecc51bdb7b66301a6e8bc0e","8127a985f68495d1dd32083e027781715203456f6fa4aaa813d1a63562317947","fd4d28db6fb260bc8e1e00ff1a50ee274441214e106b1a5a489ff05218570437","cfe60d9b6fa640f7eedf163c5f9a23cb84a9a34fdedf3b9e43a0e1b813531b58"],"uploadUrl":"https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files"}
+[debug] [2026-06-07T04:41:31.414Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:31.414Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:31.415Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:31.415Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:31.415Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:31.416Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:31.416Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:31.417Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:31.418Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:31.418Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:31.419Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:31.419Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:31.419Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:31.420Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:31.420Z] >>> [apiv2][query] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/05ac70a389f2a0de89d729c290b2a5f83d345b68f717c0ba3646320dfb099e8a [none]
+[debug] [2026-06-07T04:41:31.420Z] >>> [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/05ac70a389f2a0de89d729c290b2a5f83d345b68f717c0ba3646320dfb099e8a [stream]
+[debug] [2026-06-07T04:41:31.424Z] >>> [apiv2][query] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/a905b13e228420df3dbe746dfb656d37a49736494c0737d00e007c8dc7319912 [none]
+[debug] [2026-06-07T04:41:31.424Z] >>> [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/a905b13e228420df3dbe746dfb656d37a49736494c0737d00e007c8dc7319912 [stream]
+[debug] [2026-06-07T04:41:31.426Z] >>> [apiv2][query] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/e27bbd414c63aad044b3d0232bad006d6b443f477e61f9a9d1d630f4846f31fa [none]
+[debug] [2026-06-07T04:41:31.426Z] >>> [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/e27bbd414c63aad044b3d0232bad006d6b443f477e61f9a9d1d630f4846f31fa [stream]
+[debug] [2026-06-07T04:41:31.428Z] >>> [apiv2][query] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/e91adbe0ec82d85027485be52ab5af57437f01f0aecc51bdb7b66301a6e8bc0e [none]
+[debug] [2026-06-07T04:41:31.428Z] >>> [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/e91adbe0ec82d85027485be52ab5af57437f01f0aecc51bdb7b66301a6e8bc0e [stream]
+[debug] [2026-06-07T04:41:31.430Z] >>> [apiv2][query] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/8127a985f68495d1dd32083e027781715203456f6fa4aaa813d1a63562317947 [none]
+[debug] [2026-06-07T04:41:31.430Z] >>> [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/8127a985f68495d1dd32083e027781715203456f6fa4aaa813d1a63562317947 [stream]
+[debug] [2026-06-07T04:41:31.432Z] >>> [apiv2][query] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/fd4d28db6fb260bc8e1e00ff1a50ee274441214e106b1a5a489ff05218570437 [none]
+[debug] [2026-06-07T04:41:31.432Z] >>> [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/fd4d28db6fb260bc8e1e00ff1a50ee274441214e106b1a5a489ff05218570437 [stream]
+[debug] [2026-06-07T04:41:31.434Z] >>> [apiv2][query] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/cfe60d9b6fa640f7eedf163c5f9a23cb84a9a34fdedf3b9e43a0e1b813531b58 [none]
+[debug] [2026-06-07T04:41:31.434Z] >>> [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/cfe60d9b6fa640f7eedf163c5f9a23cb84a9a34fdedf3b9e43a0e1b813531b58 [stream]
+[debug] [2026-06-07T04:41:31.436Z] [hosting][populate queue][FINAL] {"max":847,"min":847,"avg":847,"active":0,"complete":1,"success":1,"errored":0,"retried":0,"total":1,"elapsed":863}
+[debug] [2026-06-07T04:41:31.436Z] [hosting] uploads queued: 7
+[info] i  hosting: uploading new files [0/7] (0%) 
+[debug] [2026-06-07T04:41:32.759Z] <<< [apiv2][status] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/8127a985f68495d1dd32083e027781715203456f6fa4aaa813d1a63562317947 200
+[debug] [2026-06-07T04:41:32.759Z] <<< [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/8127a985f68495d1dd32083e027781715203456f6fa4aaa813d1a63562317947 [stream]
+[debug] [2026-06-07T04:41:32.989Z] <<< [apiv2][status] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/fd4d28db6fb260bc8e1e00ff1a50ee274441214e106b1a5a489ff05218570437 200
+[debug] [2026-06-07T04:41:32.989Z] <<< [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/fd4d28db6fb260bc8e1e00ff1a50ee274441214e106b1a5a489ff05218570437 [stream]
+[debug] [2026-06-07T04:41:32.992Z] <<< [apiv2][status] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/a905b13e228420df3dbe746dfb656d37a49736494c0737d00e007c8dc7319912 200
+[debug] [2026-06-07T04:41:32.992Z] <<< [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/a905b13e228420df3dbe746dfb656d37a49736494c0737d00e007c8dc7319912 [stream]
+[debug] [2026-06-07T04:41:33.090Z] <<< [apiv2][status] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/e27bbd414c63aad044b3d0232bad006d6b443f477e61f9a9d1d630f4846f31fa 200
+[debug] [2026-06-07T04:41:33.091Z] <<< [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/e27bbd414c63aad044b3d0232bad006d6b443f477e61f9a9d1d630f4846f31fa [stream]
+[debug] [2026-06-07T04:41:33.330Z] <<< [apiv2][status] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/05ac70a389f2a0de89d729c290b2a5f83d345b68f717c0ba3646320dfb099e8a 200
+[debug] [2026-06-07T04:41:33.331Z] <<< [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/05ac70a389f2a0de89d729c290b2a5f83d345b68f717c0ba3646320dfb099e8a [stream]
+[debug] [2026-06-07T04:41:33.364Z] <<< [apiv2][status] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/e91adbe0ec82d85027485be52ab5af57437f01f0aecc51bdb7b66301a6e8bc0e 200
+[debug] [2026-06-07T04:41:33.364Z] <<< [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/e91adbe0ec82d85027485be52ab5af57437f01f0aecc51bdb7b66301a6e8bc0e [stream]
+[debug] [2026-06-07T04:41:33.399Z] <<< [apiv2][status] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/cfe60d9b6fa640f7eedf163c5f9a23cb84a9a34fdedf3b9e43a0e1b813531b58 200
+[debug] [2026-06-07T04:41:33.399Z] <<< [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/budget-battowski/versions/18b33c9c6094f7d8/files/cfe60d9b6fa640f7eedf163c5f9a23cb84a9a34fdedf3b9e43a0e1b813531b58 [stream]
+[debug] [2026-06-07T04:41:33.400Z] [hosting][upload queue][FINAL] {"max":1980,"min":1342,"avg":1716.142857142857,"active":0,"complete":7,"success":7,"errored":0,"retried":0,"total":7,"elapsed":1987}
+[info] i  hosting: upload complete 
+[info] +  hosting[budget-battowski]: file upload complete 
+[debug] [2026-06-07T04:41:33.400Z] [hosting] deploy completed after 2879ms
+[debug] [2026-06-07T04:41:33.400Z] [rules] releasing cloud.firestore/(default) with ruleset projects/budget-battowski/rulesets/7ad48765-1341-4d45-9416-df1dceea7d1b
+[debug] [2026-06-07T04:41:33.401Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:33.401Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:33.401Z] >>> [apiv2][query] PATCH https://firebaserules.googleapis.com/v1/projects/budget-battowski/releases/cloud.firestore/(default) [none]
+[debug] [2026-06-07T04:41:33.401Z] >>> [apiv2][body] PATCH https://firebaserules.googleapis.com/v1/projects/budget-battowski/releases/cloud.firestore/(default) {"release":{"name":"projects/budget-battowski/releases/cloud.firestore/(default)","rulesetName":"projects/budget-battowski/rulesets/7ad48765-1341-4d45-9416-df1dceea7d1b"}}
+[debug] [2026-06-07T04:41:34.769Z] <<< [apiv2][status] PATCH https://firebaserules.googleapis.com/v1/projects/budget-battowski/releases/cloud.firestore/(default) 200
+[debug] [2026-06-07T04:41:34.769Z] <<< [apiv2][body] PATCH https://firebaserules.googleapis.com/v1/projects/budget-battowski/releases/cloud.firestore/(default) {"name":"projects/budget-battowski/releases/cloud.firestore","rulesetName":"projects/budget-battowski/rulesets/7ad48765-1341-4d45-9416-df1dceea7d1b","createTime":"2026-06-06T14:43:08.837426Z","updateTime":"2026-06-07T04:41:35.106417Z"}
+[debug] [2026-06-07T04:41:34.770Z] [rules] updated release projects/budget-battowski/releases/cloud.firestore
+[info] +  firestore: released rules firestore.rules to cloud.firestore 
+[debug] [2026-06-07T04:41:34.770Z] [
+  {
+    "config": {
+      "public": "dist/budget-battowski/browser",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "rewrites": [
+        {
+          "source": "**",
+          "destination": "/index.html"
+        }
+      ],
+      "site": "budget-battowski"
+    },
+    "version": "projects/124157519209/sites/budget-battowski/versions/18b33c9c6094f7d8"
+  }
+]
+[info] i  hosting[budget-battowski]: finalizing version... 
+[debug] [2026-06-07T04:41:34.773Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:34.773Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:34.774Z] >>> [apiv2][query] PATCH https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/budget-battowski/versions/18b33c9c6094f7d8 updateMask=status%2Cconfig
+[debug] [2026-06-07T04:41:34.774Z] >>> [apiv2][body] PATCH https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/budget-battowski/versions/18b33c9c6094f7d8 {"status":"FINALIZED","config":{"rewrites":[{"glob":"**","path":"/index.html"}]}}
+[debug] [2026-06-07T04:41:35.767Z] <<< [apiv2][status] PATCH https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/budget-battowski/versions/18b33c9c6094f7d8 200
+[debug] [2026-06-07T04:41:35.767Z] <<< [apiv2][body] PATCH https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/budget-battowski/versions/18b33c9c6094f7d8 {"name":"projects/124157519209/sites/budget-battowski/versions/18b33c9c6094f7d8","status":"FINALIZED","config":{"rewrites":[{"glob":"**","path":"/index.html"}]},"labels":{"deployment-tool":"cli-firebase"},"createTime":"2026-06-07T04:41:27.066820Z","createUser":{"email":"dili.cherry77@gmail.com"},"finalizeTime":"2026-06-07T04:41:36.072426Z","finalizeUser":{"email":"dili.cherry77@gmail.com"}}
+[debug] [2026-06-07T04:41:35.767Z] [hosting] finalized version for budget-battowski:[object Object]
+[info] +  hosting[budget-battowski]: version finalized 
+[info] i  hosting[budget-battowski]: releasing new version... 
+[debug] [2026-06-07T04:41:35.768Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:35.768Z] Checked if tokens are valid: true, expires at: 1780810881386
+[debug] [2026-06-07T04:41:35.768Z] >>> [apiv2][query] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/budget-battowski/channels/live/releases versionName=projects%2F124157519209%2Fsites%2Fbudget-battowski%2Fversions%2F18b33c9c6094f7d8
+[debug] [2026-06-07T04:41:35.768Z] >>> [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/budget-battowski/channels/live/releases {}
+[debug] [2026-06-07T04:41:36.527Z] <<< [apiv2][status] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/budget-battowski/channels/live/releases 200
+[debug] [2026-06-07T04:41:36.528Z] <<< [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/budget-battowski/channels/live/releases {"name":"projects/124157519209/sites/budget-battowski/channels/live/releases/1780807296082000","version":{"name":"projects/124157519209/sites/budget-battowski/versions/18b33c9c6094f7d8","status":"FINALIZED","config":{"rewrites":[{"glob":"**","path":"/index.html"}]},"labels":{"deployment-tool":"cli-firebase"},"createTime":"2026-06-07T04:41:27.066820Z","createUser":{"email":"dili.cherry77@gmail.com","imageUrl":"https://lh3.googleusercontent.com/a/ACg8ocLl89jr6ZlbX8nx6MFW_bglJnEwSnhgFkH08krLkbKsMK6npkklqg"},"finalizeTime":"2026-06-07T04:41:36.072426Z","finalizeUser":{"email":"dili.cherry77@gmail.com","imageUrl":"https://lh3.googleusercontent.com/a/ACg8ocLl89jr6ZlbX8nx6MFW_bglJnEwSnhgFkH08krLkbKsMK6npkklqg"}},"type":"DEPLOY","releaseTime":"2026-06-07T04:41:36.082Z","releaseUser":{"email":"dili.cherry77@gmail.com","imageUrl":"https://lh3.googleusercontent.com/a/ACg8ocLl89jr6ZlbX8nx6MFW_bglJnEwSnhgFkH08krLkbKsMK6npkklqg"}}
+[debug] [2026-06-07T04:41:36.528Z] [hosting] release: {"name":"projects/124157519209/sites/budget-battowski/channels/live/releases/1780807296082000","version":{"name":"projects/124157519209/sites/budget-battowski/versions/18b33c9c6094f7d8","status":"FINALIZED","config":{"rewrites":[{"glob":"**","path":"/index.html"}]},"labels":{"deployment-tool":"cli-firebase"},"createTime":"2026-06-07T04:41:27.066820Z","createUser":{"email":"dili.cherry77@gmail.com","imageUrl":"https://lh3.googleusercontent.com/a/ACg8ocLl89jr6ZlbX8nx6MFW_bglJnEwSnhgFkH08krLkbKsMK6npkklqg"},"finalizeTime":"2026-06-07T04:41:36.072426Z","finalizeUser":{"email":"dili.cherry77@gmail.com","imageUrl":"https://lh3.googleusercontent.com/a/ACg8ocLl89jr6ZlbX8nx6MFW_bglJnEwSnhgFkH08krLkbKsMK6npkklqg"}},"type":"DEPLOY","releaseTime":"2026-06-07T04:41:36.082Z","releaseUser":{"email":"dili.cherry77@gmail.com","imageUrl":"https://lh3.googleusercontent.com/a/ACg8ocLl89jr6ZlbX8nx6MFW_bglJnEwSnhgFkH08krLkbKsMK6npkklqg"}}
+[info] +  hosting[budget-battowski]: release complete 
+[info] 
+[info] +  Deploy complete! 
+[info] 
+[info] Project Console: https://console.firebase.google.com/project/budget-battowski/overview
+[info] Hosting URL: https://budget-battowski.web.app
