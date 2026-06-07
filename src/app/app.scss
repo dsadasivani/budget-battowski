@@ -8,9 +8,9 @@
   --bb-teal-soft: #e0f7f4;
   --bb-green: #047857;
   --bb-rose: #be123c;
-  --bb-shadow: 0 22px 70px rgba(15, 23, 42, 0.1);
-  --bb-shadow-soft: 0 12px 34px rgba(15, 23, 42, 0.08);
-  --bb-radius: 24px;
+  --bb-shadow: 0 18px 52px rgba(15, 23, 42, 0.1);
+  --bb-shadow-soft: 0 10px 28px rgba(15, 23, 42, 0.08);
+  --bb-radius: 8px;
 
   display: block;
   min-height: 100dvh;
@@ -33,18 +33,12 @@
   .mat-mdc-icon-button {
     --mat-button-filled-container-shape: 999px;
     --mat-button-outlined-container-shape: 999px;
+    touch-action: manipulation;
     transition:
       transform 0.22s ease,
       box-shadow 0.22s ease,
       background-color 0.22s ease,
       border-color 0.22s ease;
-  }
-
-  .mat-mdc-button:hover,
-  .mat-mdc-unelevated-button:hover,
-  .mat-mdc-outlined-button:hover,
-  .mat-mdc-icon-button:hover {
-    transform: translateY(-1px);
   }
 
   .mat-mdc-unelevated-button {
@@ -58,6 +52,10 @@
   .mat-mdc-progress-bar {
     --mdc-linear-progress-active-indicator-height: 8px;
     --mdc-linear-progress-track-height: 8px;
+  }
+
+  .mat-mdc-tab-labels {
+    min-width: max-content;
   }
 }
 
@@ -92,7 +90,7 @@
   height: 44px;
   place-items: center;
   border: 1px solid rgba(255, 255, 255, 0.4);
-  border-radius: 16px;
+  border-radius: 12px;
   background: linear-gradient(145deg, #0f172a, #155e75);
   box-shadow: 0 14px 30px rgba(15, 23, 42, 0.22);
   color: #fff;
@@ -101,6 +99,7 @@
 
 .brand-copy {
   display: grid;
+  min-width: 0;
   gap: 3px;
 
   strong {
@@ -197,7 +196,7 @@
   gap: 24px;
   padding: clamp(22px, 3vw, 34px);
   border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: 32px;
+  border-radius: 18px;
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(241, 245, 249, 0.82)),
     linear-gradient(90deg, rgba(21, 94, 117, 0.1), rgba(245, 158, 11, 0.08));
@@ -206,6 +205,7 @@
 
 .hero-copy {
   display: grid;
+  min-width: 0;
   align-content: start;
   gap: 10px;
 }
@@ -223,7 +223,7 @@ h1 {
   margin: 0;
   max-width: 760px;
   color: #07111f;
-  font-size: clamp(2.1rem, 4vw, 4.25rem);
+  font-size: 3.8rem;
   font-weight: 800;
   line-height: 0.98;
 }
@@ -232,7 +232,7 @@ h1 {
   max-width: 680px;
   margin: 0;
   color: var(--bb-muted);
-  font-size: clamp(1rem, 1.5vw, 1.16rem);
+  font-size: 1.1rem;
   font-weight: 600;
   line-height: 1.6;
 }
@@ -243,6 +243,14 @@ h1 {
   gap: 10px;
   align-items: center;
   align-self: start;
+
+  > * {
+    min-width: 0;
+  }
+
+  mat-form-field {
+    width: 100%;
+  }
 }
 
 .metric-grid {
@@ -263,6 +271,7 @@ h1 {
 
 .metric-card {
   display: grid;
+  min-width: 0;
   min-height: 150px;
   gap: 12px;
   padding: 22px;
@@ -285,7 +294,8 @@ h1 {
   }
 
   strong {
-    font-size: clamp(1.55rem, 2.2vw, 2rem);
+    overflow-wrap: anywhere;
+    font-size: 1.9rem;
     line-height: 1.05;
   }
 
@@ -312,7 +322,44 @@ h1 {
 
 .workspace-tabs {
   display: block;
+  overflow-x: hidden;
   margin-top: 20px;
+}
+
+:host ::ng-deep .workspace-tabs {
+  .mat-mdc-tab-header {
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .mat-mdc-tab-body-wrapper,
+  .mat-mdc-tab-body-content {
+    overflow-x: hidden;
+  }
+
+  .mat-mdc-tab-header::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mat-mdc-tab {
+    flex: 0 0 auto;
+    min-width: 132px;
+    padding: 0 18px;
+  }
+
+  .mat-mdc-tab .mdc-tab__text-label {
+    font-weight: 800;
+    letter-spacing: 0;
+  }
+}
+
+:host ::ng-deep .month-actions {
+  .mat-mdc-form-field,
+  .mat-mdc-form-field-infix {
+    width: auto;
+    min-width: 0;
+  }
 }
 
 .dashboard-grid,
@@ -340,6 +387,7 @@ h1 {
 
 .panel {
   overflow: hidden;
+  min-width: 0;
   background: var(--bb-panel-strong);
 
   mat-card-header {
@@ -571,6 +619,7 @@ mat-progress-bar {
   strong,
   small {
     display: block;
+    overflow-wrap: anywhere;
   }
 
   small {
@@ -580,6 +629,8 @@ mat-progress-bar {
   }
 
   > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
     font-weight: 800;
   }
 }
@@ -594,6 +645,13 @@ mat-progress-bar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 5px 14px;
+
+  strong,
+  span,
+  small {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
 
   small {
     grid-column: 1 / -1;
@@ -611,6 +669,7 @@ mat-progress-bar {
   strong,
   small {
     display: block;
+    overflow-wrap: anywhere;
   }
 
   small {
@@ -694,6 +753,22 @@ mat-progress-bar {
   }
 }
 
+:host ::ng-deep .suggestions {
+  .mat-mdc-list-base {
+    padding: 0;
+  }
+
+  .mat-mdc-list-item {
+    height: auto;
+    min-height: 62px;
+    border-radius: 8px;
+  }
+
+  .mdc-list-item__primary-text {
+    white-space: normal;
+  }
+}
+
 .ratio-stack > div {
   display: grid;
   gap: 9px;
@@ -717,6 +792,7 @@ mat-progress-bar {
   strong,
   small {
     display: block;
+    overflow-wrap: anywhere;
   }
 
   small {
@@ -725,6 +801,8 @@ mat-progress-bar {
   }
 
   > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
     font-weight: 800;
   }
 
@@ -800,6 +878,17 @@ mat-progress-bar {
   }
 }
 
+@media (hover: hover) and (pointer: fine) {
+  :host ::ng-deep {
+    .mat-mdc-button:hover,
+    .mat-mdc-unelevated-button:hover,
+    .mat-mdc-outlined-button:hover,
+    .mat-mdc-icon-button:hover {
+      transform: translateY(-1px);
+    }
+  }
+}
+
 @media (max-width: 1220px) {
   .hero-panel,
   .dashboard-grid,
@@ -817,6 +906,10 @@ mat-progress-bar {
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  h1 {
+    font-size: 3.1rem;
+  }
 }
 
 @media (max-width: 780px) {
@@ -826,7 +919,32 @@ mat-progress-bar {
   }
 
   .topbar {
-    min-height: 68px;
+    min-height: 64px;
+    gap: 8px;
+  }
+
+  .shell {
+    padding: 14px 0 34px;
+  }
+
+  .brand {
+    min-width: 0;
+    gap: 10px;
+  }
+
+  .brand-mark {
+    width: 38px;
+    height: 38px;
+    flex: 0 0 38px;
+    border-radius: 10px;
+  }
+
+  .brand-copy strong {
+    overflow: hidden;
+    max-width: 116px;
+    font-size: 0.94rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .brand-copy small,
@@ -834,13 +952,22 @@ mat-progress-bar {
     display: none;
   }
 
+  .sync-chipset {
+    margin-right: 4px;
+  }
+
+  .auth-actions {
+    gap: 6px;
+  }
+
   .hero-panel {
-    padding: 18px;
-    border-radius: 24px;
+    gap: 18px;
+    padding: 16px;
+    border-radius: 14px;
+    box-shadow: var(--bb-shadow-soft);
   }
 
   .hero-panel,
-  .metric-grid,
   .dashboard-grid,
   .work-grid,
   .trends-grid,
@@ -848,28 +975,250 @@ mat-progress-bar {
     grid-template-columns: 1fr;
   }
 
+  h1 {
+    font-size: 2.15rem;
+    line-height: 1.04;
+  }
+
+  .hero-summary {
+    font-size: 0.96rem;
+    line-height: 1.5;
+  }
+
   .month-actions {
     grid-template-columns: 44px minmax(0, 1fr) 44px;
+    gap: 8px;
+
+    .mat-mdc-icon-button {
+      width: 44px;
+      height: 44px;
+      padding: 10px;
+    }
 
     > button:last-child {
       grid-column: 1 / -1;
+      min-height: 44px;
     }
+  }
+
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .hero-metric {
+    grid-column: 1 / -1;
+  }
+
+  .metric-card:not(.skeleton-card):last-child {
+    grid-column: 1 / -1;
+  }
+
+  .metric-card {
+    min-height: 112px;
+    gap: 8px;
+    padding: 14px;
+
+    &:hover {
+      transform: none;
+      box-shadow: var(--bb-shadow-soft);
+    }
+
+    span {
+      font-size: 0.68rem;
+      line-height: 1.25;
+    }
+
+    strong {
+      font-size: 1.25rem;
+    }
+
+    small {
+      font-size: 0.75rem;
+      line-height: 1.35;
+    }
+  }
+
+  .workspace-tabs {
+    margin-top: 14px;
+  }
+
+  :host ::ng-deep .workspace-tabs {
+    .mat-mdc-tab-header {
+      position: sticky;
+      top: 64px;
+      z-index: 18;
+      margin-inline: -10px;
+      padding-inline: 10px;
+      border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+      background: rgba(248, 250, 252, 0.92);
+      backdrop-filter: blur(16px) saturate(1.12);
+    }
+
+    .mat-mdc-tab {
+      min-width: max-content;
+      height: 44px;
+      padding: 0 14px;
+    }
+  }
+
+  .dashboard-grid,
+  .work-grid {
+    gap: 12px;
+    padding-top: 14px;
+  }
+
+  .panel {
+    mat-card-header {
+      padding: 16px 16px 6px;
+    }
+
+    mat-card-title {
+      font-size: 0.98rem;
+    }
+
+    mat-card-subtitle {
+      font-size: 0.78rem;
+      line-height: 1.35;
+    }
+
+    mat-card-content {
+      padding: 14px 16px 16px;
+    }
+  }
+
+  .donut-wrap {
+    justify-items: center;
+    gap: 16px;
+  }
+
+  .donut,
+  .donut-skeleton {
+    width: 176px;
+  }
+
+  .donut::after {
+    width: 106px;
+  }
+
+  .type-stack,
+  .budget-list,
+  .entry-list,
+  .loan-list,
+  .ratio-stack,
+  .trend-chart,
+  .compact-list,
+  .fixed-list,
+  .category-list {
+    gap: 10px;
+  }
+
+  .management-panel {
+    gap: 14px;
+
+    > button {
+      width: 100%;
+      min-height: 46px;
+      justify-self: stretch;
+    }
+  }
+
+  .entries-panel .entry-list {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
   }
 
   .data-row,
   .loan-card {
     grid-template-columns: 44px minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px;
 
     > span {
       grid-column: 2;
     }
   }
 
+  .data-row > mat-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+  }
+
+  .empty-state {
+    min-height: 80px;
+    padding: 14px;
+    border-radius: 8px;
+  }
+
   .trend-row {
     grid-template-columns: 1fr;
+    gap: 8px;
 
     strong {
       text-align: left;
+    }
+  }
+
+  .chart-key {
+    flex-wrap: wrap;
+    gap: 10px 16px;
+  }
+}
+
+@media (max-width: 460px) {
+  .topbar,
+  .shell {
+    width: min(100% - 14px, 1500px);
+  }
+
+  .auth-button {
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    overflow: hidden;
+    padding-inline: 11px;
+    font-size: 0;
+
+    mat-icon {
+      width: 20px;
+      height: 20px;
+      margin: 0;
+      font-size: 20px;
+    }
+  }
+
+  :host ::ng-deep .auth-button .mdc-button__label {
+    display: inline-flex;
+    width: 20px;
+    overflow: hidden;
+    align-items: center;
+  }
+
+  .month-actions {
+    grid-template-columns: 40px minmax(0, 1fr) 40px;
+
+    .mat-mdc-icon-button {
+      width: 40px;
+      height: 40px;
+      padding: 8px;
+    }
+  }
+
+  .metric-card {
+    padding: 12px;
+
+    strong {
+      font-size: 1.12rem;
+    }
+  }
+
+  .row-heading {
+    grid-template-columns: 12px minmax(0, 1fr);
+
+    span:last-child {
+      grid-column: 2;
     }
   }
 }

@@ -64,8 +64,8 @@
             <tbody>
               @for (expense of expenses; track expense.id; let rowIndex = $index) {
                 <tr [class.marked-delete]="expense.pendingDelete">
-                  <td class="row-number">{{ rowIndex + 1 }}</td>
-                  <td>
+                  <td class="row-number" data-label="Row">{{ rowIndex + 1 }}</td>
+                  <td data-label="Name">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
@@ -74,7 +74,7 @@
                       />
                     </mat-form-field>
                   </td>
-                  <td>
+                  <td data-label="Month">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
@@ -84,7 +84,7 @@
                       />
                     </mat-form-field>
                   </td>
-                  <td>
+                  <td data-label="Category">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <mat-select
                         [(ngModel)]="expense.categoryId"
@@ -97,7 +97,7 @@
                       </mat-select>
                     </mat-form-field>
                   </td>
-                  <td>
+                  <td data-label="Amount">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
@@ -108,7 +108,7 @@
                       />
                     </mat-form-field>
                   </td>
-                  <td>
+                  <td data-label="Type">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <mat-select [(ngModel)]="expense.type" [disabled]="!!expense.pendingDelete">
                         @for (type of expenseTypes; track type) {
@@ -117,7 +117,7 @@
                       </mat-select>
                     </mat-form-field>
                   </td>
-                  <td>
+                  <td data-label="Note">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
@@ -126,7 +126,7 @@
                       />
                     </mat-form-field>
                   </td>
-                  <td>
+                  <td data-label="Actions">
                     <button
                       mat-icon-button
                       type="button"
@@ -178,8 +178,8 @@
             <tbody>
               @for (income of incomes; track income.id; let rowIndex = $index) {
                 <tr [class.marked-delete]="income.pendingDelete">
-                  <td class="row-number">{{ rowIndex + 1 }}</td>
-                  <td>
+                  <td class="row-number" data-label="Row">{{ rowIndex + 1 }}</td>
+                  <td data-label="Source">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
@@ -188,7 +188,7 @@
                       />
                     </mat-form-field>
                   </td>
-                  <td>
+                  <td data-label="Amount">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
@@ -199,7 +199,7 @@
                       />
                     </mat-form-field>
                   </td>
-                  <td>
+                  <td data-label="Cadence">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <mat-select [(ngModel)]="income.cadence" [disabled]="!!income.pendingDelete">
                         @for (cadence of incomeCadences; track cadence) {
@@ -208,7 +208,7 @@
                       </mat-select>
                     </mat-form-field>
                   </td>
-                  <td>
+                  <td data-label="Notes">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
@@ -217,7 +217,7 @@
                       />
                     </mat-form-field>
                   </td>
-                  <td>
+                  <td data-label="Actions">
                     <button
                       mat-icon-button
                       type="button"
@@ -267,8 +267,8 @@
             <tbody>
               @for (category of categories; track category.id; let rowIndex = $index) {
                 <tr [class.marked-delete]="category.pendingDelete">
-                  <td class="row-number">{{ rowIndex + 1 }}</td>
-                  <td>
+                  <td class="row-number" data-label="Row">{{ rowIndex + 1 }}</td>
+                  <td data-label="Name">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
@@ -277,7 +277,7 @@
                       />
                     </mat-form-field>
                   </td>
-                  <td>
+                  <td data-label="Monthly Budget">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
@@ -288,7 +288,7 @@
                       />
                     </mat-form-field>
                   </td>
-                  <td>
+                  <td data-label="Color">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
@@ -298,7 +298,7 @@
                       />
                     </mat-form-field>
                   </td>
-                  <td>
+                  <td data-label="Actions">
                     <button
                       mat-icon-button
                       type="button"
@@ -360,13 +360,13 @@
             <tbody>
               @for (loan of loans; track loan.id; let rowIndex = $index) {
                 <tr [class.marked-delete]="loan.pendingDelete">
-                  <td class="row-number">{{ rowIndex + 1 }}</td>
-                  <td>
+                  <td class="row-number" data-label="Row">{{ rowIndex + 1 }}</td>
+                  <td data-label="Lender">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input matInput [(ngModel)]="loan.lender" [disabled]="!!loan.pendingDelete" />
                     </mat-form-field>
                   </td>
-                  <td>
+                  <td data-label="Type">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
@@ -375,7 +375,7 @@
                       />
                     </mat-form-field>
                   </td>
-                  <td>
+                  <td data-label="Principal">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
@@ -386,7 +386,7 @@
                       />
                     </mat-form-field>
                   </td>
-                  <td>
+                  <td data-label="Outstanding">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
@@ -397,7 +397,7 @@
                       />
                     </mat-form-field>
                   </td>
-                  <td>
+                  <td data-label="Rate">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
@@ -408,7 +408,7 @@
                       />
                     </mat-form-field>
                   </td>
-                  <td>
+                  <td data-label="EMI">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
@@ -419,7 +419,7 @@
                       />
                     </mat-form-field>
                   </td>
-                  <td>
+                  <td data-label="Start">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
@@ -429,12 +429,12 @@
                       />
                     </mat-form-field>
                   </td>
-                  <td>
+                  <td data-label="Notes">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input matInput [(ngModel)]="loan.notes" [disabled]="!!loan.pendingDelete" />
                     </mat-form-field>
                   </td>
-                  <td>
+                  <td data-label="Actions">
                     <button
                       mat-icon-button
                       type="button"
@@ -486,8 +486,8 @@
             <tbody>
               @for (template of templates; track template.id; let rowIndex = $index) {
                 <tr [class.marked-delete]="template.pendingDelete">
-                  <td class="row-number">{{ rowIndex + 1 }}</td>
-                  <td>
+                  <td class="row-number" data-label="Row">{{ rowIndex + 1 }}</td>
+                  <td data-label="Name">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
@@ -496,7 +496,7 @@
                       />
                     </mat-form-field>
                   </td>
-                  <td>
+                  <td data-label="Category">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <mat-select
                         [(ngModel)]="template.categoryId"
@@ -508,7 +508,7 @@
                       </mat-select>
                     </mat-form-field>
                   </td>
-                  <td>
+                  <td data-label="Amount">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
@@ -519,7 +519,7 @@
                       />
                     </mat-form-field>
                   </td>
-                  <td>
+                  <td data-label="Type">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <mat-select [(ngModel)]="template.type" [disabled]="!!template.pendingDelete">
                         @for (type of fixedTypes; track type) {
@@ -528,7 +528,7 @@
                       </mat-select>
                     </mat-form-field>
                   </td>
-                  <td>
+                  <td data-label="Actions">
                     <button
                       mat-icon-button
                       type="button"

@@ -397,9 +397,10 @@ export class App implements OnDestroy {
         expenses: this.expenses(),
         loans: this.loans(),
       },
-      maxHeight: '94dvh',
+      maxHeight: '100dvh',
       maxWidth: '98vw',
-      width: '1540px',
+      panelClass: 'bulk-editor-panel',
+      width: 'min(1540px, 98vw)',
     });
 
     dialogRef.afterClosed().subscribe((result) => {

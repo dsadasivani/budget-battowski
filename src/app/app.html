@@ -30,6 +30,7 @@
           <span>{{ userName() || userEmail() || 'Google user' }}</span>
         </span>
         <button
+          class="auth-button"
           mat-stroked-button
           type="button"
           (click)="logout()"
@@ -41,6 +42,7 @@
         </button>
       } @else if (firebase.mode === 'firebase') {
         <button
+          class="auth-button"
           mat-flat-button
           type="button"
           (click)="loginWithGoogle()"
@@ -269,7 +271,7 @@
                   <small>
                     Budget
                     {{ category.monthlyBudget | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}
-                    · {{ category.remaining >= 0 ? 'Left' : 'Over' }}
+                    &middot; {{ category.remaining >= 0 ? 'Left' : 'Over' }}
                     {{
                       (category.remaining >= 0 ? category.remaining : -category.remaining)
                         | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
@@ -346,7 +348,7 @@
                   }}</mat-icon>
                   <div>
                     <strong>{{ item.name }}</strong>
-                    <small>{{ categoryName(item.categoryId) }} · {{ item.type }}</small>
+                    <small>{{ categoryName(item.categoryId) }} &middot; {{ item.type }}</small>
                   </div>
                   <span>{{ item.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
                 </article>
@@ -381,7 +383,7 @@
                 </mat-icon>
                 <div>
                   <strong>{{ expense.name }}</strong>
-                  <small>{{ categoryName(expense.categoryId) }} · {{ expense.type }}</small>
+                  <small>{{ categoryName(expense.categoryId) }} &middot; {{ expense.type }}</small>
                 </div>
                 <span>{{ expense.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
               </article>
@@ -419,7 +421,7 @@
                 <article>
                   <strong>{{ income.source }}</strong>
                   <span>{{ income.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
-                  <small>{{ income.cadence }} · {{ income.notes }}</small>
+                  <small>{{ income.cadence }} &middot; {{ income.notes }}</small>
                 </article>
               } @empty {
                 <div class="empty-state">
@@ -565,7 +567,7 @@
               <article class="loan-card">
                 <div>
                   <strong>{{ loan.loanType }}</strong>
-                  <small>{{ loan.lender }} · {{ loan.annualRate }}% APR</small>
+                  <small>{{ loan.lender }} &middot; {{ loan.annualRate }}% APR</small>
                 </div>
                 <span>{{ loan.outstanding | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
                 <mat-progress-bar
@@ -574,8 +576,9 @@
                   [attr.aria-label]="loan.loanType + ' paid percentage'"
                 ></mat-progress-bar>
                 <small>
-                  EMI {{ loan.emi | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }} ·
-                  {{ loan.monthsLeft }} months left · completes {{ loan.payoff | date: 'MMM y' }}
+                  EMI {{ loan.emi | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }} &middot;
+                  {{ loan.monthsLeft }} months left &middot; completes
+                  {{ loan.payoff | date: 'MMM y' }}
                 </small>
               </article>
             } @empty {
