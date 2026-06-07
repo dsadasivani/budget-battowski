@@ -16,9 +16,10 @@
         class="sync-chip"
         [class.success]="statusTone() === 'success'"
         [class.danger]="statusTone() === 'danger'"
+        [attr.aria-label]="syncStatus()"
+        [matTooltip]="syncStatus()"
       >
         <mat-icon aria-hidden="true">{{ statusIcon() }}</mat-icon>
-        {{ syncStatus() }}
       </mat-chip>
     </mat-chip-set>
 
@@ -55,7 +56,7 @@
 </header>
 
 <main class="shell" id="main-content">
-  <section class="status-banner" [class.error]="syncError()" aria-live="polite">
+  <!-- <section class="status-banner" [class.error]="syncError()" aria-live="polite">
     <mat-icon aria-hidden="true">
       @if (syncError()) {
         error
@@ -78,7 +79,7 @@
         Add Firebase config in src/environments/environment.ts to enable cloud persistence.
       }
     </span>
-  </section>
+  </section> -->
 
   <section class="hero-panel" aria-labelledby="dashboard-title">
     <div class="hero-copy">
@@ -399,18 +400,18 @@
       <section class="work-grid" aria-label="Income and budget planning">
         <mat-card class="panel action-panel">
           <mat-card-header>
-            <mat-card-title>Saved Income</mat-card-title>
+            <mat-card-title>Saved Incomes</mat-card-title>
             <mat-card-subtitle>Stored for planning and future comparisons</mat-card-subtitle>
           </mat-card-header>
           <mat-card-content class="management-panel">
             <button
               mat-flat-button
               type="button"
-              (click)="openBulkEditor('planning')"
+              (click)="openBulkEditor('planning', 0)"
               [disabled]="!canWrite()"
             >
               <mat-icon aria-hidden="true">edit_note</mat-icon>
-              Edit income & budgets
+              Edit Incomes
             </button>
 
             <div class="compact-list">
@@ -430,12 +431,22 @@
           </mat-card-content>
         </mat-card>
 
-        <mat-card class="panel">
+        <mat-card class="panel action-panel">
           <mat-card-header>
             <mat-card-title>Expense Categories</mat-card-title>
             <mat-card-subtitle>Budgets attached to each category</mat-card-subtitle>
           </mat-card-header>
-          <mat-card-content>
+          <mat-card-content class="management-panel">
+            <button
+              mat-flat-button
+              type="button"
+              (click)="openBulkEditor('planning', 1)"
+              [disabled]="!canWrite()"
+            >
+              <mat-icon aria-hidden="true">edit_note</mat-icon>
+              Edit categories
+            </button>
+
             <div class="category-list">
               @for (category of categories(); track category.id) {
                 <article class="category-row">

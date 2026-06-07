@@ -120,14 +120,26 @@
 }
 
 .sync-chipset {
-  margin-right: 14px;
+  margin-right: 10px;
 }
 
 .sync-chip {
+  --mdc-chip-container-height: 38px;
+
+  width: 38px;
+  min-width: 38px;
+  padding: 0;
   border: 1px solid var(--bb-line);
+  border-radius: 999px;
   background: rgba(255, 255, 255, 0.78);
   color: var(--bb-muted);
-  font-weight: 700;
+
+  mat-icon {
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    font-size: 20px;
+  }
 
   &.success {
     background: #ecfdf5;
@@ -137,6 +149,19 @@
   &.danger {
     background: #fff1f2;
     color: var(--bb-rose);
+  }
+}
+
+:host ::ng-deep .sync-chip {
+  .mdc-evolution-chip__action,
+  .mdc-evolution-chip__cell,
+  .mat-mdc-chip-action-label {
+    display: grid;
+    place-items: center;
+  }
+
+  .mdc-evolution-chip__action {
+    padding: 0;
   }
 }
 
@@ -164,34 +189,6 @@
   width: min(1500px, calc(100% - 32px));
   margin: 0 auto;
   padding: 22px 0 56px;
-}
-
-.status-banner {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-  padding: 13px 16px;
-  border: 1px solid rgba(21, 94, 117, 0.13);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.74);
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
-  color: var(--bb-muted);
-  font-weight: 700;
-
-  mat-icon {
-    color: var(--bb-teal);
-  }
-
-  &.error {
-    border-color: rgba(190, 18, 60, 0.16);
-    background: rgba(255, 241, 242, 0.92);
-    color: var(--bb-rose);
-
-    mat-icon {
-      color: var(--bb-rose);
-    }
-  }
 }
 
 .hero-panel {
@@ -833,7 +830,6 @@ mat-progress-bar {
   }
 
   .brand-copy small,
-  .sync-chipset,
   .user-summary {
     display: none;
   }

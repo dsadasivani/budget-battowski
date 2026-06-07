@@ -3,9 +3,7 @@
     <mat-icon>grid_on</mat-icon>
   </div>
   <div>
-    <p class="eyebrow">Excel-style bulk editing</p>
     <h2>{{ title }}</h2>
-    <span>Update multiple records in a spreadsheet-like workspace.</span>
   </div>
 </div>
 
@@ -23,12 +21,12 @@
       <span>Marked delete</span>
       <strong>{{ deletedRowCount() }}</strong>
     </div>
-    <div class="formula-bar" aria-label="Spreadsheet tips">
-      <span class="fx">fx</span>
-      <p>Click a cell to edit, tab across columns, and use the trash icon to stage deletions.</p>
-    </div>
   </section>
-  <mat-tab-group animationDuration="160ms" mat-stretch-tabs="false">
+  <mat-tab-group
+    [selectedIndex]="initialTabIndex"
+    animationDuration="160ms"
+    mat-stretch-tabs="false"
+  >
     @if (showMonthlyTables) {
       <mat-tab label="Expenses">
         <div class="bulk-toolbar">

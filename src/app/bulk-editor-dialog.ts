@@ -25,6 +25,7 @@ export type BulkEditorScope = 'monthly' | 'planning' | 'loans';
 
 export interface BulkEditorData {
   scope: BulkEditorScope;
+  initialTabIndex?: number;
   selectedMonth: string;
   categories: BudgetCategory[];
   incomes: IncomeSource[];
@@ -95,6 +96,7 @@ export class BulkEditorDialog {
   protected readonly showMonthlyTables: boolean;
   protected readonly showPlanningTables: boolean;
   protected readonly showLoanTables: boolean;
+  protected readonly initialTabIndex: number;
 
   constructor(
     private readonly dialogRef: MatDialogRef<BulkEditorDialog, BulkEditorResult>,
@@ -114,6 +116,7 @@ export class BulkEditorDialog {
     this.showMonthlyTables = data.scope === 'monthly';
     this.showPlanningTables = data.scope === 'planning';
     this.showLoanTables = data.scope === 'loans';
+    this.initialTabIndex = data.initialTabIndex ?? 0;
   }
 
   protected addExpense(): void {

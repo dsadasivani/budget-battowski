@@ -384,11 +384,12 @@ export class App implements OnDestroy {
     this.selectedMonth.update((month) => addMonths(month, offset));
   }
 
-  protected openBulkEditor(scope: BulkEditorScope): void {
+  protected openBulkEditor(scope: BulkEditorScope, initialTabIndex = 0): void {
     const dialogRef = this.dialog.open(BulkEditorDialog, {
       autoFocus: false,
       data: {
         scope,
+        initialTabIndex,
         selectedMonth: this.selectedMonth(),
         categories: this.categories(),
         incomes: this.incomes(),
@@ -396,8 +397,9 @@ export class App implements OnDestroy {
         expenses: this.expenses(),
         loans: this.loans(),
       },
-      maxWidth: '96vw',
-      width: '1240px',
+      maxHeight: '94dvh',
+      maxWidth: '98vw',
+      width: '1540px',
     });
 
     dialogRef.afterClosed().subscribe((result) => {
