@@ -465,12 +465,22 @@
     }
 
     .mat-mdc-form-field {
-      --mat-form-field-container-height: 42px;
-      --mat-form-field-container-vertical-padding: 8px;
+      --mat-form-field-container-height: 30px;
+      --mat-form-field-container-vertical-padding: 3px;
     }
 
     .mat-mdc-form-field-flex {
-      min-height: 42px;
+      min-height: 30px;
+    }
+
+    .mat-mdc-input-element,
+    .mat-mdc-select-value {
+      font-size: 0.78rem;
+    }
+
+    .mat-mdc-icon-button {
+      --mdc-icon-button-state-layer-size: 30px;
+      --mdc-icon-button-icon-size: 18px;
     }
   }
 
@@ -570,36 +580,39 @@
 
     tbody {
       display: grid;
-      gap: 10px;
+      gap: 8px;
     }
 
     tbody tr,
     tbody tr:nth-child(even),
     tbody tr:hover {
       display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      position: relative;
       overflow: hidden;
-      padding: 0 10px 10px;
+      gap: 0 8px;
+      padding: 0 8px 7px;
       border: 1px solid var(--sheet-grid);
       border-radius: 8px;
       background: #fff;
-      box-shadow: 0 8px 22px rgba(16, 24, 40, 0.06);
+      box-shadow: 0 6px 18px rgba(16, 24, 40, 0.05);
     }
 
     td {
       display: grid;
-      grid-template-columns: 108px minmax(0, 1fr);
-      gap: 10px;
-      align-items: center;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 3px;
+      align-items: start;
       height: auto;
-      min-height: 52px;
-      padding: 8px 0;
+      min-height: 0;
+      padding: 4px 0;
       border-right: 0;
       border-bottom: 1px solid var(--sheet-grid);
 
       &::before {
         content: attr(data-label);
         color: var(--sheet-muted);
-        font-size: 0.68rem;
+        font-size: 0.58rem;
         font-weight: 900;
         letter-spacing: 0;
         text-transform: uppercase;
@@ -611,20 +624,30 @@
     }
 
     td:last-child {
-      display: grid;
-      width: 100%;
+      position: absolute;
+      top: 3px;
+      right: 4px;
+      z-index: 4;
+      display: block;
+      width: auto;
       min-width: 0;
-      grid-template-columns: 108px minmax(0, 1fr);
-      padding: 8px 0 0;
+      padding: 0;
       border-bottom: 0;
       text-align: left;
 
+      &::before {
+        content: none;
+      }
+
       button {
-        justify-self: end;
+        width: 30px;
+        height: 30px;
+        padding: 6px;
       }
     }
 
     .row-number {
+      grid-column: 1 / -1;
       position: static;
       display: flex;
       width: auto;
@@ -632,12 +655,12 @@
       max-width: none;
       align-items: center;
       justify-content: space-between;
-      margin: 0 -10px 8px;
-      padding: 9px 10px;
+      margin: 0 -8px 3px;
+      padding: 6px 42px 6px 8px;
       border-bottom: 1px solid var(--sheet-grid);
       background: var(--sheet-green-soft);
       color: var(--sheet-green-dark);
-      font-size: 0.84rem;
+      font-size: 0.76rem;
       text-align: left !important;
 
       &::before {
@@ -648,6 +671,11 @@
 
     mat-form-field {
       min-width: 0;
+    }
+
+    input[type='color'] {
+      height: 24px;
+      min-width: 52px;
     }
   }
 
@@ -690,14 +718,28 @@
   }
 
   .bulk-table {
-    td,
-    td:last-child {
-      grid-template-columns: 1fr;
-      gap: 6px;
+    tbody tr,
+    tbody tr:nth-child(even),
+    tbody tr:hover {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0 6px;
+      padding-inline: 7px;
     }
 
-    td:last-child button {
-      justify-self: stretch;
+    td {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 3px;
+      padding-block: 4px;
+    }
+
+    td:last-child {
+      top: 3px;
+      right: 3px;
+    }
+
+    .row-number {
+      margin-inline: -7px;
+      padding-block: 6px;
     }
   }
 }

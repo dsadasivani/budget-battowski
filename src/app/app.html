@@ -40,23 +40,70 @@
           <mat-icon aria-hidden="true">logout</mat-icon>
           Logout
         </button>
-      } @else if (firebase.mode === 'firebase') {
-        <button
-          class="auth-button"
-          mat-flat-button
-          type="button"
-          (click)="loginWithGoogle()"
-          [disabled]="isSyncing()"
-          aria-label="Sign in with Google to sync your budget"
-        >
-          <mat-icon aria-hidden="true">login</mat-icon>
-          Sign in
-        </button>
       }
     </div>
   </mat-toolbar>
 </header>
 
+@if (firebase.mode === 'firebase' && !workspaceId()) {
+  <main class="login-shell" id="main-content">
+    <section class="login-panel" aria-labelledby="login-title">
+      <div class="login-icon-row" aria-hidden="true">
+        <span><mat-icon>account_balance_wallet</mat-icon></span>
+        <span><mat-icon>query_stats</mat-icon></span>
+        <span><mat-icon>lock</mat-icon></span>
+      </div>
+
+      <div class="login-copy">
+        <p class="eyebrow">Private money clarity</p>
+        <h1 id="login-title">Budget calmly. Spend clearly.</h1>
+        <p class="login-summary">
+          Budget Battowski keeps income, recurring spends, investments, and EMIs in one focused
+          monthly view. No noise, no spreadsheet wrestling, just a cleaner read on your money.
+        </p>
+      </div>
+
+      <section class="login-benefits" aria-label="Budget Battowski highlights">
+        <article>
+          <mat-icon aria-hidden="true">calendar_month</mat-icon>
+          <strong>Month-first planning</strong>
+          <span>Track salary, spends, savings, and debt pressure where decisions happen.</span>
+        </article>
+        <article>
+          <mat-icon aria-hidden="true">event_repeat</mat-icon>
+          <strong>Fixed items ready</strong>
+          <span>Reuse rent, bills, SIPs, and EMIs without rebuilding your month.</span>
+        </article>
+        <article>
+          <mat-icon aria-hidden="true">verified_user</mat-icon>
+          <strong>Synced privately</strong>
+          <span>Your Google login opens your own budget workspace.</span>
+        </article>
+      </section>
+
+      <div class="login-actions">
+        <button
+          class="google-login"
+          mat-flat-button
+          type="button"
+          (click)="loginWithGoogle()"
+          [disabled]="isSyncing()"
+          aria-label="Continue with Google to open Budget Battowski"
+        >
+          <span class="google-mark" aria-hidden="true">G</span>
+          Continue with Google
+        </button>
+        <span class="login-note">
+          @if (syncError()) {
+            {{ syncError() }}
+          } @else {
+            Secure sign-in. Your workspace loads after authentication.
+          }
+        </span>
+      </div>
+    </section>
+  </main>
+} @else {
 <main class="shell" id="main-content">
   <!-- <section class="status-banner" [class.error]="syncError()" aria-live="polite">
     <mat-icon aria-hidden="true">
@@ -181,7 +228,16 @@
     </div>
   </section>
 
-  <mat-tab-group class="workspace-tabs" animationDuration="220ms" mat-stretch-tabs="false">
+  <mat-tab-group
+    class="workspace-tabs"
+    animationDuration="220ms"
+    mat-stretch-tabs="false"
+    [selectedIndex]="activeTabIndex()"
+    (selectedIndexChange)="setActiveTab($event)"
+    (touchstart)="startTabSwipe($event)"
+    (touchend)="finishTabSwipe($event)"
+    (touchcancel)="cancelTabSwipe()"
+  >
     <mat-tab label="Dashboard">
       <section class="dashboard-grid" aria-label="Dashboard insights">
         <mat-card class="panel chart-panel">
@@ -190,6 +246,10 @@
             <mat-card-subtitle>Category spread for {{ monthLabel() }}</mat-card-subtitle>
           </mat-card-header>
           <mat-card-content>
+            <header class="mobile-card-heading">
+              <strong>Expense Mix</strong>
+              <small>Category spread for {{ monthLabel() }}</small>
+            </header>
             @if (showDashboardSkeleton()) {
               <div class="donut-skeleton" aria-label="Loading expense mix"></div>
             } @else {
@@ -242,6 +302,16 @@
             </mat-card-subtitle>
           </mat-card-header>
           <mat-card-content class="budget-list">
+            <header class="mobile-card-heading">
+              <strong>Budget Health</strong>
+              <small>
+                @if (leadingCategory()) {
+                  Highest spend: {{ leadingCategory()?.name }}
+                } @else {
+                  Category budgets versus actuals
+                }
+              </small>
+            </header>
             @if (showDashboardSkeleton()) {
               @for (item of [1, 2, 3, 4]; track item) {
                 <div class="row-skeleton" aria-hidden="true">
@@ -294,6 +364,10 @@
             <mat-card-subtitle>Automated prompts from current month data</mat-card-subtitle>
           </mat-card-header>
           <mat-card-content>
+            <header class="mobile-card-heading">
+              <strong>Advisor Signals</strong>
+              <small>Automated prompts from current month data</small>
+            </header>
             <mat-list aria-label="Budget suggestions">
               @for (idea of suggestions(); track idea) {
                 <mat-list-item>
@@ -315,6 +389,10 @@
             <mat-card-subtitle>Expenses and fixed items for month-end entry</mat-card-subtitle>
           </mat-card-header>
           <mat-card-content class="management-panel">
+            <header class="mobile-card-heading">
+              <strong>Monthly Data</strong>
+              <small>Expenses and fixed items for month-end entry</small>
+            </header>
             <button
               mat-flat-button
               type="button"
@@ -370,6 +448,10 @@
             >
           </mat-card-header>
           <mat-card-content class="entry-list">
+            <header class="mobile-card-heading">
+              <strong>{{ monthLabel() }} Entries</strong>
+              <small>Recurring and investment rows can be prefilled once per month</small>
+            </header>
             @for (expense of selectedEntries(); track expense.id) {
               <article class="data-row">
                 <mat-icon aria-hidden="true">
@@ -406,6 +488,10 @@
             <mat-card-subtitle>Stored for planning and future comparisons</mat-card-subtitle>
           </mat-card-header>
           <mat-card-content class="management-panel">
+            <header class="mobile-card-heading">
+              <strong>Saved Incomes</strong>
+              <small>Stored for planning and future comparisons</small>
+            </header>
             <button
               mat-flat-button
               type="button"
@@ -439,6 +525,10 @@
             <mat-card-subtitle>Budgets attached to each category</mat-card-subtitle>
           </mat-card-header>
           <mat-card-content class="management-panel">
+            <header class="mobile-card-heading">
+              <strong>Expense Categories</strong>
+              <small>Budgets attached to each category</small>
+            </header>
             <button
               mat-flat-button
               type="button"
@@ -487,6 +577,10 @@
             <mat-card-subtitle>Outflow, investments, and remaining funds</mat-card-subtitle>
           </mat-card-header>
           <mat-card-content class="trend-chart">
+            <header class="mobile-card-heading">
+              <strong>Six Month Trend</strong>
+              <small>Outflow, investments, and remaining funds</small>
+            </header>
             @for (row of trendRows(); track row.month) {
               <div class="trend-row">
                 <span>{{ row.label }}</span>
@@ -513,6 +607,10 @@
             <mat-card-subtitle>Quick read on pressure and savings</mat-card-subtitle>
           </mat-card-header>
           <mat-card-content class="ratio-stack">
+            <header class="mobile-card-heading">
+              <strong>Planning Ratios</strong>
+              <small>Quick read on pressure and savings</small>
+            </header>
             <div>
               <span>Salary burnout</span>
               <strong>{{ burnoutRatio() | percent: '1.0-0' }}</strong>
@@ -553,6 +651,13 @@
             >
           </mat-card-header>
           <mat-card-content class="management-panel loan-list">
+            <header class="mobile-card-heading">
+              <strong>Debt Overview</strong>
+              <small
+                >Total debt
+                {{ totalDebt() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</small
+              >
+            </header>
             <button
               mat-flat-button
               type="button"
@@ -593,3 +698,4 @@
     </mat-tab>
   </mat-tab-group>
 </main>
+}

@@ -109,7 +109,9 @@ function monthOptions(centerMonth: string): string[] {
 export class App implements OnDestroy {
   private readonly dialog = inject(MatDialog);
   private readonly storagePrefix = 'budget-battowski';
+  private readonly workspaceTabCount = 5;
   private authUnsubscribe?: () => void;
+  private tabSwipeStart: { x: number; y: number } | null = null;
   private readonly unsubscribes: Array<() => void> = [];
 
   protected readonly firebase = initializeBudgetFirebase();
@@ -123,6 +125,7 @@ export class App implements OnDestroy {
   protected readonly userName = signal<string | null>(null);
   protected readonly userEmail = signal<string | null>(null);
   protected readonly selectedMonth = signal(lastMonth());
+  protected readonly activeTabIndex = signal(0);
   protected readonly categories = signal<BudgetCategory[]>([]);
   protected readonly incomes = signal<IncomeSource[]>([]);
   protected readonly templates = signal<ExpenseTemplate[]>([]);
@@ -382,6 +385,51 @@ export class App implements OnDestroy {
 
   protected moveMonth(offset: number): void {
     this.selectedMonth.update((month) => addMonths(month, offset));
+  }
+
+  protected setActiveTab(index: number): void {
+    this.activeTabIndex.set(Math.max(0, Math.min(this.workspaceTabCount - 1, index)));
+  }
+
+  protected startTabSwipe(event: TouchEvent): void {
+    if (
+      event.touches.length !== 1 ||
+      !this.isMobileViewport() ||
+      this.isSwipeIgnoredTarget(event.target)
+    ) {
+      this.tabSwipeStart = null;
+      return;
+    }
+
+    const [touch] = event.touches;
+    this.tabSwipeStart = {
+      x: touch.clientX,
+      y: touch.clientY,
+    };
+  }
+
+  protected finishTabSwipe(event: TouchEvent): void {
+    const start = this.tabSwipeStart;
+    this.tabSwipeStart = null;
+
+    if (!start || !this.isMobileViewport() || event.changedTouches.length !== 1) {
+      return;
+    }
+
+    const [touch] = event.changedTouches;
+    const deltaX = touch.clientX - start.x;
+    const deltaY = touch.clientY - start.y;
+    const isHorizontalSwipe = Math.abs(deltaX) >= 58 && Math.abs(deltaX) > Math.abs(deltaY) * 1.4;
+
+    if (!isHorizontalSwipe) {
+      return;
+    }
+
+    this.setActiveTab(this.activeTabIndex() + (deltaX < 0 ? 1 : -1));
+  }
+
+  protected cancelTabSwipe(): void {
+    this.tabSwipeStart = null;
   }
 
   protected openBulkEditor(scope: BulkEditorScope, initialTabIndex = 0): void {
@@ -667,6 +715,20 @@ export class App implements OnDestroy {
 
   private ratio(value: number, total: number): number {
     return total <= 0 ? 0 : value / total;
+  }
+
+  private isMobileViewport(): boolean {
+    return globalThis.matchMedia?.('(max-width: 780px)').matches ?? false;
+  }
+
+  private isSwipeIgnoredTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof Element)) {
+      return false;
+    }
+
+    return !!target.closest(
+      'button, input, textarea, select, mat-select, .mat-mdc-tab-header, .mat-mdc-dialog-container',
+    );
   }
 
   private clearLegacyLocalData(): void {
