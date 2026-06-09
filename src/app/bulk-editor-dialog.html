@@ -48,45 +48,63 @@
                 <th>D</th>
                 <th>E</th>
                 <th>F</th>
+                <th>G</th>
+                <th>H</th>
                 <th></th>
               </tr>
               <tr>
                 <th class="row-number-col">#</th>
                 <th>Name</th>
-                <th>Month</th>
+                <th>Date</th>
                 <th>Category</th>
                 <th>Amount</th>
                 <th>Type</th>
+                <th>Start</th>
+                <th>End optional</th>
                 <th>Note</th>
                 <th aria-label="Actions"></th>
               </tr>
             </thead>
             <tbody>
               @for (expense of expenses; track expense.id; let rowIndex = $index) {
-                <tr [class.marked-delete]="expense.pendingDelete">
-                  <td class="row-number" data-label="Row">{{ rowIndex + 1 }}</td>
+                <tr [class.marked-delete]="expense.pendingDelete" [class.new-row]="expense.isNew">
+                  <td class="row-number" data-label="Row">
+                    @if (expense.isNew) {
+                      <span class="row-status">New</span>
+                    } @else {
+                      {{ rowIndex + 1 }}
+                    }
+                  </td>
                   <td data-label="Name">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
+                        placeholder="Expense name"
                         [(ngModel)]="expense.name"
                         [disabled]="!!expense.pendingDelete"
                       />
                     </mat-form-field>
                   </td>
-                  <td data-label="Month">
+                  <td data-label="Date">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
-                        type="month"
-                        [(ngModel)]="expense.month"
+                        [matDatepicker]="expenseDatePicker"
+                        placeholder="Expense date"
+                        [(ngModel)]="expense.date"
                         [disabled]="!!expense.pendingDelete"
                       />
+                      <mat-datepicker-toggle
+                        matIconSuffix
+                        [for]="expenseDatePicker"
+                      ></mat-datepicker-toggle>
+                      <mat-datepicker #expenseDatePicker></mat-datepicker>
                     </mat-form-field>
                   </td>
                   <td data-label="Category">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <mat-select
+                        placeholder="Category"
                         [(ngModel)]="expense.categoryId"
                         [disabled]="!!expense.pendingDelete"
                       >
@@ -103,6 +121,7 @@
                         matInput
                         type="number"
                         min="0"
+                        placeholder="Amount"
                         [(ngModel)]="expense.amount"
                         [disabled]="!!expense.pendingDelete"
                       />
@@ -110,17 +129,58 @@
                   </td>
                   <td data-label="Type">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
-                      <mat-select [(ngModel)]="expense.type" [disabled]="!!expense.pendingDelete">
+                      <mat-select
+                        placeholder="Type"
+                        [(ngModel)]="expense.type"
+                        [disabled]="!!expense.pendingDelete"
+                      >
                         @for (type of expenseTypes; track type) {
                           <mat-option [value]="type">{{ type }}</mat-option>
                         }
                       </mat-select>
                     </mat-form-field>
                   </td>
+                  <td data-label="Start">
+                    @if (expense.type === 'recurring') {
+                      <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                        <input
+                          matInput
+                          [matDatepicker]="expenseStartPicker"
+                          placeholder="Start date"
+                          [(ngModel)]="expense.startDate"
+                          [disabled]="!!expense.pendingDelete"
+                        />
+                        <mat-datepicker-toggle
+                          matIconSuffix
+                          [for]="expenseStartPicker"
+                        ></mat-datepicker-toggle>
+                        <mat-datepicker #expenseStartPicker></mat-datepicker>
+                      </mat-form-field>
+                    }
+                  </td>
+                  <td data-label="End optional">
+                    @if (expense.type === 'recurring') {
+                      <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                        <input
+                          matInput
+                          [matDatepicker]="expenseEndPicker"
+                          placeholder="End date"
+                          [(ngModel)]="expense.endDate"
+                          [disabled]="!!expense.pendingDelete"
+                        />
+                        <mat-datepicker-toggle
+                          matIconSuffix
+                          [for]="expenseEndPicker"
+                        ></mat-datepicker-toggle>
+                        <mat-datepicker #expenseEndPicker></mat-datepicker>
+                      </mat-form-field>
+                    }
+                  </td>
                   <td data-label="Note">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
+                        placeholder="Note"
                         [(ngModel)]="expense.note"
                         [disabled]="!!expense.pendingDelete"
                       />
@@ -130,8 +190,20 @@
                     <button
                       mat-icon-button
                       type="button"
-                      [attr.aria-label]="expense.pendingDelete ? 'Keep expense' : 'Delete expense'"
-                      [matTooltip]="expense.pendingDelete ? 'Keep row' : 'Mark for delete'"
+                      [attr.aria-label]="
+                        expense.pendingDelete
+                          ? 'Keep expense'
+                          : expense.isNew
+                            ? 'Discard new expense'
+                            : 'Delete expense'
+                      "
+                      [matTooltip]="
+                        expense.pendingDelete
+                          ? 'Keep row'
+                          : expense.isNew
+                            ? 'Discard row'
+                            : 'Mark for delete'
+                      "
                       (click)="toggleDelete(expense)"
                     >
                       <mat-icon>{{ expense.pendingDelete ? 'undo' : 'delete' }}</mat-icon>
@@ -164,6 +236,8 @@
                 <th>B</th>
                 <th>C</th>
                 <th>D</th>
+                <th>E</th>
+                <th>F</th>
                 <th></th>
               </tr>
               <tr>
@@ -172,17 +246,25 @@
                 <th>Amount</th>
                 <th>Cadence</th>
                 <th>Notes</th>
+                <th>Month</th>
                 <th aria-label="Actions"></th>
               </tr>
             </thead>
             <tbody>
               @for (income of incomes; track income.id; let rowIndex = $index) {
-                <tr [class.marked-delete]="income.pendingDelete">
-                  <td class="row-number" data-label="Row">{{ rowIndex + 1 }}</td>
+                <tr [class.marked-delete]="income.pendingDelete" [class.new-row]="income.isNew">
+                  <td class="row-number" data-label="Row">
+                    @if (income.isNew) {
+                      <span class="row-status">New</span>
+                    } @else {
+                      {{ rowIndex + 1 }}
+                    }
+                  </td>
                   <td data-label="Source">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
+                        placeholder="Income source"
                         [(ngModel)]="income.source"
                         [disabled]="!!income.pendingDelete"
                       />
@@ -194,6 +276,7 @@
                         matInput
                         type="number"
                         min="0"
+                        placeholder="Amount"
                         [(ngModel)]="income.amount"
                         [disabled]="!!income.pendingDelete"
                       />
@@ -201,7 +284,11 @@
                   </td>
                   <td data-label="Cadence">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
-                      <mat-select [(ngModel)]="income.cadence" [disabled]="!!income.pendingDelete">
+                      <mat-select
+                        placeholder="Cadence"
+                        [(ngModel)]="income.cadence"
+                        [disabled]="!!income.pendingDelete"
+                      >
                         @for (cadence of incomeCadences; track cadence) {
                           <mat-option [value]="cadence">{{ cadence }}</mat-option>
                         }
@@ -212,7 +299,19 @@
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
+                        placeholder="Notes"
                         [(ngModel)]="income.notes"
+                        [disabled]="!!income.pendingDelete"
+                      />
+                    </mat-form-field>
+                  </td>
+                  <td data-label="Month">
+                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                      <input
+                        matInput
+                        type="month"
+                        [placeholder]="data.selectedMonth"
+                        [(ngModel)]="income.month"
                         [disabled]="!!income.pendingDelete"
                       />
                     </mat-form-field>
@@ -221,8 +320,20 @@
                     <button
                       mat-icon-button
                       type="button"
-                      [attr.aria-label]="income.pendingDelete ? 'Keep income' : 'Delete income'"
-                      [matTooltip]="income.pendingDelete ? 'Keep row' : 'Mark for delete'"
+                      [attr.aria-label]="
+                        income.pendingDelete
+                          ? 'Keep income'
+                          : income.isNew
+                            ? 'Discard new income'
+                            : 'Delete income'
+                      "
+                      [matTooltip]="
+                        income.pendingDelete
+                          ? 'Keep row'
+                          : income.isNew
+                            ? 'Discard row'
+                            : 'Mark for delete'
+                      "
                       (click)="toggleDelete(income)"
                     >
                       <mat-icon>{{ income.pendingDelete ? 'undo' : 'delete' }}</mat-icon>
@@ -266,12 +377,19 @@
             </thead>
             <tbody>
               @for (category of categories; track category.id; let rowIndex = $index) {
-                <tr [class.marked-delete]="category.pendingDelete">
-                  <td class="row-number" data-label="Row">{{ rowIndex + 1 }}</td>
+                <tr [class.marked-delete]="category.pendingDelete" [class.new-row]="category.isNew">
+                  <td class="row-number" data-label="Row">
+                    @if (category.isNew) {
+                      <span class="row-status">New</span>
+                    } @else {
+                      {{ rowIndex + 1 }}
+                    }
+                  </td>
                   <td data-label="Name">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
+                        placeholder="Category name"
                         [(ngModel)]="category.name"
                         [disabled]="!!category.pendingDelete"
                       />
@@ -283,6 +401,7 @@
                         matInput
                         type="number"
                         min="0"
+                        placeholder="Monthly budget"
                         [(ngModel)]="category.monthlyBudget"
                         [disabled]="!!category.pendingDelete"
                       />
@@ -303,9 +422,19 @@
                       mat-icon-button
                       type="button"
                       [attr.aria-label]="
-                        category.pendingDelete ? 'Keep category' : 'Delete category'
+                        category.pendingDelete
+                          ? 'Keep category'
+                          : category.isNew
+                            ? 'Discard new category'
+                            : 'Delete category'
                       "
-                      [matTooltip]="category.pendingDelete ? 'Keep row' : 'Mark for delete'"
+                      [matTooltip]="
+                        category.pendingDelete
+                          ? 'Keep row'
+                          : category.isNew
+                            ? 'Discard row'
+                            : 'Mark for delete'
+                      "
                       (click)="toggleDelete(category)"
                     >
                       <mat-icon>{{ category.pendingDelete ? 'undo' : 'delete' }}</mat-icon>
@@ -342,6 +471,7 @@
                 <th>F</th>
                 <th>G</th>
                 <th>H</th>
+                <th>I</th>
                 <th></th>
               </tr>
               <tr>
@@ -352,24 +482,37 @@
                 <th>Outstanding</th>
                 <th>Rate</th>
                 <th>EMI</th>
-                <th>Start</th>
+                <th>Start *</th>
+                <th>End *</th>
                 <th>Notes</th>
                 <th aria-label="Actions"></th>
               </tr>
             </thead>
             <tbody>
               @for (loan of loans; track loan.id; let rowIndex = $index) {
-                <tr [class.marked-delete]="loan.pendingDelete">
-                  <td class="row-number" data-label="Row">{{ rowIndex + 1 }}</td>
+                <tr [class.marked-delete]="loan.pendingDelete" [class.new-row]="loan.isNew">
+                  <td class="row-number" data-label="Row">
+                    @if (loan.isNew) {
+                      <span class="row-status">New</span>
+                    } @else {
+                      {{ rowIndex + 1 }}
+                    }
+                  </td>
                   <td data-label="Lender">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
-                      <input matInput [(ngModel)]="loan.lender" [disabled]="!!loan.pendingDelete" />
+                      <input
+                        matInput
+                        placeholder="Lender"
+                        [(ngModel)]="loan.lender"
+                        [disabled]="!!loan.pendingDelete"
+                      />
                     </mat-form-field>
                   </td>
                   <td data-label="Type">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
+                        placeholder="Loan type"
                         [(ngModel)]="loan.loanType"
                         [disabled]="!!loan.pendingDelete"
                       />
@@ -381,6 +524,7 @@
                         matInput
                         type="number"
                         min="0"
+                        placeholder="Principal"
                         [(ngModel)]="loan.principal"
                         [disabled]="!!loan.pendingDelete"
                       />
@@ -392,6 +536,7 @@
                         matInput
                         type="number"
                         min="0"
+                        placeholder="Outstanding"
                         [(ngModel)]="loan.outstanding"
                         [disabled]="!!loan.pendingDelete"
                       />
@@ -403,6 +548,7 @@
                         matInput
                         type="number"
                         min="0"
+                        placeholder="Rate"
                         [(ngModel)]="loan.annualRate"
                         [disabled]="!!loan.pendingDelete"
                       />
@@ -414,32 +560,74 @@
                         matInput
                         type="number"
                         min="0"
+                        placeholder="EMI"
                         [(ngModel)]="loan.emi"
                         [disabled]="!!loan.pendingDelete"
                       />
                     </mat-form-field>
                   </td>
-                  <td data-label="Start">
+                  <td data-label="Start *">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
-                        type="date"
+                        [matDatepicker]="loanStartPicker"
+                        placeholder="Start date"
+                        required
                         [(ngModel)]="loan.startDate"
                         [disabled]="!!loan.pendingDelete"
                       />
+                      <mat-datepicker-toggle
+                        matIconSuffix
+                        [for]="loanStartPicker"
+                      ></mat-datepicker-toggle>
+                      <mat-datepicker #loanStartPicker></mat-datepicker>
+                    </mat-form-field>
+                  </td>
+                  <td data-label="End *">
+                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                      <input
+                        matInput
+                        [matDatepicker]="loanEndPicker"
+                        placeholder="End date"
+                        required
+                        [(ngModel)]="loan.endDate"
+                        [disabled]="!!loan.pendingDelete"
+                      />
+                      <mat-datepicker-toggle
+                        matIconSuffix
+                        [for]="loanEndPicker"
+                      ></mat-datepicker-toggle>
+                      <mat-datepicker #loanEndPicker></mat-datepicker>
                     </mat-form-field>
                   </td>
                   <td data-label="Notes">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
-                      <input matInput [(ngModel)]="loan.notes" [disabled]="!!loan.pendingDelete" />
+                      <input
+                        matInput
+                        placeholder="Notes"
+                        [(ngModel)]="loan.notes"
+                        [disabled]="!!loan.pendingDelete"
+                      />
                     </mat-form-field>
                   </td>
                   <td data-label="Actions">
                     <button
                       mat-icon-button
                       type="button"
-                      [attr.aria-label]="loan.pendingDelete ? 'Keep loan' : 'Delete loan'"
-                      [matTooltip]="loan.pendingDelete ? 'Keep row' : 'Mark for delete'"
+                      [attr.aria-label]="
+                        loan.pendingDelete
+                          ? 'Keep loan'
+                          : loan.isNew
+                            ? 'Discard new loan'
+                            : 'Delete loan'
+                      "
+                      [matTooltip]="
+                        loan.pendingDelete
+                          ? 'Keep row'
+                          : loan.isNew
+                            ? 'Discard row'
+                            : 'Mark for delete'
+                      "
                       (click)="toggleDelete(loan)"
                     >
                       <mat-icon>{{ loan.pendingDelete ? 'undo' : 'delete' }}</mat-icon>
@@ -453,18 +641,18 @@
       </mat-tab>
     }
 
-    @if (showMonthlyTables) {
-      <mat-tab label="Fixed Items">
+    @if (showPlanningTables) {
+      <mat-tab label="Investments">
         <div class="bulk-toolbar">
-          <strong>Fixed Items</strong>
-          <button mat-flat-button color="primary" type="button" (click)="addTemplate()">
+          <strong>Investments</strong>
+          <button mat-flat-button color="primary" type="button" (click)="addInvestment()">
             <mat-icon>add</mat-icon>
             Add row
           </button>
         </div>
 
         <div class="table-wrap">
-          <table class="bulk-table">
+          <table class="bulk-table wide-table">
             <thead>
               <tr class="sheet-letters" aria-hidden="true">
                 <th class="corner-cell"></th>
@@ -472,40 +660,44 @@
                 <th>B</th>
                 <th>C</th>
                 <th>D</th>
+                <th>E</th>
+                <th>F</th>
+                <th>G</th>
                 <th></th>
               </tr>
               <tr>
                 <th class="row-number-col">#</th>
                 <th>Name</th>
-                <th>Category</th>
                 <th>Amount</th>
-                <th>Type</th>
+                <th>Frequency</th>
+                <th>Date</th>
+                <th>Start optional</th>
+                <th>End optional</th>
+                <th>Notes</th>
                 <th aria-label="Actions"></th>
               </tr>
             </thead>
             <tbody>
-              @for (template of templates; track template.id; let rowIndex = $index) {
-                <tr [class.marked-delete]="template.pendingDelete">
-                  <td class="row-number" data-label="Row">{{ rowIndex + 1 }}</td>
+              @for (investment of investments; track investment.id; let rowIndex = $index) {
+                <tr
+                  [class.marked-delete]="investment.pendingDelete"
+                  [class.new-row]="investment.isNew"
+                >
+                  <td class="row-number" data-label="Row">
+                    @if (investment.isNew) {
+                      <span class="row-status">New</span>
+                    } @else {
+                      {{ rowIndex + 1 }}
+                    }
+                  </td>
                   <td data-label="Name">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <input
                         matInput
-                        [(ngModel)]="template.name"
-                        [disabled]="!!template.pendingDelete"
+                        placeholder="Investment"
+                        [(ngModel)]="investment.name"
+                        [disabled]="!!investment.pendingDelete"
                       />
-                    </mat-form-field>
-                  </td>
-                  <td data-label="Category">
-                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
-                      <mat-select
-                        [(ngModel)]="template.categoryId"
-                        [disabled]="!!template.pendingDelete"
-                      >
-                        @for (category of categories; track category.id) {
-                          <mat-option [value]="category.id">{{ category.name }}</mat-option>
-                        }
-                      </mat-select>
                     </mat-form-field>
                   </td>
                   <td data-label="Amount">
@@ -514,18 +706,81 @@
                         matInput
                         type="number"
                         min="0"
-                        [(ngModel)]="template.amount"
-                        [disabled]="!!template.pendingDelete"
+                        placeholder="Amount"
+                        [(ngModel)]="investment.amount"
+                        [disabled]="!!investment.pendingDelete"
                       />
                     </mat-form-field>
                   </td>
-                  <td data-label="Type">
+                  <td data-label="Frequency">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
-                      <mat-select [(ngModel)]="template.type" [disabled]="!!template.pendingDelete">
-                        @for (type of fixedTypes; track type) {
-                          <mat-option [value]="type">{{ type }}</mat-option>
+                      <mat-select
+                        placeholder="Frequency"
+                        [(ngModel)]="investment.frequency"
+                        [disabled]="!!investment.pendingDelete"
+                      >
+                        @for (frequency of investmentFrequencies; track frequency) {
+                          <mat-option [value]="frequency">{{ frequency }}</mat-option>
                         }
                       </mat-select>
+                    </mat-form-field>
+                  </td>
+                  <td data-label="Date">
+                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                      <input
+                        matInput
+                        [matDatepicker]="investmentDatePicker"
+                        placeholder="Date"
+                        [(ngModel)]="investment.date"
+                        [disabled]="!!investment.pendingDelete"
+                      />
+                      <mat-datepicker-toggle
+                        matIconSuffix
+                        [for]="investmentDatePicker"
+                      ></mat-datepicker-toggle>
+                      <mat-datepicker #investmentDatePicker></mat-datepicker>
+                    </mat-form-field>
+                  </td>
+                  <td data-label="Start optional">
+                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                      <input
+                        matInput
+                        [matDatepicker]="investmentStartPicker"
+                        placeholder="Start date"
+                        [(ngModel)]="investment.startDate"
+                        [disabled]="!!investment.pendingDelete"
+                      />
+                      <mat-datepicker-toggle
+                        matIconSuffix
+                        [for]="investmentStartPicker"
+                      ></mat-datepicker-toggle>
+                      <mat-datepicker #investmentStartPicker></mat-datepicker>
+                    </mat-form-field>
+                  </td>
+                  <td data-label="End optional">
+                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                      <input
+                        matInput
+                        [matDatepicker]="investmentEndPicker"
+                        placeholder="End date"
+                        [(ngModel)]="investment.endDate"
+                        [disabled]="!!investment.pendingDelete"
+                      />
+                      <mat-datepicker-toggle
+                        matIconSuffix
+                        [for]="investmentEndPicker"
+                      ></mat-datepicker-toggle>
+                      <mat-datepicker #investmentEndPicker></mat-datepicker>
+                    </mat-form-field>
+                  </td>
+                  <td data-label="Notes">
+                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                      <input
+                        matInput
+                        placeholder="Notes"
+                        [(ngModel)]="investment.notes"
+                        [disabled]="!!investment.pendingDelete"
+                      />
                     </mat-form-field>
                   </td>
                   <td data-label="Actions">
@@ -533,12 +788,22 @@
                       mat-icon-button
                       type="button"
                       [attr.aria-label]="
-                        template.pendingDelete ? 'Keep fixed item' : 'Delete fixed item'
+                        investment.pendingDelete
+                          ? 'Keep investment'
+                          : investment.isNew
+                            ? 'Discard new investment'
+                            : 'Delete investment'
                       "
-                      [matTooltip]="template.pendingDelete ? 'Keep row' : 'Mark for delete'"
-                      (click)="toggleDelete(template)"
+                      [matTooltip]="
+                        investment.pendingDelete
+                          ? 'Keep row'
+                          : investment.isNew
+                            ? 'Discard row'
+                            : 'Mark for delete'
+                      "
+                      (click)="toggleDelete(investment)"
                     >
-                      <mat-icon>{{ template.pendingDelete ? 'undo' : 'delete' }}</mat-icon>
+                      <mat-icon>{{ investment.pendingDelete ? 'undo' : 'delete' }}</mat-icon>
                     </button>
                   </td>
                 </tr>
@@ -552,6 +817,9 @@
 </mat-dialog-content>
 
 <mat-dialog-actions class="sheet-actions" align="end">
+  @if (validationError) {
+    <span class="dialog-error" role="alert">{{ validationError }}</span>
+  }
   <button mat-stroked-button type="button" mat-dialog-close>
     <mat-icon>close</mat-icon>
     Cancel

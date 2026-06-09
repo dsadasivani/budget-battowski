@@ -8,6 +8,7 @@ import type {
   BudgetRecord,
   ExpenseEntry,
   ExpenseTemplate,
+  InvestmentEntry,
 } from './budget.models';
 
 const WORKSPACE_COLLECTION = 'budgetWorkspaces';
@@ -16,6 +17,22 @@ type FirestoreRecord<T extends BudgetRecord> = Omit<T, 'id'> & {
   createdAt?: unknown;
   updatedAt?: unknown;
 };
+
+function stripUndefined<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripUndefined(item)) as T;
+  }
+
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, entryValue]) => entryValue !== undefined)
+      .map(([key, entryValue]) => [key, stripUndefined(entryValue)]),
+  ) as T;
+}
 
 export class BudgetFirestoreRepository {
   private db?: Firestore;
@@ -64,10 +81,9 @@ export class BudgetFirestoreRepository {
     await setDoc(
       doc(db, WORKSPACE_COLLECTION, this.workspaceId, collectionName, id),
       {
-        ...data,
+        ...stripUndefined(data),
         updatedAt: serverTimestamp(),
       },
-      { merge: true },
     );
   }
 
@@ -89,10 +105,9 @@ export class BudgetFirestoreRepository {
       batch.set(
         doc(db, WORKSPACE_COLLECTION, this.workspaceId, collectionName, id),
         {
-          ...data,
+          ...stripUndefined(data),
           updatedAt: timestamp,
         },
-        { merge: true },
       );
     }
 
@@ -150,7 +165,17 @@ export class BudgetFirestoreRepository {
       if (collectionName === 'expenses') {
         const leftExpense = left as ExpenseEntry;
         const rightExpense = right as ExpenseEntry;
-        return `${rightExpense.month}-${rightExpense.name}`.localeCompare(`${leftExpense.month}-${leftExpense.name}`);
+        return `${rightExpense.date ?? rightExpense.month}-${rightExpense.name}`.localeCompare(
+          `${leftExpense.date ?? leftExpense.month}-${leftExpense.name}`,
+        );
+      }
+
+      if (collectionName === 'investments') {
+        const leftInvestment = left as InvestmentEntry;
+        const rightInvestment = right as InvestmentEntry;
+        return `${rightInvestment.date ?? rightInvestment.startDate ?? ''}-${rightInvestment.name}`.localeCompare(
+          `${leftInvestment.date ?? leftInvestment.startDate ?? ''}-${leftInvestment.name}`,
+        );
       }
 
       if (collectionName === 'categories') {

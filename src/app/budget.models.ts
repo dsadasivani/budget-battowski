@@ -1,5 +1,6 @@
-export type ExpenseType = 'recurring' | 'one-time' | 'investment';
+export type ExpenseType = 'recurring' | 'one-time';
 export type Cadence = 'monthly' | 'annual' | 'variable';
+export type InvestmentFrequency = 'recurring' | 'one-time';
 
 export interface IncomeSource {
   id: string;
@@ -7,6 +8,10 @@ export interface IncomeSource {
   amount: number;
   cadence: Cadence;
   notes: string;
+  month?: string;
+  createdDate?: string;
+  startDate?: string;
+  endDate?: string;
 }
 
 export interface BudgetCategory {
@@ -21,18 +26,34 @@ export interface ExpenseTemplate {
   name: string;
   categoryId: string;
   amount: number;
-  type: Exclude<ExpenseType, 'one-time'>;
+  type: 'recurring';
+  createdDate?: string;
+  startDate?: string;
+  endDate?: string;
 }
 
 export interface ExpenseEntry {
   id: string;
   month: string;
+  date?: string;
   name: string;
   categoryId: string;
   amount: number;
   type: ExpenseType;
   note: string;
   templateId?: string;
+}
+
+export interface InvestmentEntry {
+  id: string;
+  name: string;
+  amount: number;
+  frequency: InvestmentFrequency;
+  date?: string;
+  startDate?: string;
+  endDate?: string;
+  notes: string;
+  createdDate?: string;
 }
 
 export interface Loan {
@@ -44,6 +65,7 @@ export interface Loan {
   annualRate: number;
   emi: number;
   startDate: string;
+  endDate: string;
   notes: string;
 }
 
@@ -52,6 +74,7 @@ export interface BudgetDataMap {
   incomes: IncomeSource;
   templates: ExpenseTemplate;
   expenses: ExpenseEntry;
+  investments: InvestmentEntry;
   loans: Loan;
 }
 

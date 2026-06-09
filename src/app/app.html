@@ -45,7 +45,20 @@
   </mat-toolbar>
 </header>
 
-@if (firebase.mode === 'firebase' && !workspaceId()) {
+@if (showGlobalLoader()) {
+  <main class="global-loader-shell" id="main-content" aria-live="polite" aria-busy="true">
+    <section class="global-loader-panel" aria-label="Loading Budget Battowski">
+      <div class="loader-mark" aria-hidden="true">
+        <span></span>
+      </div>
+      <div class="loader-copy">
+        <p class="eyebrow">Budget Battowski</p>
+        <h1>Checking your session</h1>
+        <p>Loading your private workspace.</p>
+      </div>
+    </section>
+  </main>
+} @else if (firebase.mode === 'firebase' && !workspaceId()) {
   <main class="login-shell" id="main-content">
     <section class="login-panel" aria-labelledby="login-title">
       <div class="login-icon-row" aria-hidden="true">
@@ -71,7 +84,7 @@
         </article>
         <article>
           <mat-icon aria-hidden="true">event_repeat</mat-icon>
-          <strong>Fixed items ready</strong>
+          <strong>Recurring plans ready</strong>
           <span>Reuse rent, bills, SIPs, and EMIs without rebuilding your month.</span>
         </article>
         <article>
@@ -154,15 +167,144 @@
 
       <mat-form-field appearance="outline" subscriptSizing="dynamic">
         <mat-label>Expense month</mat-label>
-        <mat-select
-          [value]="selectedMonth()"
-          (selectionChange)="setMonth($event.value)"
+        <input
+          matInput
+          readonly
+          [value]="monthLabel()"
+          [matMenuTriggerFor]="expenseMonthMenu"
+          #expenseMonthTrigger="matMenuTrigger"
           aria-label="Select expense month"
+          (menuOpened)="openMonthPicker()"
+          (menuClosed)="closeMonthPicker()"
+        />
+        <button
+          mat-icon-button
+          matIconSuffix
+          type="button"
+          aria-label="Open expense month picker"
+          matTooltip="Open expense month picker"
+          (click)="expenseMonthTrigger.openMenu()"
         >
-          @for (month of monthOptions(); track month) {
-            <mat-option [value]="month">{{ formatMonth(month) }}</mat-option>
+          <mat-icon aria-hidden="true">calendar_month</mat-icon>
+        </button>
+        <mat-menu
+          #expenseMonthMenu="matMenu"
+          class="month-picker-menu"
+          xPosition="after"
+          [overlapTrigger]="false"
+        >
+          @if (monthPickerOpen()) {
+            <div
+              class="month-picker-panel"
+              style="display: grid; width: 276px; gap: 8px; padding: 10px; box-sizing: border-box"
+              aria-label="Expense month picker"
+            >
+              <header
+                style="display: grid; grid-template-columns: 34px minmax(0, 1fr) 34px; align-items: center"
+              >
+                <button
+                  mat-icon-button
+                  type="button"
+                  style="width: 34px; height: 34px; padding: 5px"
+                  [attr.aria-label]="
+                    monthPickerView() === 'years' ? 'Previous year page' : 'Previous year'
+                  "
+                  [matTooltip]="
+                    monthPickerView() === 'years' ? 'Previous year page' : 'Previous year'
+                  "
+                  (click)="shiftMonthPicker($event, -1)"
+                >
+                  <mat-icon aria-hidden="true">chevron_left</mat-icon>
+                </button>
+
+                <button
+                  class="month-picker-title"
+                  mat-button
+                  type="button"
+                  aria-label="Choose year"
+                  matTooltip="Choose year"
+                  (click)="showYearPicker($event)"
+                  style="height: 34px; min-width: 0; padding: 0 8px; font-weight: 800"
+                >
+                  @if (monthPickerView() === 'years') {
+                    {{ pickerYearRangeLabel() }}
+                  } @else {
+                    {{ pickerYear() }}
+                  }
+                  <mat-icon aria-hidden="true">arrow_drop_down</mat-icon>
+                </button>
+
+                <button
+                  mat-icon-button
+                  type="button"
+                  style="width: 34px; height: 34px; padding: 5px"
+                  [attr.aria-label]="
+                    monthPickerView() === 'years' ? 'Next year page' : 'Next year'
+                  "
+                  [matTooltip]="monthPickerView() === 'years' ? 'Next year page' : 'Next year'"
+                  (click)="shiftMonthPicker($event, 1)"
+                >
+                  <mat-icon aria-hidden="true">chevron_right</mat-icon>
+                </button>
+              </header>
+
+              @if (monthPickerView() === 'years') {
+                <div
+                  class="year-grid"
+                  style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px"
+                  aria-label="Choose expense year"
+                >
+                  @for (year of pickerYears(); track year) {
+                    <button
+                      type="button"
+                      [class.selected]="year === pickerYear()"
+                      [attr.aria-label]="'Select ' + year"
+                      (click)="selectPickerYear($event, year)"
+                      [style.background]="year === pickerYear() ? '#155e75' : '#f8fafc'"
+                      [style.color]="year === pickerYear() ? '#fff' : '#155e75'"
+                      style="height: 34px; min-width: 0; padding: 0; border: 0; border-radius: 8px; cursor: pointer; font: inherit; font-weight: 800"
+                    >
+                      {{ year }}
+                    </button>
+                  }
+                </div>
+              } @else {
+                <div
+                  class="month-grid"
+                  style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px"
+                  aria-label="Choose expense month"
+                >
+                  @for (month of monthNames; track month; let monthIndex = $index) {
+                    <button
+                      type="button"
+                      [class.selected]="
+                        pickerYear() === selectedMonthParts().year &&
+                        monthIndex === selectedMonthParts().monthIndex
+                      "
+                      [attr.aria-label]="'Select ' + month + ' ' + pickerYear()"
+                      (click)="selectPickerMonth(monthIndex, expenseMonthTrigger)"
+                      [style.background]="
+                        pickerYear() === selectedMonthParts().year &&
+                        monthIndex === selectedMonthParts().monthIndex
+                          ? '#155e75'
+                          : '#f8fafc'
+                      "
+                      [style.color]="
+                        pickerYear() === selectedMonthParts().year &&
+                        monthIndex === selectedMonthParts().monthIndex
+                          ? '#fff'
+                          : '#155e75'
+                      "
+                      style="height: 34px; min-width: 0; padding: 0; border: 0; border-radius: 8px; cursor: pointer; font: inherit; font-weight: 800"
+                    >
+                      {{ month }}
+                    </button>
+                  }
+                </div>
+              }
+            </div>
           }
-        </mat-select>
+        </mat-menu>
       </mat-form-field>
 
       <button
@@ -175,21 +317,11 @@
         <mat-icon aria-hidden="true">chevron_right</mat-icon>
       </button>
 
-      <button
-        mat-flat-button
-        type="button"
-        matTooltip="Copies saved recurring expenses and investments into the selected month. Existing copied items are not duplicated."
-        (click)="prefillMonth()"
-        [disabled]="!canWrite()"
-      >
-        <mat-icon aria-hidden="true">auto_awesome</mat-icon>
-        Prefill fixed items
-      </button>
     </div>
 
     <div class="metric-grid" aria-label="Monthly financial summary">
       @if (showDashboardSkeleton()) {
-        @for (item of [1, 2, 3, 4]; track item) {
+        @for (item of [1, 2, 3, 4, 5]; track item) {
           <div class="metric-card skeleton-card" aria-hidden="true">
             <span class="skeleton-line short"></span>
             <span class="skeleton-line value"></span>
@@ -200,13 +332,19 @@
         <article class="metric-card hero-metric">
           <span>Monthly income</span>
           <strong>{{ monthlyIncome() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</strong>
-          <small>{{ incomes().length }} saved income sources</small>
+          <small>{{ activeIncomeSources().length }} active income sources</small>
         </article>
 
         <article class="metric-card">
           <span>Total outflow</span>
           <strong>{{ outflowTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</strong>
           <small>{{ selectedEntries().length }} entries this month</small>
+        </article>
+
+        <article class="metric-card">
+          <span>Investments</span>
+          <strong>{{ investmentTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</strong>
+          <small>{{ selectedInvestments().length }} active investments</small>
         </article>
 
         <article class="metric-card" [class.warning]="remainingFunds() < 0">
@@ -275,13 +413,6 @@
                     <p>One-time</p>
                     <strong>{{
                       oneTimeTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
-                    }}</strong>
-                  </div>
-                  <div>
-                    <span class="legend-dot investment" aria-hidden="true"></span>
-                    <p>Investments</p>
-                    <strong>{{
-                      investmentTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
                     }}</strong>
                   </div>
                 </div>
@@ -386,12 +517,12 @@
         <mat-card class="panel action-panel">
           <mat-card-header>
             <mat-card-title>Monthly Data</mat-card-title>
-            <mat-card-subtitle>Expenses and fixed items for month-end entry</mat-card-subtitle>
+            <mat-card-subtitle>Expenses for month-end entry</mat-card-subtitle>
           </mat-card-header>
           <mat-card-content class="management-panel">
             <header class="mobile-card-heading">
               <strong>Monthly Data</strong>
-              <small>Expenses and fixed items for month-end entry</small>
+              <small>Expenses for month-end entry</small>
             </header>
             <button
               mat-flat-button
@@ -402,66 +533,23 @@
               <mat-icon aria-hidden="true">edit_note</mat-icon>
               Edit monthly tables
             </button>
-
-            <div class="section-heading flush">
-              <div>
-                <strong>Fixed Items</strong>
-                <small>Recurring expenses and investments used by prefill</small>
-              </div>
-              <button
-                mat-icon-button
-                type="button"
-                aria-label="Explain fixed items"
-                matTooltip="Save rent, bills, SIPs, EMIs, or other repeated items here. Prefill copies them into the selected month."
-              >
-                <mat-icon aria-hidden="true">help</mat-icon>
-              </button>
-            </div>
-
-            <div class="fixed-list">
-              @for (item of templates(); track item.id) {
-                <article class="data-row">
-                  <mat-icon aria-hidden="true">{{
-                    item.type === 'investment' ? 'trending_up' : 'event_repeat'
-                  }}</mat-icon>
-                  <div>
-                    <strong>{{ item.name }}</strong>
-                    <small>{{ categoryName(item.categoryId) }} &middot; {{ item.type }}</small>
-                  </div>
-                  <span>{{ item.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
-                </article>
-              } @empty {
-                <div class="empty-state">
-                  <mat-icon aria-hidden="true">event_repeat</mat-icon>
-                  <span>No fixed items saved</span>
-                </div>
-              }
-            </div>
           </mat-card-content>
         </mat-card>
 
         <mat-card class="panel entries-panel">
           <mat-card-header>
             <mat-card-title>{{ monthLabel() }} Entries</mat-card-title>
-            <mat-card-subtitle
-              >Recurring and investment rows can be prefilled once per month</mat-card-subtitle
-            >
+            <mat-card-subtitle>Recurring and active EMI rows are added automatically</mat-card-subtitle>
           </mat-card-header>
           <mat-card-content class="entry-list">
             <header class="mobile-card-heading">
               <strong>{{ monthLabel() }} Entries</strong>
-              <small>Recurring and investment rows can be prefilled once per month</small>
+              <small>Recurring and active EMI rows are added automatically</small>
             </header>
             @for (expense of selectedEntries(); track expense.id) {
               <article class="data-row">
                 <mat-icon aria-hidden="true">
-                  {{
-                    expense.type === 'investment'
-                      ? 'trending_up'
-                      : expense.type === 'recurring'
-                        ? 'event_repeat'
-                        : 'receipt_long'
-                  }}
+                  {{ expense.type === 'recurring' ? 'event_repeat' : 'receipt_long' }}
                 </mat-icon>
                 <div>
                   <strong>{{ expense.name }}</strong>
@@ -503,16 +591,53 @@
             </button>
 
             <div class="compact-list">
-              @for (income of incomes(); track income.id) {
+              @for (income of activeIncomeSources(); track income.id) {
                 <article>
                   <strong>{{ income.source }}</strong>
                   <span>{{ income.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
-                  <small>{{ income.cadence }} &middot; {{ income.notes }}</small>
+                  <small>{{ income.month || income.cadence }} &middot; {{ income.notes }}</small>
                 </article>
               } @empty {
                 <div class="empty-state">
                   <mat-icon aria-hidden="true">payments</mat-icon>
                   <span>No income sources saved</span>
+                </div>
+              }
+            </div>
+          </mat-card-content>
+        </mat-card>
+
+        <mat-card class="panel action-panel">
+          <mat-card-header>
+            <mat-card-title>Investments</mat-card-title>
+            <mat-card-subtitle>One-time and recurring investment plans</mat-card-subtitle>
+          </mat-card-header>
+          <mat-card-content class="management-panel">
+            <header class="mobile-card-heading">
+              <strong>Investments</strong>
+              <small>One-time and recurring investment plans</small>
+            </header>
+            <button
+              mat-flat-button
+              type="button"
+              (click)="openBulkEditor('planning', 2)"
+              [disabled]="!canWrite()"
+            >
+              <mat-icon aria-hidden="true">edit_note</mat-icon>
+              Edit investments
+            </button>
+
+            <div class="compact-list">
+              @for (item of investments(); track item.id) {
+                <article>
+                  <strong>{{ item.name }}</strong>
+                  <span>{{ item.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
+                  <small>{{ item.frequency }} &middot; {{ item.notes }}</small>
+                </article>
+              } @empty {
+                <div class="empty-state">
+                  <mat-icon aria-hidden="true">trending_up</mat-icon>
+                  <span>No investments saved</span>
                 </div>
               }
             </div>

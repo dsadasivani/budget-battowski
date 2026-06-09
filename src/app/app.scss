@@ -184,6 +184,68 @@
   }
 }
 
+.global-loader-shell {
+  display: grid;
+  width: min(1120px, calc(100% - 32px));
+  min-height: calc(100dvh - 77px);
+  margin: 0 auto;
+  padding: 24px 0 56px;
+  place-items: center;
+}
+
+.global-loader-panel {
+  display: grid;
+  width: min(520px, 100%);
+  justify-items: center;
+  gap: 18px;
+  padding: 28px;
+  text-align: center;
+}
+
+.loader-mark {
+  display: grid;
+  width: 62px;
+  height: 62px;
+  place-items: center;
+  border: 1px solid rgba(21, 94, 117, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.08);
+
+  span {
+    width: 30px;
+    height: 30px;
+    border: 3px solid rgba(21, 94, 117, 0.18);
+    border-top-color: var(--bb-teal);
+    border-radius: 50%;
+    animation: loader-spin 0.85s linear infinite;
+  }
+}
+
+.loader-copy {
+  display: grid;
+  gap: 8px;
+
+  h1,
+  p {
+    margin: 0;
+  }
+
+  h1 {
+    color: #07111f;
+    font-size: 1.9rem;
+    font-weight: 800;
+    line-height: 1.08;
+  }
+
+  p:not(.eyebrow) {
+    color: var(--bb-muted);
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1.45;
+  }
+}
+
 .login-shell {
   display: grid;
   width: min(1120px, calc(100% - 32px));
@@ -388,7 +450,7 @@ h1 {
 
 .month-actions {
   display: grid;
-  grid-template-columns: 44px 204px 44px auto;
+  grid-template-columns: 44px 204px 44px;
   gap: 10px;
   align-items: center;
   align-self: start;
@@ -405,7 +467,7 @@ h1 {
 .metric-grid {
   display: grid;
   grid-column: 1 / -1;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 16px;
 }
 
@@ -511,6 +573,23 @@ h1 {
   }
 }
 
+:host ::ng-deep .month-picker-menu {
+  width: 276px;
+  max-width: min(276px, calc(100vw - 32px));
+  overflow: hidden;
+
+  .mat-mdc-menu-content {
+    overflow: hidden;
+    padding: 0;
+  }
+
+  .month-grid .selected,
+  .year-grid .selected {
+    background: var(--bb-teal) !important;
+    color: #fff;
+  }
+}
+
 .dashboard-grid,
 .work-grid {
   display: grid;
@@ -606,7 +685,6 @@ h1 {
 .ratio-stack,
 .trend-chart,
 .compact-list,
-.fixed-list,
 .category-list {
   display: grid;
   gap: 14px;
@@ -1021,6 +1099,12 @@ mat-progress-bar {
   }
 }
 
+@keyframes loader-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -1068,6 +1152,7 @@ mat-progress-bar {
 @media (max-width: 780px) {
   .topbar,
   .shell,
+  .global-loader-shell,
   .login-shell {
     width: min(calc(100% - 20px), 1500px);
   }
@@ -1085,6 +1170,35 @@ mat-progress-bar {
     overflow-x: hidden;
     min-height: calc(100dvh - 65px);
     padding: 4px 0 16px;
+  }
+
+  .global-loader-shell {
+    min-height: calc(100dvh - 65px);
+    padding: 8px 0 24px;
+  }
+
+  .global-loader-panel {
+    gap: 14px;
+    padding: 18px 0;
+  }
+
+  .loader-mark {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+
+    span {
+      width: 26px;
+      height: 26px;
+    }
+  }
+
+  .loader-copy h1 {
+    font-size: 1.5rem;
+  }
+
+  .loader-copy p:not(.eyebrow) {
+    font-size: 0.82rem;
   }
 
   .login-panel {
@@ -1394,7 +1508,6 @@ mat-progress-bar {
   .ratio-stack,
   .trend-chart,
   .compact-list,
-  .fixed-list,
   .category-list {
     gap: 10px;
   }
@@ -1456,6 +1569,7 @@ mat-progress-bar {
 @media (max-width: 460px) {
   .topbar,
   .shell,
+  .global-loader-shell,
   .login-shell {
     width: min(calc(100% - 14px), 1500px);
   }

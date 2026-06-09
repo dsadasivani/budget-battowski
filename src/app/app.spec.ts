@@ -24,6 +24,29 @@ describe('App', () => {
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.querySelector('mat-toolbar')?.textContent).toContain('Budget Battowski');
   });
+
+  it('should carry the latest monthly income into future months', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      incomes: { set: (records: unknown[]) => void };
+      monthlyIncome: () => number;
+      selectedMonth: { set: (month: string) => void };
+    };
+
+    app.incomes.set([
+      {
+        id: 'income-salary:2026-05',
+        source: 'Salary',
+        amount: 120000,
+        cadence: 'monthly',
+        notes: '',
+        month: '2026-05',
+      },
+    ]);
+
+    app.selectedMonth.set('2026-06');
+    expect(app.monthlyIncome()).toBe(120000);
+  });
 });
 
 describe('BulkEditorDialog', () => {
@@ -41,18 +64,31 @@ describe('BulkEditorDialog', () => {
         categoryId: 'category-home',
         amount: 25000,
         type: 'recurring',
+        endDate: '2026-12-31',
       },
     ],
     expenses: [
       {
         id: 'expense-rent',
         month: '2026-05',
+        date: '2026-05-01',
         name: 'Rent',
         categoryId: 'category-home',
         amount: 25000,
         type: 'recurring',
         note: 'Prepopulated from recurring plan',
         templateId: 'fixed-rent',
+      },
+    ],
+    investments: [
+      {
+        id: 'investment-sip',
+        name: 'Index SIP',
+        amount: 15000,
+        frequency: 'recurring',
+        date: '2026-05-01',
+        startDate: '2026-05-01',
+        notes: '',
       },
     ],
     loans: [
@@ -65,6 +101,7 @@ describe('BulkEditorDialog', () => {
         annualRate: 8.7,
         emi: 38000,
         startDate: '2024-01-01',
+        endDate: '2036-12-31',
         notes: '',
       },
     ],
@@ -80,7 +117,7 @@ describe('BulkEditorDialog', () => {
     }).compileComponents();
   });
 
-  it('should render the scoped monthly editor tabs', async () => {
+  it('should render only expenses in the scoped monthly editor', async () => {
     const fixture = TestBed.createComponent(BulkEditorDialog);
     fixture.detectChanges();
     await fixture.whenStable();
@@ -88,8 +125,26 @@ describe('BulkEditorDialog', () => {
 
     expect(compiled.textContent).toContain('Monthly Entry Editor');
     expect(compiled.textContent).toContain('Expenses');
-    expect(compiled.textContent).toContain('Fixed Items');
+    expect(compiled.textContent).not.toContain('Recurring Expenses');
     expect(compiled.textContent).not.toContain('Income');
+    expect(compiled.textContent).not.toContain('Loans');
+  });
+
+  it('should render investments in the scoped planning editor', async () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: { ...dialogData, scope: 'planning', initialTabIndex: 2 },
+    });
+
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    expect(compiled.textContent).toContain('Income & Budget Editor');
+    expect(compiled.textContent).toContain('Income');
+    expect(compiled.textContent).toContain('Categories');
+    expect(compiled.textContent).toContain('Investments');
+    expect(compiled.textContent).not.toContain('Recurring Plans');
     expect(compiled.textContent).not.toContain('Loans');
   });
 });

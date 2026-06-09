@@ -112,6 +112,18 @@
     --mdc-icon-button-state-layer-size: 34px;
     --mdc-icon-button-icon-size: 19px;
   }
+
+  .mat-datepicker-toggle {
+    color: var(--sheet-muted);
+  }
+
+  .mat-datepicker-toggle .mat-mdc-icon-button {
+    --mdc-icon-button-state-layer-size: 30px;
+    --mdc-icon-button-icon-size: 17px;
+    width: 30px;
+    height: 30px;
+    padding: 6px;
+  }
 }
 
 .dialog-title {
@@ -330,6 +342,15 @@
     background: #f2fbf6;
   }
 
+  tbody tr.new-row,
+  tbody tr.new-row:nth-child(even) {
+    background: #f0fdf4;
+  }
+
+  tbody tr.new-row:hover {
+    background: #e8f8ee;
+  }
+
   td {
     height: 42px;
     padding: 0;
@@ -345,9 +366,23 @@
 
   td:last-child,
   th:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 6;
     width: 52px;
     min-width: 52px;
+    background: inherit;
+    box-shadow: -8px 0 14px rgba(16, 24, 40, 0.06);
     text-align: center;
+  }
+
+  th:last-child {
+    z-index: 9;
+    background: var(--sheet-header);
+  }
+
+  thead tr:first-child th:last-child {
+    background: #e9eef5;
   }
 
   td:last-child {
@@ -385,6 +420,24 @@
   font-size: 0.78rem;
   font-weight: 900;
   user-select: none;
+}
+
+.new-row .row-number {
+  background: #dff7e8;
+  color: var(--sheet-green-dark);
+}
+
+.row-status {
+  display: inline-grid;
+  min-width: 30px;
+  min-height: 20px;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(16, 124, 65, 0.12);
+  color: var(--sheet-green-dark);
+  font-size: 0.64rem;
+  font-weight: 900;
+  text-transform: uppercase;
 }
 
 .corner-cell,
@@ -428,6 +481,13 @@
     font-size: 18px;
     margin: 0 6px 0 0;
   }
+}
+
+.dialog-error {
+  margin-right: auto;
+  color: var(--sheet-delete-ink);
+  font-size: 0.82rem;
+  font-weight: 800;
 }
 
 @media (max-width: 900px) {
@@ -633,6 +693,8 @@
       min-width: 0;
       padding: 0;
       border-bottom: 0;
+      background: transparent;
+      box-shadow: none;
       text-align: left;
 
       &::before {
@@ -696,6 +758,11 @@
       min-width: 0;
       min-height: 42px;
     }
+  }
+
+  .dialog-error {
+    grid-column: 1 / -1;
+    margin: 0;
   }
 }
 

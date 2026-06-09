@@ -11,6 +11,7 @@ import {
   Component,
   OnDestroy,
   computed,
+  effect,
   inject,
   signal,
 } from '@angular/core';
@@ -22,7 +23,8 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatListModule } from '@angular/material/list';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
-import { MatSelectModule } from '@angular/material/select';
+import { MatInputModule } from '@angular/material/input';
+import { MatMenuModule, MatMenuTrigger } from '@angular/material/menu';
 import { MatTabsModule } from '@angular/material/tabs';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatToolbarModule } from '@angular/material/toolbar';
@@ -48,6 +50,7 @@ import type {
   ExpenseTemplate,
   ExpenseType,
   IncomeSource,
+  InvestmentEntry,
   Loan,
 } from './budget.models';
 
@@ -66,21 +69,77 @@ function addMonths(month: string, offset: number): string {
   return monthKey(new Date(year, monthIndex - 1 + offset, 1));
 }
 
+function monthParts(month: string): { year: number; monthIndex: number } {
+  const [year, monthIndex] = month.split('-').map(Number);
+  return { year, monthIndex: monthIndex - 1 };
+}
+
+function monthKeyFromParts(year: number, monthIndex: number): string {
+  return `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
+}
+
+function monthStartDate(month: string): string {
+  return `${month}-01`;
+}
+
+function dateInMonth(month: string, sourceDate?: string): string {
+  const day = Math.max(1, Math.min(28, Number(sourceDate?.split('-')[2]) || 1));
+  return `${month}-${String(day).padStart(2, '0')}`;
+}
+
 function lastMonth(): string {
   const now = new Date();
   return monthKey(new Date(now.getFullYear(), now.getMonth() - 1, 1));
 }
 
 function monthLabel(month: string): string {
-  const [year, monthIndex] = month.split('-').map(Number);
+  const { year, monthIndex } = monthParts(month);
   return new Intl.DateTimeFormat('en-IN', { month: 'short', year: 'numeric' }).format(
-    new Date(year, monthIndex - 1, 1),
+    new Date(year, monthIndex, 1),
   );
 }
 
-function monthOptions(centerMonth: string): string[] {
-  return Array.from({ length: 13 }, (_, index) => addMonths(centerMonth, index - 6));
+function dateMonthKey(date?: string): string | null {
+  if (!date) {
+    return null;
+  }
+
+  const [year, month] = date.split('-');
+  if (!year || !month) {
+    return null;
+  }
+
+  return `${year}-${month.padStart(2, '0')}`;
 }
+
+function isMonthInRange(month: string, startDate?: string, endDate?: string): boolean {
+  const startMonth = dateMonthKey(startDate);
+  const endMonth = dateMonthKey(endDate);
+
+  return (!startMonth || month >= startMonth) && (!endMonth || month <= endMonth);
+}
+
+function entryMonthKey(entry: Pick<ExpenseEntry, 'date' | 'month'>): string {
+  return dateMonthKey(entry.date) ?? entry.month;
+}
+
+function legacyExpenseType(entry: ExpenseEntry): string {
+  return (entry as unknown as { type: string }).type;
+}
+
+function activeStartDate(startDate?: string, createdDate?: string): string | undefined {
+  return startDate || createdDate;
+}
+
+function incomeBaseId(incomeId: string): string {
+  return incomeId.replace(/(?::\d{4}-\d{2})+$/, '');
+}
+
+function yearPageStart(year: number): number {
+  return year - (year % 16);
+}
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 @Component({
   selector: 'app-root',
@@ -95,9 +154,10 @@ function monthOptions(centerMonth: string): string[] {
     MatDialogModule,
     MatFormFieldModule,
     MatIconModule,
+    MatInputModule,
     MatListModule,
+    MatMenuModule,
     MatProgressBarModule,
-    MatSelectModule,
     MatTabsModule,
     MatTooltipModule,
     MatToolbarModule,
@@ -113,9 +173,12 @@ export class App implements OnDestroy {
   private authUnsubscribe?: () => void;
   private tabSwipeStart: { x: number; y: number } | null = null;
   private readonly unsubscribes: Array<() => void> = [];
+  private readonly prefillAttemptedSignatures = new Set<string>();
+  private readonly prefillInFlightSignatures = new Set<string>();
 
   protected readonly firebase = initializeBudgetFirebase();
   private repository?: BudgetFirestoreRepository;
+  protected readonly isSessionChecking = signal(this.firebase.mode === 'firebase');
   protected readonly isSyncing = signal(false);
   protected readonly syncStatus = signal(
     this.firebase.mode === 'firebase' ? 'Sign in with Google' : 'Firebase config needed',
@@ -125,25 +188,41 @@ export class App implements OnDestroy {
   protected readonly userName = signal<string | null>(null);
   protected readonly userEmail = signal<string | null>(null);
   protected readonly selectedMonth = signal(lastMonth());
+  protected readonly monthPickerOpen = signal(false);
+  protected readonly monthPickerView = signal<'months' | 'years'>('months');
+  protected readonly pickerYear = signal(monthParts(this.selectedMonth()).year);
+  protected readonly pickerYearPageStart = signal(yearPageStart(this.pickerYear()));
   protected readonly activeTabIndex = signal(0);
   protected readonly categories = signal<BudgetCategory[]>([]);
   protected readonly incomes = signal<IncomeSource[]>([]);
   protected readonly templates = signal<ExpenseTemplate[]>([]);
   protected readonly expenses = signal<ExpenseEntry[]>([]);
+  protected readonly investments = signal<InvestmentEntry[]>([]);
   protected readonly loans = signal<Loan[]>([]);
 
-  protected readonly monthOptions = computed(() => monthOptions(this.selectedMonth()));
+  protected readonly monthNames = MONTH_NAMES;
+  protected readonly selectedMonthParts = computed(() => monthParts(this.selectedMonth()));
+  protected readonly pickerYears = computed(() =>
+    Array.from({ length: 16 }, (_, index) => this.pickerYearPageStart() + index),
+  );
+  protected readonly pickerYearRangeLabel = computed(
+    () => `${this.pickerYearPageStart()} - ${this.pickerYearPageStart() + 15}`,
+  );
   protected readonly hasBudgetData = computed(
     () =>
       this.categories().length +
         this.incomes().length +
         this.templates().length +
         this.expenses().length +
+        this.investments().length +
         this.loans().length >
       0,
   );
   protected readonly showDashboardSkeleton = computed(
     () => this.isSyncing() && !this.hasBudgetData(),
+  );
+  protected readonly showGlobalLoader = computed(
+    () => this.firebase.mode === 'firebase' && this.isSessionChecking(),
   );
   protected readonly canWrite = computed(
     () => this.firebase.mode !== 'firebase' || (!!this.workspaceId() && !this.isSyncing()),
@@ -165,8 +244,41 @@ export class App implements OnDestroy {
         : 'neutral',
   );
   protected readonly monthLabel = computed(() => monthLabel(this.selectedMonth()));
+  protected readonly activeIncomeSources = computed(() => {
+    const selectedMonth = this.selectedMonth();
+    const monthScoped = this.incomes().filter((income) => income.month === selectedMonth);
+
+    if (monthScoped.length) {
+      return monthScoped;
+    }
+
+    const latestIncomeMonth = this.incomes()
+      .map((income) => income.month)
+      .filter((month): month is string => !!month && month <= selectedMonth)
+      .sort()
+      .at(-1);
+
+    if (latestIncomeMonth) {
+      return this.incomes().filter((income) => income.month === latestIncomeMonth);
+    }
+
+    return this.incomes().filter(
+      (income) =>
+        !income.month &&
+        isMonthInRange(
+          selectedMonth,
+          activeStartDate(income.startDate, income.createdDate),
+          income.endDate,
+        ),
+    );
+  });
+  protected readonly activeLoans = computed(() =>
+    this.loans().filter(
+      (loan) => loan.emi > 0 && isMonthInRange(this.selectedMonth(), loan.startDate, loan.endDate),
+    ),
+  );
   protected readonly monthlyIncome = computed(() =>
-    this.incomes().reduce((total, income) => {
+    this.activeIncomeSources().reduce((total, income) => {
       if (income.cadence === 'annual') {
         return total + income.amount / 12;
       }
@@ -175,15 +287,45 @@ export class App implements OnDestroy {
     }, 0),
   );
   protected readonly selectedEntries = computed(() =>
-    this.expenses().filter((expense) => expense.month === this.selectedMonth()),
+    this.expenses().filter(
+      (expense) =>
+        entryMonthKey(expense) === this.selectedMonth() &&
+        (expense.type === 'recurring' || expense.type === 'one-time'),
+    ),
+  );
+  protected readonly selectedInvestments = computed(() =>
+    this.investments().filter((investment) => {
+      if (investment.frequency === 'recurring') {
+        return isMonthInRange(
+          this.selectedMonth(),
+          activeStartDate(investment.startDate, investment.date || investment.createdDate),
+          investment.endDate,
+        );
+      }
+
+      return dateMonthKey(investment.date || investment.startDate || investment.createdDate) === this.selectedMonth();
+    }),
+  );
+  protected readonly legacyInvestmentEntries = computed(() =>
+    this.expenses().filter(
+      (expense) =>
+        entryMonthKey(expense) === this.selectedMonth() &&
+        legacyExpenseType(expense) === 'investment',
+    ),
   );
   protected readonly recurringTotal = computed(() => this.totalByType('recurring'));
   protected readonly oneTimeTotal = computed(() => this.totalByType('one-time'));
-  protected readonly investmentTotal = computed(() => this.totalByType('investment'));
+  protected readonly investmentTotal = computed(
+    () =>
+      this.selectedInvestments().reduce((total, investment) => total + investment.amount, 0) +
+      this.legacyInvestmentEntries().reduce((total, expense) => total + expense.amount, 0),
+  );
   protected readonly outflowTotal = computed(() =>
     this.selectedEntries().reduce((total, expense) => total + expense.amount, 0),
   );
-  protected readonly remainingFunds = computed(() => this.monthlyIncome() - this.outflowTotal());
+  protected readonly remainingFunds = computed(
+    () => this.monthlyIncome() - this.outflowTotal() - this.investmentTotal(),
+  );
   protected readonly burnoutRatio = computed(() =>
     this.ratio(this.outflowTotal(), this.monthlyIncome()),
   );
@@ -191,7 +333,7 @@ export class App implements OnDestroy {
     this.ratio(this.investmentTotal() + Math.max(0, this.remainingFunds()), this.monthlyIncome()),
   );
   protected readonly debtEmiTotal = computed(() =>
-    this.loans().reduce((total, loan) => total + loan.emi, 0),
+    this.activeLoans().reduce((total, loan) => total + loan.emi, 0),
   );
   protected readonly debtRatio = computed(() =>
     this.ratio(this.debtEmiTotal(), this.monthlyIncome()),
@@ -216,18 +358,39 @@ export class App implements OnDestroy {
     );
 
     return months.map((month) => {
-      const entries = this.expenses().filter((expense) => expense.month === month);
+      const entries = this.expenses().filter(
+        (expense) =>
+          entryMonthKey(expense) === month &&
+          ((expense as ExpenseEntry & { type: string }).type === 'recurring' ||
+            (expense as ExpenseEntry & { type: string }).type === 'one-time'),
+      );
       const outflow = entries.reduce((total, expense) => total + expense.amount, 0);
-      const invested = entries
-        .filter((expense) => expense.type === 'investment')
-        .reduce((total, expense) => total + expense.amount, 0);
+      const invested =
+        this.investments()
+          .filter((investment) =>
+            investment.frequency === 'recurring'
+              ? isMonthInRange(
+                  month,
+                  activeStartDate(investment.startDate, investment.date || investment.createdDate),
+                  investment.endDate,
+                )
+              : dateMonthKey(investment.date || investment.startDate || investment.createdDate) === month,
+          )
+          .reduce((total, investment) => total + investment.amount, 0) +
+        this.expenses()
+          .filter(
+            (expense) =>
+              entryMonthKey(expense) === month &&
+              legacyExpenseType(expense) === 'investment',
+          )
+          .reduce((total, expense) => total + expense.amount, 0);
 
       return {
         month,
         label: monthLabel(month),
         outflow,
         invested,
-        remaining: this.monthlyIncome() - outflow,
+        remaining: this.monthlyIncome() - outflow - invested,
         burn: this.ratio(outflow, this.monthlyIncome()),
       };
     });
@@ -235,8 +398,10 @@ export class App implements OnDestroy {
   protected readonly loanPlans = computed(() =>
     this.loans().map((loan) => {
       const monthsLeft = Math.max(1, Math.ceil(loan.outstanding / loan.emi));
-      const payoff = new Date();
-      payoff.setMonth(payoff.getMonth() + monthsLeft);
+      const payoff = loan.endDate ? new Date(loan.endDate) : new Date();
+      if (!loan.endDate) {
+        payoff.setMonth(payoff.getMonth() + monthsLeft);
+      }
 
       return {
         ...loan,
@@ -298,7 +463,7 @@ export class App implements OnDestroy {
     }
 
     if (!this.categories().length) {
-      ideas.push('Create your first category before adding expenses or fixed monthly items.');
+      ideas.push('Create your first category before adding expenses or recurring expenses.');
     }
 
     if (ideas.length === 0) {
@@ -332,6 +497,13 @@ export class App implements OnDestroy {
 
   constructor() {
     this.clearLegacyLocalData();
+    effect(() => {
+      if (!this.canWrite()) {
+        return;
+      }
+
+      void this.ensureMonthDefaults();
+    });
     void this.watchAuthState();
   }
 
@@ -377,10 +549,44 @@ export class App implements OnDestroy {
     }
   }
 
-  protected setMonth(month: string): void {
-    if (month) {
-      this.selectedMonth.set(month);
+  protected openMonthPicker(): void {
+    const { year } = this.selectedMonthParts();
+    this.pickerYear.set(year);
+    this.pickerYearPageStart.set(yearPageStart(year));
+    this.monthPickerView.set('months');
+    this.monthPickerOpen.set(true);
+  }
+
+  protected closeMonthPicker(): void {
+    this.monthPickerOpen.set(false);
+  }
+
+  protected showYearPicker(event: MouseEvent): void {
+    event.stopPropagation();
+    this.monthPickerView.set('years');
+    this.pickerYearPageStart.set(yearPageStart(this.pickerYear()));
+  }
+
+  protected shiftMonthPicker(event: MouseEvent, offset: number): void {
+    event.stopPropagation();
+
+    if (this.monthPickerView() === 'years') {
+      this.pickerYearPageStart.update((start) => start + offset * 16);
+      return;
     }
+
+    this.pickerYear.update((year) => year + offset);
+  }
+
+  protected selectPickerYear(event: MouseEvent, year: number): void {
+    event.stopPropagation();
+    this.pickerYear.set(year);
+    this.monthPickerView.set('months');
+  }
+
+  protected selectPickerMonth(monthIndex: number, trigger: MatMenuTrigger): void {
+    this.selectedMonth.set(monthKeyFromParts(this.pickerYear(), monthIndex));
+    trigger.closeMenu();
   }
 
   protected moveMonth(offset: number): void {
@@ -440,9 +646,10 @@ export class App implements OnDestroy {
         initialTabIndex,
         selectedMonth: this.selectedMonth(),
         categories: this.categories(),
-        incomes: this.incomes(),
+        incomes: scope === 'planning' ? this.editableIncomesForSelectedMonth() : this.incomes(),
         templates: this.templates(),
         expenses: this.expenses(),
+        investments: this.investments(),
         loans: this.loans(),
       },
       maxHeight: '100dvh',
@@ -458,18 +665,61 @@ export class App implements OnDestroy {
     });
   }
 
-  protected async prefillMonth(): Promise<void> {
+  private async ensureMonthDefaults(): Promise<void> {
     const month = this.selectedMonth();
+    const newEntries = this.buildDefaultMonthEntries(month);
+
+    if (!newEntries.length) {
+      return;
+    }
+
+    const signature = `${month}:${newEntries
+      .map((entry) => entry.templateId)
+      .sort()
+      .join('|')}`;
+
+    if (
+      this.prefillAttemptedSignatures.has(signature) ||
+      this.prefillInFlightSignatures.has(signature)
+    ) {
+      return;
+    }
+
+    this.prefillInFlightSignatures.add(signature);
+
+    try {
+      const saved = await this.saveRecords('expenses', newEntries, () =>
+        this.expenses.update((items) => [...items, ...newEntries]),
+      );
+      if (saved) {
+        this.prefillAttemptedSignatures.add(signature);
+      }
+    } finally {
+      this.prefillInFlightSignatures.delete(signature);
+    }
+  }
+
+  private buildDefaultMonthEntries(month: string): ExpenseEntry[] {
     const existingTemplateIds = new Set(
       this.expenses()
-        .filter((expense) => expense.month === month && expense.templateId)
+        .filter((expense) => entryMonthKey(expense) === month && expense.templateId)
         .map((expense) => expense.templateId),
     );
-    const newEntries = this.templates()
-      .filter((template) => !existingTemplateIds.has(template.id))
+
+    const templateEntries = this.templates()
+      .filter(
+        (template) =>
+          !existingTemplateIds.has(template.id) &&
+          isMonthInRange(
+            month,
+            activeStartDate(template.startDate, template.createdDate),
+            template.endDate,
+          ),
+      )
       .map<ExpenseEntry>((template) => ({
         id: id('planned'),
         month,
+        date: dateInMonth(month, template.startDate),
         name: template.name,
         categoryId: template.categoryId,
         amount: template.amount,
@@ -478,21 +728,34 @@ export class App implements OnDestroy {
         templateId: template.id,
       }));
 
-    if (newEntries.length) {
-      await this.saveRecords('expenses', newEntries, () =>
-        this.expenses.update((items) => [...items, ...newEntries]),
-      );
-    }
+    const loanEntries = this.loans()
+      .filter((loan) => {
+        const templateId = this.loanTemplateId(loan.id);
+        return (
+          loan.emi > 0 &&
+          !existingTemplateIds.has(templateId) &&
+          isMonthInRange(month, loan.startDate, loan.endDate)
+        );
+      })
+      .map<ExpenseEntry>((loan) => ({
+        id: id('emi'),
+        month,
+        date: dateInMonth(month, loan.startDate),
+        name: `${loan.loanType || loan.lender || 'Loan'} EMI`,
+        categoryId: '',
+        amount: loan.emi,
+        type: 'recurring',
+        note: 'Prepopulated from loan EMI',
+        templateId: this.loanTemplateId(loan.id),
+      }));
+
+    return [...templateEntries, ...loanEntries];
   }
 
   protected categoryName(categoryId: string): string {
     return (
       this.categories().find((category) => category.id === categoryId)?.name ?? 'Uncategorized'
     );
-  }
-
-  protected formatMonth(month: string): string {
-    return monthLabel(month);
   }
 
   protected formatMoney(value: number): string {
@@ -503,15 +766,42 @@ export class App implements OnDestroy {
     }).format(value);
   }
 
+  private loanTemplateId(loanId: string): string {
+    return `loan:${loanId}`;
+  }
+
+  private editableIncomesForSelectedMonth(): IncomeSource[] {
+    const selectedMonth = this.selectedMonth();
+    const monthScoped = this.incomes().filter((income) => income.month === selectedMonth);
+
+    if (monthScoped.length) {
+      return monthScoped;
+    }
+
+    return this.activeIncomeSources().map((income) => ({
+      ...income,
+      id: this.monthlyIncomeId(incomeBaseId(income.id), selectedMonth),
+      month: selectedMonth,
+      startDate: undefined,
+      endDate: undefined,
+    }));
+  }
+
+  private monthlyIncomeId(incomeId: string, month: string): string {
+    return incomeId.includes(`:${month}`) ? incomeId : `${incomeBaseId(incomeId)}:${month}`;
+  }
+
   protected clampPercent(value: number): number {
     return Math.max(0, Math.min(100, Math.round(value * 100)));
   }
 
   private async watchAuthState(): Promise<void> {
     if (!this.firebase.app) {
+      this.isSessionChecking.set(false);
       return;
     }
 
+    this.isSessionChecking.set(true);
     this.isSyncing.set(true);
     this.syncError.set(null);
 
@@ -524,6 +814,7 @@ export class App implements OnDestroy {
       this.handleSyncError(
         error instanceof Error ? error.message : 'Unable to initialize Firebase login.',
       );
+      this.isSessionChecking.set(false);
     } finally {
       this.isSyncing.set(false);
     }
@@ -542,6 +833,7 @@ export class App implements OnDestroy {
       this.syncStatus.set(
         this.firebase.mode === 'firebase' ? 'Sign in with Google' : 'Firebase config needed',
       );
+      this.isSessionChecking.set(false);
       return;
     }
 
@@ -572,6 +864,11 @@ export class App implements OnDestroy {
           (message) => this.handleSyncError(message),
         ),
         this.repository.listen(
+          'investments',
+          (records) => this.investments.set(records),
+          (message) => this.handleSyncError(message),
+        ),
+        this.repository.listen(
           'loans',
           (records) => this.loans.set(records),
           (message) => this.handleSyncError(message),
@@ -586,6 +883,7 @@ export class App implements OnDestroy {
       );
     } finally {
       this.isSyncing.set(false);
+      this.isSessionChecking.set(false);
     }
   }
 
@@ -603,16 +901,28 @@ export class App implements OnDestroy {
     const deletedCategoryIds = new Set(result.deleted.categories);
     const deletedExpenseIds = new Set(result.deleted.expenses);
     const deletedIncomeIds = new Set(result.deleted.incomes);
+    const deletedInvestmentIds = new Set(result.deleted.investments);
     const deletedLoanIds = new Set(result.deleted.loans);
     const deletedTemplateIds = new Set(result.deleted.templates);
+    const selectedMonth = this.selectedMonth();
 
     const categories = result.categories.filter((category) => !deletedCategoryIds.has(category.id));
-    const incomes = result.incomes.filter((income) => !deletedIncomeIds.has(income.id));
+    const nextIncomes = result.incomes.filter((income) => !deletedIncomeIds.has(income.id));
+    const incomes =
+      result.scope === 'planning'
+        ? [
+            ...this.incomes().filter((income) => income.month !== selectedMonth),
+            ...nextIncomes.map((income) => ({ ...income, month: income.month || selectedMonth })),
+          ]
+        : nextIncomes;
     const templates = result.templates.filter(
       (template) =>
         !deletedTemplateIds.has(template.id) && !deletedCategoryIds.has(template.categoryId),
     );
-    const expenses = result.expenses
+    const investments = result.investments.filter(
+      (investment) => !deletedInvestmentIds.has(investment.id),
+    );
+    let expenses = result.expenses
       .filter((expense) => !deletedExpenseIds.has(expense.id))
       .map((expense) =>
         deletedCategoryIds.has(expense.categoryId)
@@ -625,6 +935,71 @@ export class App implements OnDestroy {
 
     const existingTemplates = this.templates();
     const existingExpenses = this.expenses();
+    const extraDeletedExpenseIds = new Set<string>();
+
+    if (result.scope === 'monthly') {
+      const templateIds = new Set(templates.map((template) => template.id));
+      const deletedTemplateExpenseIds = existingExpenses
+        .filter(
+          (expense) =>
+            entryMonthKey(expense) === selectedMonth &&
+            !!expense.templateId &&
+            deletedTemplateIds.has(expense.templateId),
+        )
+        .map((expense) => expense.id);
+
+      for (const expenseId of deletedTemplateExpenseIds) {
+        extraDeletedExpenseIds.add(expenseId);
+      }
+
+      const generatedTemplateEntries = templates
+        .filter((template) =>
+          isMonthInRange(
+            selectedMonth,
+            activeStartDate(template.startDate, template.createdDate),
+            template.endDate,
+          ),
+        )
+        .map<ExpenseEntry>((template) => {
+          const existingMatches = existingExpenses.filter(
+            (expense) =>
+              entryMonthKey(expense) === selectedMonth && expense.templateId === template.id,
+          );
+          const [existingMatch, ...duplicateMatches] = existingMatches;
+
+          for (const duplicate of duplicateMatches) {
+            extraDeletedExpenseIds.add(duplicate.id);
+          }
+
+          return {
+            id: existingMatch?.id ?? id('planned'),
+            month: selectedMonth,
+            date: dateInMonth(selectedMonth, template.startDate),
+            name: template.name,
+            categoryId: template.categoryId,
+            amount: template.amount,
+            type: 'recurring',
+            note: existingMatch?.note || 'Prepopulated from recurring plan',
+            templateId: template.id,
+          };
+        });
+
+      expenses = [
+        ...existingExpenses.filter(
+          (expense) =>
+            entryMonthKey(expense) !== selectedMonth &&
+            !deletedExpenseIds.has(expense.id) &&
+            !extraDeletedExpenseIds.has(expense.id),
+        ),
+        ...expenses.filter(
+          (expense) =>
+            entryMonthKey(expense) === selectedMonth &&
+            (!expense.templateId || !templateIds.has(expense.templateId)) &&
+            !extraDeletedExpenseIds.has(expense.id),
+        ),
+        ...generatedTemplateEntries,
+      ];
+    }
 
     const saved = await this.runFirebaseWrite(
       async () => {
@@ -641,7 +1016,10 @@ export class App implements OnDestroy {
           ...result.deleted.templates.map((recordId) =>
             this.repository?.delete('templates', recordId),
           ),
-          ...result.deleted.expenses.map((recordId) =>
+          ...result.deleted.investments.map((recordId) =>
+            this.repository?.delete('investments', recordId),
+          ),
+          ...[...new Set([...result.deleted.expenses, ...extraDeletedExpenseIds])].map((recordId) =>
             this.repository?.delete('expenses', recordId),
           ),
           ...result.deleted.loans.map((recordId) => this.repository?.delete('loans', recordId)),
@@ -652,6 +1030,7 @@ export class App implements OnDestroy {
           this.repository?.upsertMany('incomes', incomes),
           this.repository?.upsertMany('templates', templates),
           this.repository?.upsertMany('expenses', expenses),
+          this.repository?.upsertMany('investments', investments),
           this.repository?.upsertMany('loans', loans),
         ]);
       },
@@ -660,6 +1039,7 @@ export class App implements OnDestroy {
         this.incomes.set(incomes);
         this.templates.set(templates);
         this.expenses.set(expenses);
+        this.investments.set(investments);
         this.loans.set(loans);
       },
     );
@@ -705,6 +1085,7 @@ export class App implements OnDestroy {
     this.syncError.set(message);
     this.syncStatus.set('Firebase sync failed');
     this.isSyncing.set(false);
+    this.isSessionChecking.set(false);
   }
 
   private totalByType(type: ExpenseType): number {
@@ -732,7 +1113,7 @@ export class App implements OnDestroy {
   }
 
   private clearLegacyLocalData(): void {
-    for (const key of ['categories', 'incomes', 'templates', 'expenses', 'loans']) {
+    for (const key of ['categories', 'incomes', 'templates', 'expenses', 'investments', 'loans']) {
       localStorage.removeItem(`${this.storagePrefix}:${key}`);
     }
   }
@@ -748,6 +1129,7 @@ export class App implements OnDestroy {
     this.incomes.set([]);
     this.templates.set([]);
     this.expenses.set([]);
+    this.investments.set([]);
     this.loans.set([]);
   }
 }
