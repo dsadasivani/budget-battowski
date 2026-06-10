@@ -802,6 +802,42 @@ mat-progress-bar {
   }
 }
 
+.import-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+
+  button {
+    min-height: 42px;
+  }
+}
+
+.import-summary {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px dashed rgba(21, 94, 117, 0.24);
+  border-radius: 14px;
+  background: rgba(236, 254, 255, 0.5);
+  color: var(--bb-muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+
+  button {
+    justify-self: start;
+  }
+}
+
+.visually-hidden-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  border: 0;
+}
+
 .section-heading {
   display: flex;
   align-items: center;

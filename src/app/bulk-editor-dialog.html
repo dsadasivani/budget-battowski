@@ -48,8 +48,6 @@
                 <th>D</th>
                 <th>E</th>
                 <th>F</th>
-                <th>G</th>
-                <th>H</th>
                 <th></th>
               </tr>
               <tr>
@@ -59,8 +57,6 @@
                 <th>Category</th>
                 <th>Amount</th>
                 <th>Type</th>
-                <th>Start</th>
-                <th>End optional</th>
                 <th>Note</th>
                 <th aria-label="Actions"></th>
               </tr>
@@ -128,53 +124,9 @@
                     </mat-form-field>
                   </td>
                   <td data-label="Type">
-                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
-                      <mat-select
-                        placeholder="Type"
-                        [(ngModel)]="expense.type"
-                        [disabled]="!!expense.pendingDelete"
-                      >
-                        @for (type of expenseTypes; track type) {
-                          <mat-option [value]="type">{{ type }}</mat-option>
-                        }
-                      </mat-select>
-                    </mat-form-field>
-                  </td>
-                  <td data-label="Start">
-                    @if (expense.type === 'recurring') {
-                      <mat-form-field appearance="outline" subscriptSizing="dynamic">
-                        <input
-                          matInput
-                          [matDatepicker]="expenseStartPicker"
-                          placeholder="Start date"
-                          [(ngModel)]="expense.startDate"
-                          [disabled]="!!expense.pendingDelete"
-                        />
-                        <mat-datepicker-toggle
-                          matIconSuffix
-                          [for]="expenseStartPicker"
-                        ></mat-datepicker-toggle>
-                        <mat-datepicker #expenseStartPicker></mat-datepicker>
-                      </mat-form-field>
-                    }
-                  </td>
-                  <td data-label="End optional">
-                    @if (expense.type === 'recurring') {
-                      <mat-form-field appearance="outline" subscriptSizing="dynamic">
-                        <input
-                          matInput
-                          [matDatepicker]="expenseEndPicker"
-                          placeholder="End date"
-                          [(ngModel)]="expense.endDate"
-                          [disabled]="!!expense.pendingDelete"
-                        />
-                        <mat-datepicker-toggle
-                          matIconSuffix
-                          [for]="expenseEndPicker"
-                        ></mat-datepicker-toggle>
-                        <mat-datepicker #expenseEndPicker></mat-datepicker>
-                      </mat-form-field>
-                    }
+                    <span class="type-pill" [class.recurring]="expense.templateId">
+                      {{ expense.templateId ? 'recurring' : 'one-time' }}
+                    </span>
                   </td>
                   <td data-label="Note">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
@@ -214,6 +166,285 @@
             </tbody>
           </table>
         </div>
+      </mat-tab>
+
+      <mat-tab label="Recurring">
+        <div class="bulk-toolbar">
+          <strong>Recurring Expenses</strong>
+          <button mat-flat-button color="primary" type="button" (click)="addRecurringExpense()">
+            <mat-icon>add</mat-icon>
+            Add row
+          </button>
+        </div>
+
+        <div class="table-wrap">
+          <table class="bulk-table recurring-table">
+            <thead>
+              <tr class="sheet-letters" aria-hidden="true">
+                <th class="corner-cell"></th>
+                <th>A</th>
+                <th>B</th>
+                <th>C</th>
+                <th>D</th>
+                <th>E</th>
+                <th></th>
+              </tr>
+              <tr>
+                <th class="row-number-col">#</th>
+                <th>Name</th>
+                <th>Category</th>
+                <th>Amount</th>
+                <th>Start</th>
+                <th>End optional</th>
+                <th aria-label="Actions"></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (template of templates; track template.id; let rowIndex = $index) {
+                <tr [class.marked-delete]="template.pendingDelete" [class.new-row]="template.isNew">
+                  <td class="row-number" data-label="Row">
+                    @if (template.isNew) {
+                      <span class="row-status">New</span>
+                    } @else {
+                      {{ rowIndex + 1 }}
+                    }
+                  </td>
+                  <td data-label="Name">
+                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                      <input
+                        matInput
+                        placeholder="Recurring expense"
+                        [(ngModel)]="template.name"
+                        [disabled]="!!template.pendingDelete || !template.isNew"
+                      />
+                    </mat-form-field>
+                  </td>
+                  <td data-label="Category">
+                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                      <mat-select
+                        placeholder="Category"
+                        [(ngModel)]="template.categoryId"
+                        [disabled]="!!template.pendingDelete || !template.isNew"
+                      >
+                        <mat-option value="">Uncategorized</mat-option>
+                        @for (category of categories; track category.id) {
+                          <mat-option [value]="category.id">{{ category.name }}</mat-option>
+                        }
+                      </mat-select>
+                    </mat-form-field>
+                  </td>
+                  <td data-label="Amount">
+                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                      <input
+                        matInput
+                        type="number"
+                        min="0"
+                        placeholder="Amount"
+                        [(ngModel)]="template.amount"
+                        [disabled]="!!template.pendingDelete"
+                      />
+                    </mat-form-field>
+                  </td>
+                  <td data-label="Start">
+                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                      <input
+                        matInput
+                        [matDatepicker]="templateStartPicker"
+                        placeholder="Start date"
+                        [(ngModel)]="template.startDate"
+                        [disabled]="!!template.pendingDelete"
+                      />
+                      <mat-datepicker-toggle
+                        matIconSuffix
+                        [for]="templateStartPicker"
+                      ></mat-datepicker-toggle>
+                      <mat-datepicker #templateStartPicker></mat-datepicker>
+                    </mat-form-field>
+                  </td>
+                  <td data-label="End optional">
+                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                      <input
+                        matInput
+                        [matDatepicker]="templateEndPicker"
+                        placeholder="End date"
+                        [(ngModel)]="template.endDate"
+                        [disabled]="!!template.pendingDelete"
+                      />
+                      <mat-datepicker-toggle
+                        matIconSuffix
+                        [for]="templateEndPicker"
+                      ></mat-datepicker-toggle>
+                      <mat-datepicker #templateEndPicker></mat-datepicker>
+                    </mat-form-field>
+                  </td>
+                  <td data-label="Actions">
+                    @if (recurringAuditRows(template).length) {
+                      <button
+                        mat-icon-button
+                        type="button"
+                        [attr.aria-label]="
+                          isTemplateAuditExpanded(template.id)
+                            ? 'Hide recurring audit'
+                            : 'Show recurring audit'
+                        "
+                        [matTooltip]="
+                          isTemplateAuditExpanded(template.id) ? 'Hide audit' : 'Show audit'
+                        "
+                        (click)="toggleTemplateAudit(template.id)"
+                      >
+                        <mat-icon>{{
+                          isTemplateAuditExpanded(template.id) ? 'expand_less' : 'expand_more'
+                        }}</mat-icon>
+                      </button>
+                    }
+                    <button
+                      mat-icon-button
+                      type="button"
+                      [attr.aria-label]="
+                        template.pendingDelete
+                          ? 'Keep recurring expense'
+                          : template.isNew
+                            ? 'Discard new recurring expense'
+                            : 'Delete recurring expense'
+                      "
+                      [matTooltip]="
+                        template.pendingDelete
+                          ? 'Keep row'
+                          : template.isNew
+                            ? 'Discard row'
+                            : 'Mark for delete'
+                      "
+                      (click)="toggleDelete(template)"
+                    >
+                      <mat-icon>{{ template.pendingDelete ? 'undo' : 'delete' }}</mat-icon>
+                    </button>
+                  </td>
+                </tr>
+                @if (isTemplateAuditExpanded(template.id) && recurringAuditRows(template).length) {
+                  <tr class="audit-row">
+                    <td colspan="7">
+                      <div class="audit-panel">
+                        @for (audit of recurringAuditRows(template); track audit.id) {
+                          <div class="audit-item">
+                            <span class="audit-operation">{{ audit.operation }}</span>
+                            <strong>{{ audit.name }}</strong>
+                            <span>{{
+                              audit.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                            }}</span>
+                            <span>{{ auditMonthLabel(audit.startDate, 'Beginning') }}</span>
+                            <span>
+                              {{ auditMonthLabel(audit.endDate, 'Future') }}
+                            </span>
+                            <span>{{ auditDateTimeLabel(audit.recordedDate) }}</span>
+                          </div>
+                        }
+                      </div>
+                    </td>
+                  </tr>
+                }
+              }
+            </tbody>
+          </table>
+        </div>
+
+        @if (deletedTemplates.length) {
+          <div class="bulk-toolbar deleted-recurring-toolbar">
+            <strong>Deleted Recurring Expenses</strong>
+          </div>
+
+          <div class="table-wrap deleted-recurring-wrap">
+            <table class="bulk-table recurring-table deleted-recurring-table">
+              <thead>
+                <tr class="sheet-letters" aria-hidden="true">
+                  <th class="corner-cell"></th>
+                  <th>A</th>
+                  <th>B</th>
+                  <th>C</th>
+                  <th>D</th>
+                  <th>E</th>
+                  <th>F</th>
+                  <th></th>
+                </tr>
+                <tr>
+                  <th class="row-number-col">#</th>
+                  <th>Name</th>
+                  <th>Category</th>
+                  <th>Amount</th>
+                  <th>Start</th>
+                  <th>Ended</th>
+                  <th>Deleted</th>
+                  <th aria-label="Actions"></th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (template of deletedTemplates; track template.id; let rowIndex = $index) {
+                  @let deletedSummary = deletedRecurringSummary(template);
+                  <tr class="deleted-recurring-record">
+                    <td class="row-number" data-label="Row">{{ rowIndex + 1 }}</td>
+                    <td data-label="Name">
+                      <strong>{{ deletedSummary.name }}</strong>
+                    </td>
+                    <td data-label="Category">{{ categoryName(deletedSummary.categoryId) }}</td>
+                    <td data-label="Amount">
+                      {{ deletedSummary.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}
+                    </td>
+                    <td data-label="Start">
+                      {{ auditMonthLabel(deletedSummary.startDate, 'Beginning') }}
+                    </td>
+                    <td data-label="Ended">
+                      {{ auditMonthLabel(deletedSummary.endDate, 'Future') }}
+                    </td>
+                    <td data-label="Deleted">{{ auditDateTimeLabel(template.archivedDate) }}</td>
+                    <td data-label="Actions">
+                      @if (deletedRecurringAuditRows(template).length) {
+                        <button
+                          mat-icon-button
+                          type="button"
+                          [attr.aria-label]="
+                            isTemplateAuditExpanded(template.id)
+                              ? 'Hide deleted recurring audit'
+                              : 'Show deleted recurring audit'
+                          "
+                          [matTooltip]="
+                            isTemplateAuditExpanded(template.id) ? 'Hide audit' : 'Show audit'
+                          "
+                          (click)="toggleTemplateAudit(template.id)"
+                        >
+                          <mat-icon>{{
+                            isTemplateAuditExpanded(template.id) ? 'expand_less' : 'expand_more'
+                          }}</mat-icon>
+                        </button>
+                      }
+                    </td>
+                  </tr>
+                  @if (
+                    isTemplateAuditExpanded(template.id) &&
+                    deletedRecurringAuditRows(template).length
+                  ) {
+                    <tr class="audit-row">
+                      <td colspan="8">
+                        <div class="audit-panel">
+                          @for (audit of deletedRecurringAuditRows(template); track audit.id) {
+                            <div class="audit-item">
+                              <span class="audit-operation">{{ audit.operation }}</span>
+                              <strong>{{ audit.name }}</strong>
+                              <span>{{
+                                audit.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                              }}</span>
+                              <span>{{ auditMonthLabel(audit.startDate, 'Beginning') }}</span>
+                              <span>{{ auditMonthLabel(audit.endDate, 'Future') }}</span>
+                              <span>{{ auditDateTimeLabel(audit.recordedDate) }}</span>
+                            </div>
+                          }
+                        </div>
+                      </td>
+                    </tr>
+                  }
+                }
+              </tbody>
+            </table>
+          </div>
+        }
       </mat-tab>
     }
 

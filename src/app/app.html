@@ -117,8 +117,8 @@
     </section>
   </main>
 } @else {
-<main class="shell" id="main-content">
-  <!-- <section class="status-banner" [class.error]="syncError()" aria-live="polite">
+  <main class="shell" id="main-content">
+    <!-- <section class="status-banner" [class.error]="syncError()" aria-live="polite">
     <mat-icon aria-hidden="true">
       @if (syncError()) {
         error
@@ -143,684 +143,776 @@
     </span>
   </section> -->
 
-  <section class="hero-panel" aria-labelledby="dashboard-title">
-    <div class="hero-copy">
-      <p class="eyebrow">Planning month</p>
-      <h1 id="dashboard-title">{{ monthLabel() }}</h1>
-      <p class="hero-summary">
-        {{ runwayLabel() }} with
-        {{ remainingFunds() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }} unallocated after
-        this month&apos;s expenses and investments.
-      </p>
-    </div>
+    <section class="hero-panel" aria-labelledby="dashboard-title">
+      <div class="hero-copy">
+        <p class="eyebrow">Planning month</p>
+        <h1 id="dashboard-title">{{ monthLabel() }}</h1>
+        <p class="hero-summary">
+          {{ runwayLabel() }} with
+          {{ remainingFunds() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }} unallocated after
+          this month&apos;s expenses and investments.
+        </p>
+      </div>
 
-    <div class="month-actions" aria-label="Month controls">
-      <button
-        mat-icon-button
-        type="button"
-        aria-label="Previous month"
-        matTooltip="Previous month"
-        (click)="moveMonth(-1)"
-      >
-        <mat-icon aria-hidden="true">chevron_left</mat-icon>
-      </button>
-
-      <mat-form-field appearance="outline" subscriptSizing="dynamic">
-        <mat-label>Expense month</mat-label>
-        <input
-          matInput
-          readonly
-          [value]="monthLabel()"
-          [matMenuTriggerFor]="expenseMonthMenu"
-          #expenseMonthTrigger="matMenuTrigger"
-          aria-label="Select expense month"
-          (menuOpened)="openMonthPicker()"
-          (menuClosed)="closeMonthPicker()"
-        />
+      <div class="month-actions" aria-label="Month controls">
         <button
           mat-icon-button
-          matIconSuffix
           type="button"
-          aria-label="Open expense month picker"
-          matTooltip="Open expense month picker"
-          (click)="expenseMonthTrigger.openMenu()"
+          aria-label="Previous month"
+          matTooltip="Previous month"
+          (click)="moveMonth(-1)"
         >
-          <mat-icon aria-hidden="true">calendar_month</mat-icon>
+          <mat-icon aria-hidden="true">chevron_left</mat-icon>
         </button>
-        <mat-menu
-          #expenseMonthMenu="matMenu"
-          class="month-picker-menu"
-          xPosition="after"
-          [overlapTrigger]="false"
-        >
-          @if (monthPickerOpen()) {
-            <div
-              class="month-picker-panel"
-              style="display: grid; width: 276px; gap: 8px; padding: 10px; box-sizing: border-box"
-              aria-label="Expense month picker"
-            >
-              <header
-                style="display: grid; grid-template-columns: 34px minmax(0, 1fr) 34px; align-items: center"
+
+        <mat-form-field appearance="outline" subscriptSizing="dynamic">
+          <mat-label>Expense month</mat-label>
+          <input
+            matInput
+            readonly
+            [value]="monthLabel()"
+            [matMenuTriggerFor]="expenseMonthMenu"
+            #expenseMonthTrigger="matMenuTrigger"
+            aria-label="Select expense month"
+            (menuOpened)="openMonthPicker()"
+            (menuClosed)="closeMonthPicker()"
+          />
+          <button
+            mat-icon-button
+            matIconSuffix
+            type="button"
+            aria-label="Open expense month picker"
+            matTooltip="Open expense month picker"
+            (click)="expenseMonthTrigger.openMenu()"
+          >
+            <mat-icon aria-hidden="true">calendar_month</mat-icon>
+          </button>
+          <mat-menu
+            #expenseMonthMenu="matMenu"
+            class="month-picker-menu"
+            xPosition="after"
+            [overlapTrigger]="false"
+          >
+            @if (monthPickerOpen()) {
+              <div
+                class="month-picker-panel"
+                style="display: grid; width: 276px; gap: 8px; padding: 10px; box-sizing: border-box"
+                aria-label="Expense month picker"
               >
-                <button
-                  mat-icon-button
-                  type="button"
-                  style="width: 34px; height: 34px; padding: 5px"
-                  [attr.aria-label]="
-                    monthPickerView() === 'years' ? 'Previous year page' : 'Previous year'
+                <header
+                  style="
+                    display: grid;
+                    grid-template-columns: 34px minmax(0, 1fr) 34px;
+                    align-items: center;
                   "
-                  [matTooltip]="
-                    monthPickerView() === 'years' ? 'Previous year page' : 'Previous year'
-                  "
-                  (click)="shiftMonthPicker($event, -1)"
                 >
-                  <mat-icon aria-hidden="true">chevron_left</mat-icon>
-                </button>
+                  <button
+                    mat-icon-button
+                    type="button"
+                    style="width: 34px; height: 34px; padding: 5px"
+                    [attr.aria-label]="
+                      monthPickerView() === 'years' ? 'Previous year page' : 'Previous year'
+                    "
+                    [matTooltip]="
+                      monthPickerView() === 'years' ? 'Previous year page' : 'Previous year'
+                    "
+                    (click)="shiftMonthPicker($event, -1)"
+                  >
+                    <mat-icon aria-hidden="true">chevron_left</mat-icon>
+                  </button>
 
-                <button
-                  class="month-picker-title"
-                  mat-button
-                  type="button"
-                  aria-label="Choose year"
-                  matTooltip="Choose year"
-                  (click)="showYearPicker($event)"
-                  style="height: 34px; min-width: 0; padding: 0 8px; font-weight: 800"
-                >
-                  @if (monthPickerView() === 'years') {
-                    {{ pickerYearRangeLabel() }}
-                  } @else {
-                    {{ pickerYear() }}
-                  }
-                  <mat-icon aria-hidden="true">arrow_drop_down</mat-icon>
-                </button>
+                  <button
+                    class="month-picker-title"
+                    mat-button
+                    type="button"
+                    aria-label="Choose year"
+                    matTooltip="Choose year"
+                    (click)="showYearPicker($event)"
+                    style="height: 34px; min-width: 0; padding: 0 8px; font-weight: 800"
+                  >
+                    @if (monthPickerView() === 'years') {
+                      {{ pickerYearRangeLabel() }}
+                    } @else {
+                      {{ pickerYear() }}
+                    }
+                    <mat-icon aria-hidden="true">arrow_drop_down</mat-icon>
+                  </button>
 
-                <button
-                  mat-icon-button
-                  type="button"
-                  style="width: 34px; height: 34px; padding: 5px"
-                  [attr.aria-label]="
-                    monthPickerView() === 'years' ? 'Next year page' : 'Next year'
-                  "
-                  [matTooltip]="monthPickerView() === 'years' ? 'Next year page' : 'Next year'"
-                  (click)="shiftMonthPicker($event, 1)"
-                >
-                  <mat-icon aria-hidden="true">chevron_right</mat-icon>
-                </button>
-              </header>
+                  <button
+                    mat-icon-button
+                    type="button"
+                    style="width: 34px; height: 34px; padding: 5px"
+                    [attr.aria-label]="
+                      monthPickerView() === 'years' ? 'Next year page' : 'Next year'
+                    "
+                    [matTooltip]="monthPickerView() === 'years' ? 'Next year page' : 'Next year'"
+                    (click)="shiftMonthPicker($event, 1)"
+                  >
+                    <mat-icon aria-hidden="true">chevron_right</mat-icon>
+                  </button>
+                </header>
 
-              @if (monthPickerView() === 'years') {
-                <div
-                  class="year-grid"
-                  style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px"
-                  aria-label="Choose expense year"
-                >
-                  @for (year of pickerYears(); track year) {
-                    <button
-                      type="button"
-                      [class.selected]="year === pickerYear()"
-                      [attr.aria-label]="'Select ' + year"
-                      (click)="selectPickerYear($event, year)"
-                      [style.background]="year === pickerYear() ? '#155e75' : '#f8fafc'"
-                      [style.color]="year === pickerYear() ? '#fff' : '#155e75'"
-                      style="height: 34px; min-width: 0; padding: 0; border: 0; border-radius: 8px; cursor: pointer; font: inherit; font-weight: 800"
-                    >
-                      {{ year }}
-                    </button>
-                  }
-                </div>
-              } @else {
-                <div
-                  class="month-grid"
-                  style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px"
-                  aria-label="Choose expense month"
-                >
-                  @for (month of monthNames; track month; let monthIndex = $index) {
-                    <button
-                      type="button"
-                      [class.selected]="
-                        pickerYear() === selectedMonthParts().year &&
-                        monthIndex === selectedMonthParts().monthIndex
-                      "
-                      [attr.aria-label]="'Select ' + month + ' ' + pickerYear()"
-                      (click)="selectPickerMonth(monthIndex, expenseMonthTrigger)"
-                      [style.background]="
-                        pickerYear() === selectedMonthParts().year &&
-                        monthIndex === selectedMonthParts().monthIndex
-                          ? '#155e75'
-                          : '#f8fafc'
-                      "
-                      [style.color]="
-                        pickerYear() === selectedMonthParts().year &&
-                        monthIndex === selectedMonthParts().monthIndex
-                          ? '#fff'
-                          : '#155e75'
-                      "
-                      style="height: 34px; min-width: 0; padding: 0; border: 0; border-radius: 8px; cursor: pointer; font: inherit; font-weight: 800"
-                    >
-                      {{ month }}
-                    </button>
-                  }
-                </div>
-              }
-            </div>
-          }
-        </mat-menu>
-      </mat-form-field>
-
-      <button
-        mat-icon-button
-        type="button"
-        aria-label="Next month"
-        matTooltip="Next month"
-        (click)="moveMonth(1)"
-      >
-        <mat-icon aria-hidden="true">chevron_right</mat-icon>
-      </button>
-
-    </div>
-
-    <div class="metric-grid" aria-label="Monthly financial summary">
-      @if (showDashboardSkeleton()) {
-        @for (item of [1, 2, 3, 4, 5]; track item) {
-          <div class="metric-card skeleton-card" aria-hidden="true">
-            <span class="skeleton-line short"></span>
-            <span class="skeleton-line value"></span>
-            <span class="skeleton-line"></span>
-          </div>
-        }
-      } @else {
-        <article class="metric-card hero-metric">
-          <span>Monthly income</span>
-          <strong>{{ monthlyIncome() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</strong>
-          <small>{{ activeIncomeSources().length }} active income sources</small>
-        </article>
-
-        <article class="metric-card">
-          <span>Total outflow</span>
-          <strong>{{ outflowTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</strong>
-          <small>{{ selectedEntries().length }} entries this month</small>
-        </article>
-
-        <article class="metric-card">
-          <span>Investments</span>
-          <strong>{{ investmentTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</strong>
-          <small>{{ selectedInvestments().length }} active investments</small>
-        </article>
-
-        <article class="metric-card" [class.warning]="remainingFunds() < 0">
-          <span>Funds left</span>
-          <strong>{{ remainingFunds() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</strong>
-          <small>After expenses and investments</small>
-        </article>
-
-        <article class="metric-card">
-          <span>Salary burnout</span>
-          <strong>{{ burnoutRatio() | percent: '1.0-0' }}</strong>
-          <mat-progress-bar
-            mode="determinate"
-            [value]="clampPercent(burnoutRatio())"
-            aria-label="Salary burnout percentage"
-          ></mat-progress-bar>
-        </article>
-      }
-    </div>
-  </section>
-
-  <mat-tab-group
-    class="workspace-tabs"
-    animationDuration="220ms"
-    mat-stretch-tabs="false"
-    [selectedIndex]="activeTabIndex()"
-    (selectedIndexChange)="setActiveTab($event)"
-    (touchstart)="startTabSwipe($event)"
-    (touchend)="finishTabSwipe($event)"
-    (touchcancel)="cancelTabSwipe()"
-  >
-    <mat-tab label="Dashboard">
-      <section class="dashboard-grid" aria-label="Dashboard insights">
-        <mat-card class="panel chart-panel">
-          <mat-card-header>
-            <mat-card-title>Expense Mix</mat-card-title>
-            <mat-card-subtitle>Category spread for {{ monthLabel() }}</mat-card-subtitle>
-          </mat-card-header>
-          <mat-card-content>
-            <header class="mobile-card-heading">
-              <strong>Expense Mix</strong>
-              <small>Category spread for {{ monthLabel() }}</small>
-            </header>
-            @if (showDashboardSkeleton()) {
-              <div class="donut-skeleton" aria-label="Loading expense mix"></div>
-            } @else {
-              <div class="donut-wrap">
-                <div
-                  class="donut"
-                  [style.background]="donutStyle()"
-                  role="img"
-                  [attr.aria-label]="'Expense total ' + formatMoney(outflowTotal())"
-                >
-                  <span>{{ outflowTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
-                </div>
-                <div class="type-stack">
-                  <div>
-                    <span class="legend-dot recurring" aria-hidden="true"></span>
-                    <p>Recurring</p>
-                    <strong>{{
-                      recurringTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
-                    }}</strong>
+                @if (monthPickerView() === 'years') {
+                  <div
+                    class="year-grid"
+                    style="
+                      display: grid;
+                      grid-template-columns: repeat(4, minmax(0, 1fr));
+                      gap: 6px;
+                    "
+                    aria-label="Choose expense year"
+                  >
+                    @for (year of pickerYears(); track year) {
+                      <button
+                        type="button"
+                        [class.selected]="year === pickerYear()"
+                        [attr.aria-label]="'Select ' + year"
+                        (click)="selectPickerYear($event, year)"
+                        [style.background]="year === pickerYear() ? '#155e75' : '#f8fafc'"
+                        [style.color]="year === pickerYear() ? '#fff' : '#155e75'"
+                        style="
+                          height: 34px;
+                          min-width: 0;
+                          padding: 0;
+                          border: 0;
+                          border-radius: 8px;
+                          cursor: pointer;
+                          font: inherit;
+                          font-weight: 800;
+                        "
+                      >
+                        {{ year }}
+                      </button>
+                    }
                   </div>
-                  <div>
-                    <span class="legend-dot one-time" aria-hidden="true"></span>
-                    <p>One-time</p>
-                    <strong>{{
-                      oneTimeTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
-                    }}</strong>
+                } @else {
+                  <div
+                    class="month-grid"
+                    style="
+                      display: grid;
+                      grid-template-columns: repeat(3, minmax(0, 1fr));
+                      gap: 6px;
+                    "
+                    aria-label="Choose expense month"
+                  >
+                    @for (month of monthNames; track month; let monthIndex = $index) {
+                      <button
+                        type="button"
+                        [class.selected]="
+                          pickerYear() === selectedMonthParts().year &&
+                          monthIndex === selectedMonthParts().monthIndex
+                        "
+                        [attr.aria-label]="'Select ' + month + ' ' + pickerYear()"
+                        (click)="selectPickerMonth(monthIndex, expenseMonthTrigger)"
+                        [style.background]="
+                          pickerYear() === selectedMonthParts().year &&
+                          monthIndex === selectedMonthParts().monthIndex
+                            ? '#155e75'
+                            : '#f8fafc'
+                        "
+                        [style.color]="
+                          pickerYear() === selectedMonthParts().year &&
+                          monthIndex === selectedMonthParts().monthIndex
+                            ? '#fff'
+                            : '#155e75'
+                        "
+                        style="
+                          height: 34px;
+                          min-width: 0;
+                          padding: 0;
+                          border: 0;
+                          border-radius: 8px;
+                          cursor: pointer;
+                          font: inherit;
+                          font-weight: 800;
+                        "
+                      >
+                        {{ month }}
+                      </button>
+                    }
                   </div>
-                </div>
+                }
               </div>
             }
-          </mat-card-content>
-        </mat-card>
+          </mat-menu>
+        </mat-form-field>
 
-        <mat-card class="panel budget-panel">
-          <mat-card-header>
-            <mat-card-title>Budget Health</mat-card-title>
-            <mat-card-subtitle>
-              @if (leadingCategory()) {
-                Highest spend: {{ leadingCategory()?.name }}
+        <button
+          mat-icon-button
+          type="button"
+          aria-label="Next month"
+          matTooltip="Next month"
+          (click)="moveMonth(1)"
+        >
+          <mat-icon aria-hidden="true">chevron_right</mat-icon>
+        </button>
+      </div>
+
+      <div class="metric-grid" aria-label="Monthly financial summary">
+        @if (showDashboardSkeleton()) {
+          @for (item of [1, 2, 3, 4, 5]; track item) {
+            <div class="metric-card skeleton-card" aria-hidden="true">
+              <span class="skeleton-line short"></span>
+              <span class="skeleton-line value"></span>
+              <span class="skeleton-line"></span>
+            </div>
+          }
+        } @else {
+          <article class="metric-card hero-metric">
+            <span>Monthly income</span>
+            <strong>{{ monthlyIncome() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</strong>
+            <small>{{ activeIncomeSources().length }} active income sources</small>
+          </article>
+
+          <article class="metric-card">
+            <span>Total outflow</span>
+            <strong>{{ outflowTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</strong>
+            <small>{{ selectedEntries().length }} entries this month</small>
+          </article>
+
+          <article class="metric-card">
+            <span>Investments</span>
+            <strong>{{
+              investmentTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+            }}</strong>
+            <small>{{ selectedInvestments().length }} active investments</small>
+          </article>
+
+          <article class="metric-card" [class.warning]="remainingFunds() < 0">
+            <span>Funds left</span>
+            <strong>{{ remainingFunds() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</strong>
+            <small>After expenses and investments</small>
+          </article>
+
+          <article class="metric-card">
+            <span>Salary burnout</span>
+            <strong>{{ burnoutRatio() | percent: '1.0-0' }}</strong>
+            <mat-progress-bar
+              mode="determinate"
+              [value]="clampPercent(burnoutRatio())"
+              aria-label="Salary burnout percentage"
+            ></mat-progress-bar>
+          </article>
+        }
+      </div>
+    </section>
+
+    <mat-tab-group
+      class="workspace-tabs"
+      animationDuration="220ms"
+      mat-stretch-tabs="false"
+      [selectedIndex]="activeTabIndex()"
+      (selectedIndexChange)="setActiveTab($event)"
+      (touchstart)="startTabSwipe($event)"
+      (touchend)="finishTabSwipe($event)"
+      (touchcancel)="cancelTabSwipe()"
+    >
+      <mat-tab label="Dashboard">
+        <section class="dashboard-grid" aria-label="Dashboard insights">
+          <mat-card class="panel chart-panel">
+            <mat-card-header>
+              <mat-card-title>Expense Mix</mat-card-title>
+              <mat-card-subtitle>Category spread for {{ monthLabel() }}</mat-card-subtitle>
+            </mat-card-header>
+            <mat-card-content>
+              <header class="mobile-card-heading">
+                <strong>Expense Mix</strong>
+                <small>Category spread for {{ monthLabel() }}</small>
+              </header>
+              @if (showDashboardSkeleton()) {
+                <div class="donut-skeleton" aria-label="Loading expense mix"></div>
               } @else {
-                Category budgets versus actuals
+                <div class="donut-wrap">
+                  <div
+                    class="donut"
+                    [style.background]="donutStyle()"
+                    role="img"
+                    [attr.aria-label]="'Expense total ' + formatMoney(outflowTotal())"
+                  >
+                    <span>{{
+                      outflowTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                    }}</span>
+                  </div>
+                  <div class="type-stack">
+                    <div>
+                      <span class="legend-dot recurring" aria-hidden="true"></span>
+                      <p>Recurring</p>
+                      <strong>{{
+                        recurringTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                      }}</strong>
+                    </div>
+                    <div>
+                      <span class="legend-dot one-time" aria-hidden="true"></span>
+                      <p>One-time</p>
+                      <strong>{{
+                        oneTimeTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                      }}</strong>
+                    </div>
+                  </div>
+                </div>
               }
-            </mat-card-subtitle>
-          </mat-card-header>
-          <mat-card-content class="budget-list">
-            <header class="mobile-card-heading">
-              <strong>Budget Health</strong>
-              <small>
+            </mat-card-content>
+          </mat-card>
+
+          <mat-card class="panel budget-panel">
+            <mat-card-header>
+              <mat-card-title>Budget Health</mat-card-title>
+              <mat-card-subtitle>
                 @if (leadingCategory()) {
                   Highest spend: {{ leadingCategory()?.name }}
                 } @else {
                   Category budgets versus actuals
                 }
-              </small>
-            </header>
-            @if (showDashboardSkeleton()) {
-              @for (item of [1, 2, 3, 4]; track item) {
-                <div class="row-skeleton" aria-hidden="true">
-                  <span class="skeleton-line"></span>
-                  <span class="skeleton-line value"></span>
+              </mat-card-subtitle>
+            </mat-card-header>
+            <mat-card-content class="budget-list">
+              <header class="mobile-card-heading">
+                <strong>Budget Health</strong>
+                <small>
+                  @if (leadingCategory()) {
+                    Highest spend: {{ leadingCategory()?.name }}
+                  } @else {
+                    Category budgets versus actuals
+                  }
+                </small>
+              </header>
+              @if (showDashboardSkeleton()) {
+                @for (item of [1, 2, 3, 4]; track item) {
+                  <div class="row-skeleton" aria-hidden="true">
+                    <span class="skeleton-line"></span>
+                    <span class="skeleton-line value"></span>
+                  </div>
+                }
+              } @else {
+                @for (category of categoryStats(); track category.id) {
+                  <article class="budget-row" [class.over-budget]="category.used > 1">
+                    <div class="row-heading">
+                      <span
+                        class="swatch"
+                        [style.background]="category.color"
+                        aria-hidden="true"
+                      ></span>
+                      <strong>{{ category.name }}</strong>
+                      <span>{{
+                        category.spent | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                      }}</span>
+                    </div>
+                    <mat-progress-bar
+                      mode="determinate"
+                      [value]="clampPercent(category.used)"
+                      [attr.aria-label]="category.name + ' budget used'"
+                    ></mat-progress-bar>
+                    <small>
+                      Budget
+                      {{ category.monthlyBudget | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}
+                      &middot; {{ category.remaining >= 0 ? 'Left' : 'Over' }}
+                      {{
+                        (category.remaining >= 0 ? category.remaining : -category.remaining)
+                          | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                      }}
+                    </small>
+                  </article>
+                } @empty {
+                  <div class="empty-state">
+                    <mat-icon aria-hidden="true">category</mat-icon>
+                    <span>No categories yet</span>
+                  </div>
+                }
+              }
+            </mat-card-content>
+          </mat-card>
+
+          <mat-card class="panel suggestions">
+            <mat-card-header>
+              <mat-card-title>Advisor Signals</mat-card-title>
+              <mat-card-subtitle>Automated prompts from current month data</mat-card-subtitle>
+            </mat-card-header>
+            <mat-card-content>
+              <header class="mobile-card-heading">
+                <strong>Advisor Signals</strong>
+                <small>Automated prompts from current month data</small>
+              </header>
+              <mat-list aria-label="Budget suggestions">
+                @for (idea of suggestions(); track idea) {
+                  <mat-list-item>
+                    <mat-icon matListItemIcon aria-hidden="true">tips_and_updates</mat-icon>
+                    <span matListItemTitle>{{ idea }}</span>
+                  </mat-list-item>
+                }
+              </mat-list>
+            </mat-card-content>
+          </mat-card>
+        </section>
+      </mat-tab>
+
+      <mat-tab label="Monthly Entry">
+        <section class="work-grid" aria-label="Monthly entry workspace">
+          <mat-card class="panel action-panel">
+            <mat-card-header>
+              <mat-card-title>Monthly Data</mat-card-title>
+              <mat-card-subtitle>Expenses for month-end entry</mat-card-subtitle>
+            </mat-card-header>
+            <mat-card-content class="management-panel">
+              <header class="mobile-card-heading">
+                <strong>Monthly Data</strong>
+                <small>Expenses for month-end entry</small>
+              </header>
+              <button
+                mat-flat-button
+                type="button"
+                (click)="openBulkEditor('monthly')"
+                [disabled]="!canWrite()"
+              >
+                <mat-icon aria-hidden="true">edit_note</mat-icon>
+                Edit monthly tables
+              </button>
+
+              <div class="import-tools" aria-label="CSV import tools">
+                <button mat-stroked-button type="button" (click)="downloadImportTemplate()">
+                  <mat-icon aria-hidden="true">download</mat-icon>
+                  Download CSV template
+                </button>
+                <button
+                  mat-stroked-button
+                  type="button"
+                  (click)="budgetImportInput.click()"
+                  [disabled]="!canWrite()"
+                >
+                  <mat-icon aria-hidden="true">upload_file</mat-icon>
+                  Upload CSV
+                </button>
+                <input
+                  #budgetImportInput
+                  class="visually-hidden-file"
+                  type="file"
+                  accept=".csv,text/csv"
+                  aria-label="Upload budget import CSV"
+                  (change)="importBudgetFile($event)"
+                />
+              </div>
+
+              <div class="import-summary" aria-live="polite">
+                @if (importSummary(); as summary) {
+                  <span>
+                    Imported {{ summary.success }} of {{ summary.total }} rows.
+                    @if (summary.error) {
+                      {{ summary.error }} row{{ summary.error === 1 ? '' : 's' }} need attention.
+                    }
+                  </span>
+                  @if (processedImportCsv()) {
+                    <button mat-button type="button" (click)="downloadProcessedImport()">
+                      <mat-icon aria-hidden="true">download_done</mat-icon>
+                      Download processed file
+                    </button>
+                  }
+                } @else {
+                  <span>Use the template format so every row can be validated and reported.</span>
+                }
+              </div>
+            </mat-card-content>
+          </mat-card>
+
+          <mat-card class="panel entries-panel">
+            <mat-card-header>
+              <mat-card-title>{{ monthLabel() }} Entries</mat-card-title>
+              <mat-card-subtitle
+                >Recurring and active EMI rows are added automatically</mat-card-subtitle
+              >
+            </mat-card-header>
+            <mat-card-content class="entry-list">
+              <header class="mobile-card-heading">
+                <strong>{{ monthLabel() }} Entries</strong>
+                <small>Recurring and active EMI rows are added automatically</small>
+              </header>
+              @for (expense of selectedEntries(); track expense.id) {
+                <article class="data-row">
+                  <mat-icon aria-hidden="true">
+                    {{ expense.type === 'recurring' ? 'event_repeat' : 'receipt_long' }}
+                  </mat-icon>
+                  <div>
+                    <strong>{{ expense.name }}</strong>
+                    <small
+                      >{{ categoryName(expense.categoryId) }} &middot; {{ expense.type }}</small
+                    >
+                  </div>
+                  <span>{{ expense.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
+                </article>
+              } @empty {
+                <div class="empty-state">
+                  <mat-icon aria-hidden="true">receipt_long</mat-icon>
+                  <span>No expenses for this month</span>
                 </div>
               }
-            } @else {
-              @for (category of categoryStats(); track category.id) {
-                <article class="budget-row" [class.over-budget]="category.used > 1">
-                  <div class="row-heading">
+            </mat-card-content>
+          </mat-card>
+        </section>
+      </mat-tab>
+
+      <mat-tab label="Income & Budgets">
+        <section class="work-grid" aria-label="Income and budget planning">
+          <mat-card class="panel action-panel">
+            <mat-card-header>
+              <mat-card-title>Saved Incomes</mat-card-title>
+              <mat-card-subtitle>Stored for planning and future comparisons</mat-card-subtitle>
+            </mat-card-header>
+            <mat-card-content class="management-panel">
+              <header class="mobile-card-heading">
+                <strong>Saved Incomes</strong>
+                <small>Stored for planning and future comparisons</small>
+              </header>
+              <button
+                mat-flat-button
+                type="button"
+                (click)="openBulkEditor('planning', 0)"
+                [disabled]="!canWrite()"
+              >
+                <mat-icon aria-hidden="true">edit_note</mat-icon>
+                Edit Incomes
+              </button>
+
+              <div class="compact-list">
+                @for (income of activeIncomeSources(); track income.id) {
+                  <article>
+                    <strong>{{ income.source }}</strong>
+                    <span>{{
+                      income.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                    }}</span>
+                    <small>{{ income.month || income.cadence }} &middot; {{ income.notes }}</small>
+                  </article>
+                } @empty {
+                  <div class="empty-state">
+                    <mat-icon aria-hidden="true">payments</mat-icon>
+                    <span>No income sources saved</span>
+                  </div>
+                }
+              </div>
+            </mat-card-content>
+          </mat-card>
+
+          <mat-card class="panel action-panel">
+            <mat-card-header>
+              <mat-card-title>Investments</mat-card-title>
+              <mat-card-subtitle>One-time and recurring investment plans</mat-card-subtitle>
+            </mat-card-header>
+            <mat-card-content class="management-panel">
+              <header class="mobile-card-heading">
+                <strong>Investments</strong>
+                <small>One-time and recurring investment plans</small>
+              </header>
+              <button
+                mat-flat-button
+                type="button"
+                (click)="openBulkEditor('planning', 2)"
+                [disabled]="!canWrite()"
+              >
+                <mat-icon aria-hidden="true">edit_note</mat-icon>
+                Edit investments
+              </button>
+
+              <div class="compact-list">
+                @for (item of investments(); track item.id) {
+                  <article>
+                    <strong>{{ item.name }}</strong>
+                    <span>{{ item.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
+                    <small>{{ item.frequency }} &middot; {{ item.notes }}</small>
+                  </article>
+                } @empty {
+                  <div class="empty-state">
+                    <mat-icon aria-hidden="true">trending_up</mat-icon>
+                    <span>No investments saved</span>
+                  </div>
+                }
+              </div>
+            </mat-card-content>
+          </mat-card>
+
+          <mat-card class="panel action-panel">
+            <mat-card-header>
+              <mat-card-title>Expense Categories</mat-card-title>
+              <mat-card-subtitle>Budgets attached to each category</mat-card-subtitle>
+            </mat-card-header>
+            <mat-card-content class="management-panel">
+              <header class="mobile-card-heading">
+                <strong>Expense Categories</strong>
+                <small>Budgets attached to each category</small>
+              </header>
+              <button
+                mat-flat-button
+                type="button"
+                (click)="openBulkEditor('planning', 1)"
+                [disabled]="!canWrite()"
+              >
+                <mat-icon aria-hidden="true">edit_note</mat-icon>
+                Edit categories
+              </button>
+
+              <div class="category-list">
+                @for (category of categories(); track category.id) {
+                  <article class="category-row">
                     <span
                       class="swatch"
                       [style.background]="category.color"
                       aria-hidden="true"
                     ></span>
-                    <strong>{{ category.name }}</strong>
-                    <span>{{
-                      category.spent | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
-                    }}</span>
+                    <div>
+                      <strong>{{ category.name }}</strong>
+                      <small
+                        >{{
+                          category.monthlyBudget | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                        }}
+                        monthly budget</small
+                      >
+                    </div>
+                  </article>
+                } @empty {
+                  <div class="empty-state">
+                    <mat-icon aria-hidden="true">category</mat-icon>
+                    <span>No categories yet</span>
                   </div>
+                }
+              </div>
+            </mat-card-content>
+          </mat-card>
+        </section>
+      </mat-tab>
+
+      <mat-tab label="Trends">
+        <section class="dashboard-grid trends-grid" aria-label="Budget trends">
+          <mat-card class="panel trends-panel">
+            <mat-card-header>
+              <mat-card-title>Six Month Trend</mat-card-title>
+              <mat-card-subtitle>Outflow, investments, and remaining funds</mat-card-subtitle>
+            </mat-card-header>
+            <mat-card-content class="trend-chart">
+              <header class="mobile-card-heading">
+                <strong>Six Month Trend</strong>
+                <small>Outflow, investments, and remaining funds</small>
+              </header>
+              @for (row of trendRows(); track row.month) {
+                <div class="trend-row">
+                  <span>{{ row.label }}</span>
+                  <div
+                    class="trend-bars"
+                    role="img"
+                    [attr.aria-label]="row.label + ' outflow trend'"
+                  >
+                    <i class="bar outflow" [style.width.%]="clampPercent(row.burn)"></i>
+                    <i
+                      class="bar invested"
+                      [style.width.%]="clampPercent(row.invested / monthlyIncome())"
+                    ></i>
+                  </div>
+                  <strong>{{
+                    row.outflow | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                  }}</strong>
+                </div>
+              }
+              <div class="chart-key" aria-hidden="true">
+                <span><i class="bar outflow"></i> Outflow</span>
+                <span><i class="bar invested"></i> Investments</span>
+              </div>
+            </mat-card-content>
+          </mat-card>
+
+          <mat-card class="panel">
+            <mat-card-header>
+              <mat-card-title>Planning Ratios</mat-card-title>
+              <mat-card-subtitle>Quick read on pressure and savings</mat-card-subtitle>
+            </mat-card-header>
+            <mat-card-content class="ratio-stack">
+              <header class="mobile-card-heading">
+                <strong>Planning Ratios</strong>
+                <small>Quick read on pressure and savings</small>
+              </header>
+              <div>
+                <span>Salary burnout</span>
+                <strong>{{ burnoutRatio() | percent: '1.0-0' }}</strong>
+                <mat-progress-bar
+                  mode="determinate"
+                  [value]="clampPercent(burnoutRatio())"
+                ></mat-progress-bar>
+              </div>
+              <div>
+                <span>Savings coverage</span>
+                <strong>{{ savingsRatio() | percent: '1.0-0' }}</strong>
+                <mat-progress-bar
+                  mode="determinate"
+                  [value]="clampPercent(savingsRatio())"
+                ></mat-progress-bar>
+              </div>
+              <div>
+                <span>Debt-to-income</span>
+                <strong>{{ debtRatio() | percent: '1.0-0' }}</strong>
+                <mat-progress-bar
+                  mode="determinate"
+                  [value]="clampPercent(debtRatio())"
+                ></mat-progress-bar>
+              </div>
+            </mat-card-content>
+          </mat-card>
+        </section>
+      </mat-tab>
+
+      <mat-tab label="Loans & EMI">
+        <section class="work-grid single-panel" aria-label="Loans and EMI planning">
+          <mat-card class="panel">
+            <mat-card-header>
+              <mat-card-title>Debt Overview</mat-card-title>
+              <mat-card-subtitle
+                >Total debt
+                {{
+                  totalDebt() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                }}</mat-card-subtitle
+              >
+            </mat-card-header>
+            <mat-card-content class="management-panel loan-list">
+              <header class="mobile-card-heading">
+                <strong>Debt Overview</strong>
+                <small
+                  >Total debt
+                  {{ totalDebt() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</small
+                >
+              </header>
+              <button
+                mat-flat-button
+                type="button"
+                (click)="openBulkEditor('loans')"
+                [disabled]="!canWrite()"
+              >
+                <mat-icon aria-hidden="true">edit_note</mat-icon>
+                Edit loans
+              </button>
+
+              @for (loan of loanPlans(); track loan.id) {
+                <article class="loan-card">
+                  <div>
+                    <strong>{{ loan.loanType }}</strong>
+                    <small>{{ loan.lender }} &middot; {{ loan.annualRate }}% APR</small>
+                  </div>
+                  <span>{{
+                    loan.outstanding | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                  }}</span>
                   <mat-progress-bar
                     mode="determinate"
-                    [value]="clampPercent(category.used)"
-                    [attr.aria-label]="category.name + ' budget used'"
+                    [value]="clampPercent(loan.paidRatio)"
+                    [attr.aria-label]="loan.loanType + ' paid percentage'"
                   ></mat-progress-bar>
                   <small>
-                    Budget
-                    {{ category.monthlyBudget | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}
-                    &middot; {{ category.remaining >= 0 ? 'Left' : 'Over' }}
-                    {{
-                      (category.remaining >= 0 ? category.remaining : -category.remaining)
-                        | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
-                    }}
+                    EMI {{ loan.emi | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }} &middot;
+                    {{ loan.monthsLeft }} months left &middot; completes
+                    {{ loan.payoff | date: 'MMM y' }}
                   </small>
                 </article>
               } @empty {
                 <div class="empty-state">
-                  <mat-icon aria-hidden="true">category</mat-icon>
-                  <span>No categories yet</span>
+                  <mat-icon aria-hidden="true">account_balance</mat-icon>
+                  <span>No loans saved</span>
                 </div>
               }
-            }
-          </mat-card-content>
-        </mat-card>
-
-        <mat-card class="panel suggestions">
-          <mat-card-header>
-            <mat-card-title>Advisor Signals</mat-card-title>
-            <mat-card-subtitle>Automated prompts from current month data</mat-card-subtitle>
-          </mat-card-header>
-          <mat-card-content>
-            <header class="mobile-card-heading">
-              <strong>Advisor Signals</strong>
-              <small>Automated prompts from current month data</small>
-            </header>
-            <mat-list aria-label="Budget suggestions">
-              @for (idea of suggestions(); track idea) {
-                <mat-list-item>
-                  <mat-icon matListItemIcon aria-hidden="true">tips_and_updates</mat-icon>
-                  <span matListItemTitle>{{ idea }}</span>
-                </mat-list-item>
-              }
-            </mat-list>
-          </mat-card-content>
-        </mat-card>
-      </section>
-    </mat-tab>
-
-    <mat-tab label="Monthly Entry">
-      <section class="work-grid" aria-label="Monthly entry workspace">
-        <mat-card class="panel action-panel">
-          <mat-card-header>
-            <mat-card-title>Monthly Data</mat-card-title>
-            <mat-card-subtitle>Expenses for month-end entry</mat-card-subtitle>
-          </mat-card-header>
-          <mat-card-content class="management-panel">
-            <header class="mobile-card-heading">
-              <strong>Monthly Data</strong>
-              <small>Expenses for month-end entry</small>
-            </header>
-            <button
-              mat-flat-button
-              type="button"
-              (click)="openBulkEditor('monthly')"
-              [disabled]="!canWrite()"
-            >
-              <mat-icon aria-hidden="true">edit_note</mat-icon>
-              Edit monthly tables
-            </button>
-          </mat-card-content>
-        </mat-card>
-
-        <mat-card class="panel entries-panel">
-          <mat-card-header>
-            <mat-card-title>{{ monthLabel() }} Entries</mat-card-title>
-            <mat-card-subtitle>Recurring and active EMI rows are added automatically</mat-card-subtitle>
-          </mat-card-header>
-          <mat-card-content class="entry-list">
-            <header class="mobile-card-heading">
-              <strong>{{ monthLabel() }} Entries</strong>
-              <small>Recurring and active EMI rows are added automatically</small>
-            </header>
-            @for (expense of selectedEntries(); track expense.id) {
-              <article class="data-row">
-                <mat-icon aria-hidden="true">
-                  {{ expense.type === 'recurring' ? 'event_repeat' : 'receipt_long' }}
-                </mat-icon>
-                <div>
-                  <strong>{{ expense.name }}</strong>
-                  <small>{{ categoryName(expense.categoryId) }} &middot; {{ expense.type }}</small>
-                </div>
-                <span>{{ expense.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
-              </article>
-            } @empty {
-              <div class="empty-state">
-                <mat-icon aria-hidden="true">receipt_long</mat-icon>
-                <span>No expenses for this month</span>
-              </div>
-            }
-          </mat-card-content>
-        </mat-card>
-      </section>
-    </mat-tab>
-
-    <mat-tab label="Income & Budgets">
-      <section class="work-grid" aria-label="Income and budget planning">
-        <mat-card class="panel action-panel">
-          <mat-card-header>
-            <mat-card-title>Saved Incomes</mat-card-title>
-            <mat-card-subtitle>Stored for planning and future comparisons</mat-card-subtitle>
-          </mat-card-header>
-          <mat-card-content class="management-panel">
-            <header class="mobile-card-heading">
-              <strong>Saved Incomes</strong>
-              <small>Stored for planning and future comparisons</small>
-            </header>
-            <button
-              mat-flat-button
-              type="button"
-              (click)="openBulkEditor('planning', 0)"
-              [disabled]="!canWrite()"
-            >
-              <mat-icon aria-hidden="true">edit_note</mat-icon>
-              Edit Incomes
-            </button>
-
-            <div class="compact-list">
-              @for (income of activeIncomeSources(); track income.id) {
-                <article>
-                  <strong>{{ income.source }}</strong>
-                  <span>{{ income.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
-                  <small>{{ income.month || income.cadence }} &middot; {{ income.notes }}</small>
-                </article>
-              } @empty {
-                <div class="empty-state">
-                  <mat-icon aria-hidden="true">payments</mat-icon>
-                  <span>No income sources saved</span>
-                </div>
-              }
-            </div>
-          </mat-card-content>
-        </mat-card>
-
-        <mat-card class="panel action-panel">
-          <mat-card-header>
-            <mat-card-title>Investments</mat-card-title>
-            <mat-card-subtitle>One-time and recurring investment plans</mat-card-subtitle>
-          </mat-card-header>
-          <mat-card-content class="management-panel">
-            <header class="mobile-card-heading">
-              <strong>Investments</strong>
-              <small>One-time and recurring investment plans</small>
-            </header>
-            <button
-              mat-flat-button
-              type="button"
-              (click)="openBulkEditor('planning', 2)"
-              [disabled]="!canWrite()"
-            >
-              <mat-icon aria-hidden="true">edit_note</mat-icon>
-              Edit investments
-            </button>
-
-            <div class="compact-list">
-              @for (item of investments(); track item.id) {
-                <article>
-                  <strong>{{ item.name }}</strong>
-                  <span>{{ item.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
-                  <small>{{ item.frequency }} &middot; {{ item.notes }}</small>
-                </article>
-              } @empty {
-                <div class="empty-state">
-                  <mat-icon aria-hidden="true">trending_up</mat-icon>
-                  <span>No investments saved</span>
-                </div>
-              }
-            </div>
-          </mat-card-content>
-        </mat-card>
-
-        <mat-card class="panel action-panel">
-          <mat-card-header>
-            <mat-card-title>Expense Categories</mat-card-title>
-            <mat-card-subtitle>Budgets attached to each category</mat-card-subtitle>
-          </mat-card-header>
-          <mat-card-content class="management-panel">
-            <header class="mobile-card-heading">
-              <strong>Expense Categories</strong>
-              <small>Budgets attached to each category</small>
-            </header>
-            <button
-              mat-flat-button
-              type="button"
-              (click)="openBulkEditor('planning', 1)"
-              [disabled]="!canWrite()"
-            >
-              <mat-icon aria-hidden="true">edit_note</mat-icon>
-              Edit categories
-            </button>
-
-            <div class="category-list">
-              @for (category of categories(); track category.id) {
-                <article class="category-row">
-                  <span
-                    class="swatch"
-                    [style.background]="category.color"
-                    aria-hidden="true"
-                  ></span>
-                  <div>
-                    <strong>{{ category.name }}</strong>
-                    <small
-                      >{{
-                        category.monthlyBudget | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
-                      }}
-                      monthly budget</small
-                    >
-                  </div>
-                </article>
-              } @empty {
-                <div class="empty-state">
-                  <mat-icon aria-hidden="true">category</mat-icon>
-                  <span>No categories yet</span>
-                </div>
-              }
-            </div>
-          </mat-card-content>
-        </mat-card>
-      </section>
-    </mat-tab>
-
-    <mat-tab label="Trends">
-      <section class="dashboard-grid trends-grid" aria-label="Budget trends">
-        <mat-card class="panel trends-panel">
-          <mat-card-header>
-            <mat-card-title>Six Month Trend</mat-card-title>
-            <mat-card-subtitle>Outflow, investments, and remaining funds</mat-card-subtitle>
-          </mat-card-header>
-          <mat-card-content class="trend-chart">
-            <header class="mobile-card-heading">
-              <strong>Six Month Trend</strong>
-              <small>Outflow, investments, and remaining funds</small>
-            </header>
-            @for (row of trendRows(); track row.month) {
-              <div class="trend-row">
-                <span>{{ row.label }}</span>
-                <div class="trend-bars" role="img" [attr.aria-label]="row.label + ' outflow trend'">
-                  <i class="bar outflow" [style.width.%]="clampPercent(row.burn)"></i>
-                  <i
-                    class="bar invested"
-                    [style.width.%]="clampPercent(row.invested / monthlyIncome())"
-                  ></i>
-                </div>
-                <strong>{{ row.outflow | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</strong>
-              </div>
-            }
-            <div class="chart-key" aria-hidden="true">
-              <span><i class="bar outflow"></i> Outflow</span>
-              <span><i class="bar invested"></i> Investments</span>
-            </div>
-          </mat-card-content>
-        </mat-card>
-
-        <mat-card class="panel">
-          <mat-card-header>
-            <mat-card-title>Planning Ratios</mat-card-title>
-            <mat-card-subtitle>Quick read on pressure and savings</mat-card-subtitle>
-          </mat-card-header>
-          <mat-card-content class="ratio-stack">
-            <header class="mobile-card-heading">
-              <strong>Planning Ratios</strong>
-              <small>Quick read on pressure and savings</small>
-            </header>
-            <div>
-              <span>Salary burnout</span>
-              <strong>{{ burnoutRatio() | percent: '1.0-0' }}</strong>
-              <mat-progress-bar
-                mode="determinate"
-                [value]="clampPercent(burnoutRatio())"
-              ></mat-progress-bar>
-            </div>
-            <div>
-              <span>Savings coverage</span>
-              <strong>{{ savingsRatio() | percent: '1.0-0' }}</strong>
-              <mat-progress-bar
-                mode="determinate"
-                [value]="clampPercent(savingsRatio())"
-              ></mat-progress-bar>
-            </div>
-            <div>
-              <span>Debt-to-income</span>
-              <strong>{{ debtRatio() | percent: '1.0-0' }}</strong>
-              <mat-progress-bar
-                mode="determinate"
-                [value]="clampPercent(debtRatio())"
-              ></mat-progress-bar>
-            </div>
-          </mat-card-content>
-        </mat-card>
-      </section>
-    </mat-tab>
-
-    <mat-tab label="Loans & EMI">
-      <section class="work-grid single-panel" aria-label="Loans and EMI planning">
-        <mat-card class="panel">
-          <mat-card-header>
-            <mat-card-title>Debt Overview</mat-card-title>
-            <mat-card-subtitle
-              >Total debt
-              {{ totalDebt() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</mat-card-subtitle
-            >
-          </mat-card-header>
-          <mat-card-content class="management-panel loan-list">
-            <header class="mobile-card-heading">
-              <strong>Debt Overview</strong>
-              <small
-                >Total debt
-                {{ totalDebt() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</small
-              >
-            </header>
-            <button
-              mat-flat-button
-              type="button"
-              (click)="openBulkEditor('loans')"
-              [disabled]="!canWrite()"
-            >
-              <mat-icon aria-hidden="true">edit_note</mat-icon>
-              Edit loans
-            </button>
-
-            @for (loan of loanPlans(); track loan.id) {
-              <article class="loan-card">
-                <div>
-                  <strong>{{ loan.loanType }}</strong>
-                  <small>{{ loan.lender }} &middot; {{ loan.annualRate }}% APR</small>
-                </div>
-                <span>{{ loan.outstanding | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
-                <mat-progress-bar
-                  mode="determinate"
-                  [value]="clampPercent(loan.paidRatio)"
-                  [attr.aria-label]="loan.loanType + ' paid percentage'"
-                ></mat-progress-bar>
-                <small>
-                  EMI {{ loan.emi | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }} &middot;
-                  {{ loan.monthsLeft }} months left &middot; completes
-                  {{ loan.payoff | date: 'MMM y' }}
-                </small>
-              </article>
-            } @empty {
-              <div class="empty-state">
-                <mat-icon aria-hidden="true">account_balance</mat-icon>
-                <span>No loans saved</span>
-              </div>
-            }
-          </mat-card-content>
-        </mat-card>
-      </section>
-    </mat-tab>
-  </mat-tab-group>
-</main>
+            </mat-card-content>
+          </mat-card>
+        </section>
+      </mat-tab>
+    </mat-tab-group>
+  </main>
 }

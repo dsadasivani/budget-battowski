@@ -17,7 +17,7 @@ import type {
   Cadence,
   ExpenseEntry,
   ExpenseTemplate,
-  ExpenseType,
+  ExpenseTemplateAuditVersion,
   IncomeSource,
   InvestmentEntry,
   InvestmentFrequency,
@@ -27,7 +27,18 @@ import type {
 type DraftRow<T extends { id: string }> = T & { isNew?: boolean; pendingDelete?: boolean };
 type DraftExpense = DraftRow<ExpenseEntry> & {
   endDate?: string;
-  recurringTemplateId?: string;
+  startDate?: string;
+};
+type DraftTemplate = DraftRow<ExpenseTemplate>;
+type RecurringAuditRow = {
+  id: string;
+  amount: number;
+  categoryId: string;
+  endDate?: string;
+  label: string;
+  name: string;
+  operation: string;
+  recordedDate?: string;
   startDate?: string;
 };
 export type BulkEditorScope = 'monthly' | 'planning' | 'loans';
@@ -140,12 +151,12 @@ function expenseMonthKey(expense: Pick<ExpenseEntry, 'date' | 'month'>): string 
 })
 export class BulkEditorDialog {
   protected readonly incomeCadences: Cadence[] = ['monthly', 'annual', 'variable'];
-  protected readonly expenseTypes: ExpenseType[] = ['one-time', 'recurring'];
   protected readonly investmentFrequencies: InvestmentFrequency[] = ['one-time', 'recurring'];
 
   protected readonly categories: Array<DraftRow<BudgetCategory>>;
   protected readonly incomes: Array<DraftRow<IncomeSource>>;
-  protected readonly templates: Array<DraftRow<ExpenseTemplate>>;
+  protected readonly templates: DraftTemplate[];
+  protected readonly deletedTemplates: ExpenseTemplate[];
   protected readonly expenses: DraftExpense[];
   protected readonly investments: Array<DraftRow<InvestmentEntry>>;
   protected readonly loans: Array<DraftRow<Loan>>;
@@ -154,41 +165,33 @@ export class BulkEditorDialog {
   protected readonly showPlanningTables: boolean;
   protected readonly showLoanTables: boolean;
   protected readonly initialTabIndex: number;
+  protected readonly expandedTemplateIds = new Set<string>();
+  private readonly originalTemplatesById: Map<string, ExpenseTemplate>;
   protected validationError = '';
 
   constructor(
     private readonly dialogRef: MatDialogRef<BulkEditorDialog, BulkEditorResult>,
     @Inject(MAT_DIALOG_DATA) protected readonly data: BulkEditorData,
   ) {
+    const templates = cloneRows(data.templates);
+    this.originalTemplatesById = new Map(templates.map((template) => [template.id, template]));
     this.categories = cloneRows(data.categories);
     this.incomes = cloneRows(data.incomes);
-    this.templates = cloneRows(data.templates).map((template) => ({
-      ...template,
-      startDate: template.startDate || monthStartDate(data.selectedMonth),
-    }));
-    const recurringTemplateIds = new Set(data.templates.map((template) => template.id));
-    this.expenses = [
-      ...cloneRows(data.expenses)
-        .filter((expense) => expenseMonthKey(expense) === data.selectedMonth)
-        .filter((expense) => !expense.templateId || !recurringTemplateIds.has(expense.templateId))
-        .map<DraftExpense>((expense) => ({
-          ...expense,
-          date: expense.date || monthStartDate(expense.month || data.selectedMonth),
-        })),
-      ...this.templates.map<DraftExpense>((template) => ({
-        id: `template-row:${template.id}`,
-        month: data.selectedMonth,
-        date: template.startDate || monthStartDate(data.selectedMonth),
-        name: template.name,
-        categoryId: template.categoryId,
-        amount: template.amount,
-        type: 'recurring',
-        note: '',
-        recurringTemplateId: template.id,
+    this.templates = templates
+      .filter((template) => !template.archivedDate)
+      .map((template) => ({
+        ...template,
         startDate: template.startDate || monthStartDate(data.selectedMonth),
-        endDate: template.endDate || '',
-      })),
-    ];
+      }));
+    this.deletedTemplates = templates
+      .filter((template) => !!template.archivedDate)
+      .sort((a, b) => (b.archivedDate ?? '').localeCompare(a.archivedDate ?? ''));
+    this.expenses = cloneRows(data.expenses)
+      .filter((expense) => expenseMonthKey(expense) === data.selectedMonth)
+      .map<DraftExpense>((expense) => ({
+        ...expense,
+        date: expense.date || monthStartDate(expense.month || data.selectedMonth),
+      }));
     this.investments = cloneRows(data.investments).map((investment) => ({
       ...investment,
       date: investment.date || monthStartDate(data.selectedMonth),
@@ -217,8 +220,21 @@ export class BulkEditorDialog {
       amount: undefined as unknown as number,
       type: 'one-time',
       note: '',
-      startDate: '',
+      isNew: true,
+    });
+  }
+
+  protected addRecurringExpense(): void {
+    this.templates.unshift({
+      id: id('fixed'),
+      name: '',
+      categoryId: '',
+      amount: undefined as unknown as number,
+      type: 'recurring',
+      createdDate: todayDate(),
+      startDate: monthStartDate(this.data.selectedMonth),
       endDate: '',
+      skippedMonths: [],
       isNew: true,
     });
   }
@@ -284,6 +300,10 @@ export class BulkEditorDialog {
   }
 
   protected activeRowCount(): number {
+    if (this.showMonthlyTables) {
+      return [...this.expenses, ...this.templates].filter((row) => !row.pendingDelete).length;
+    }
+
     return this.visibleRows().filter((row) => !row.pendingDelete).length;
   }
 
@@ -295,46 +315,146 @@ export class BulkEditorDialog {
     row.pendingDelete = !row.pendingDelete;
   }
 
+  protected toggleTemplateAudit(templateId: string): void {
+    if (this.expandedTemplateIds.has(templateId)) {
+      this.expandedTemplateIds.delete(templateId);
+      return;
+    }
+
+    this.expandedTemplateIds.add(templateId);
+  }
+
+  protected isTemplateAuditExpanded(templateId: string): boolean {
+    return this.expandedTemplateIds.has(templateId);
+  }
+
+  protected recurringAuditRows(template: ExpenseTemplate): RecurringAuditRow[] {
+    return (template.auditTrail ?? [])
+      .filter((audit) => this.isHistoricalAuditVersion(audit))
+      .map((audit) => this.auditRowFromVersion(audit))
+      .filter((audit) => !audit.startDate || !audit.endDate || audit.startDate <= audit.endDate)
+      .sort((a, b) => (b.startDate ?? '').localeCompare(a.startDate ?? ''));
+  }
+
+  protected deletedRecurringAuditRows(template: ExpenseTemplate): RecurringAuditRow[] {
+    return (template.auditTrail ?? [])
+      .filter((audit) => audit.operation.toLowerCase() !== 'created')
+      .map((audit) => this.auditRowFromVersion(audit))
+      .filter((audit) => !audit.startDate || !audit.endDate || audit.startDate <= audit.endDate)
+      .sort((a, b) => (b.recordedDate ?? '').localeCompare(a.recordedDate ?? ''));
+  }
+
+  protected deletedRecurringSummary(template: ExpenseTemplate): RecurringAuditRow {
+    if (!template.startDate || !template.endDate || template.startDate <= template.endDate) {
+      return {
+        id: template.id,
+        amount: template.amount,
+        categoryId: template.categoryId,
+        endDate: template.endDate,
+        label: 'Archived recurring expense',
+        name: template.name,
+        operation: 'Deleted',
+        recordedDate: template.archivedDate,
+        startDate: template.startDate,
+      };
+    }
+
+    const historicalRow = this.deletedRecurringAuditRows(template)
+      .filter((audit) => audit.operation !== 'Deleted')
+      .sort(
+        (a, b) =>
+          (b.endDate ?? '').localeCompare(a.endDate ?? '') ||
+          (b.startDate ?? '').localeCompare(a.startDate ?? ''),
+      )[0];
+
+    return (
+      historicalRow ?? {
+        id: template.id,
+        amount: template.amount,
+        categoryId: template.categoryId,
+        endDate: template.endDate,
+        label: 'Archived recurring expense',
+        name: template.name,
+        operation: 'Deleted',
+        recordedDate: template.archivedDate,
+        startDate: template.startDate,
+      }
+    );
+  }
+
+  protected categoryName(categoryId: string): string {
+    return this.categories.find((category) => category.id === categoryId)?.name ?? 'Uncategorized';
+  }
+
+  protected auditMonthLabel(date: string | undefined, fallback: string): string {
+    const month = dateMonthKey(date);
+    if (!month) {
+      return fallback;
+    }
+
+    const [year, monthIndex] = month.split('-').map(Number);
+    return new Intl.DateTimeFormat('en-IN', { month: 'short', year: 'numeric' }).format(
+      new Date(year, monthIndex - 1, 1),
+    );
+  }
+
+  protected auditDateTimeLabel(date: string | undefined): string {
+    if (!date) {
+      return 'Not recorded';
+    }
+
+    const parsed = new Date(date);
+    if (Number.isNaN(parsed.getTime())) {
+      return date;
+    }
+
+    return new Intl.DateTimeFormat('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    }).format(parsed);
+  }
+
   protected apply(): void {
     if (this.hasLoanDateErrors()) {
       this.validationError = 'Every active loan must have both start and end dates.';
       return;
     }
 
+    const recurringValidationError = this.recurringValidationError();
+    if (recurringValidationError) {
+      this.validationError = recurringValidationError;
+      return;
+    }
+
     const createdDate = todayDate();
-    const activeExpenseDrafts = this.activeExpenseRows();
-    const recurringTemplateRows = activeExpenseDrafts.filter(
-      (expense) => expense.type === 'recurring' && !expense.templateId?.startsWith('loan:'),
-    );
-    const expenseRows = activeExpenseDrafts.filter(
-      (expense) => expense.type !== 'recurring' || expense.templateId?.startsWith('loan:'),
-    );
-    const templates = this.showMonthlyTables
-      ? recurringTemplateRows.map((expense) => ({
-          id: expense.recurringTemplateId || id('fixed'),
-          name: expense.name.trim() || 'Recurring expense',
-          categoryId: expense.categoryId,
-          amount: toNumber(expense.amount),
-          type: 'recurring' as const,
-          createdDate:
-            this.templates.find((template) => template.id === expense.recurringTemplateId)?.createdDate ||
-            createdDate,
-          startDate:
-            optionalDate(expense.startDate) ||
-            optionalDate(expense.date) ||
-            monthStartDate(this.data.selectedMonth),
-          endDate: optionalDate(expense.endDate),
-        }))
-      : this.activeRows(this.templates).map((template) => ({
+    const expenseRows = this.activeExpenseRows();
+    const templates = this.templates
+      .filter((template) => !template.pendingDelete)
+      .map((template) => {
+        const original = this.originalTemplatesById.get(template.id);
+
+        return {
           id: template.id,
-          name: template.name.trim() || 'Recurring expense',
-          categoryId: template.categoryId,
+          name: template.isNew
+            ? template.name.trim() || 'Recurring expense'
+            : original?.name || template.name.trim() || 'Recurring expense',
+          categoryId: template.isNew
+            ? template.categoryId
+            : original?.categoryId || template.categoryId,
           amount: toNumber(template.amount),
           type: 'recurring' as const,
           createdDate: template.createdDate || createdDate,
           startDate: optionalDate(template.startDate) || monthStartDate(this.data.selectedMonth),
           endDate: optionalDate(template.endDate),
-        }));
+          skippedMonths: template.skippedMonths ?? [],
+          archivedDate: template.archivedDate,
+          auditTrail: template.auditTrail ?? [],
+        };
+      });
     const expenses = this.showMonthlyTables
       ? expenseRows.map((expense) => ({
           id: expense.id,
@@ -344,7 +464,7 @@ export class BulkEditorDialog {
           name: expense.name.trim() || 'Expense',
           categoryId: expense.categoryId,
           amount: toNumber(expense.amount),
-          type: expense.type || 'one-time',
+          type: expense.templateId ? ('recurring' as const) : ('one-time' as const),
           note: expense.note ?? '',
           templateId: expense.templateId || undefined,
         }))
@@ -400,8 +520,8 @@ export class BulkEditorDialog {
       deleted: {
         categories: this.deletedIds(this.categories),
         incomes: this.deletedIds(this.incomes),
-        templates: this.showMonthlyTables ? this.deletedTemplateIds() : this.deletedIds(this.templates),
-        expenses: this.showMonthlyTables ? this.deletedExpenseIds() : this.deletedIds(this.expenses),
+        templates: this.deletedIds(this.templates),
+        expenses: this.deletedIds(this.expenses),
         investments: this.deletedIds(this.investments),
         loans: this.deletedIds(this.loans),
       },
@@ -416,7 +536,7 @@ export class BulkEditorDialog {
 
   private visibleRows(): Array<DraftRow<{ id: string }>> {
     if (this.showMonthlyTables) {
-      return this.expenses;
+      return [...this.expenses, ...this.templates, ...this.deletedTemplates];
     }
 
     if (this.showPlanningTables) {
@@ -442,27 +562,80 @@ export class BulkEditorDialog {
       .map(({ isNew: _isNew, pendingDelete: _pendingDelete, ...expense }) => expense);
   }
 
-  private deletedExpenseIds(): string[] {
-    return this.expenses
-      .filter(
-        (expense) =>
-          (expense.pendingDelete && !expense.recurringTemplateId) ||
-          (!expense.pendingDelete &&
-            !expense.isNew &&
-            !expense.recurringTemplateId &&
-            expense.type === 'recurring' &&
-            !expense.templateId?.startsWith('loan:')),
-      )
-      .map((expense) => expense.id);
+  private recurringValidationError(): string {
+    if (!this.showMonthlyTables) {
+      return '';
+    }
+
+    const earliestStartDate = monthStartDate(this.data.selectedMonth);
+
+    for (const template of this.templates) {
+      if (template.pendingDelete) {
+        continue;
+      }
+
+      const original = this.originalTemplatesById.get(template.id);
+      const isCreate = template.isNew || !original;
+      const isUpdate = !!original && this.isRecurringDraftChanged(template, original);
+      if (!isCreate && !isUpdate) {
+        continue;
+      }
+
+      const amount = Number(template.amount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return 'Amount is mandatory for every active recurring expense.';
+      }
+
+      const startDate = optionalDate(template.startDate) || monthStartDate(this.data.selectedMonth);
+      const endDate = optionalDate(template.endDate);
+
+      if (isUpdate && startDate < earliestStartDate) {
+        return 'Recurring updates can only start from the selected month or a future month.';
+      }
+
+      if (endDate && endDate <= startDate) {
+        return 'Recurring end date must be greater than the start date.';
+      }
+    }
+
+    return '';
   }
 
-  private deletedTemplateIds(): string[] {
-    return this.expenses
-      .filter(
-        (expense) =>
-          !!expense.recurringTemplateId &&
-          (expense.pendingDelete || (!expense.pendingDelete && expense.type !== 'recurring')),
-      )
-      .map((expense) => expense.recurringTemplateId as string);
+  private isRecurringDraftChanged(template: DraftTemplate, original: ExpenseTemplate): boolean {
+    const selectedStartDate = monthStartDate(this.data.selectedMonth);
+
+    return (
+      toNumber(template.amount) !== original.amount ||
+      (optionalDate(template.startDate) || selectedStartDate) !==
+        (optionalDate(original.startDate) || selectedStartDate) ||
+      (optionalDate(template.endDate) || '') !== (optionalDate(original.endDate) || '')
+    );
+  }
+
+  private auditRowFromVersion(audit: ExpenseTemplateAuditVersion): RecurringAuditRow {
+    return {
+      id: audit.id,
+      operation:
+        audit.operation === 'created'
+          ? 'Created'
+          : audit.operation === 'deleted'
+            ? 'Deleted'
+            : 'Updated',
+      label:
+        audit.operation === 'deleted'
+          ? 'Future records stopped from the next version'
+          : 'Previous values kept for past months',
+      name: audit.name,
+      categoryId: audit.categoryId,
+      amount: audit.amount,
+      recordedDate: audit.recordedDate,
+      startDate: audit.effectiveStartDate || audit.startDate,
+      endDate: audit.effectiveEndDate || audit.endDate,
+    };
+  }
+
+  private isHistoricalAuditVersion(audit: ExpenseTemplateAuditVersion): boolean {
+    const operation = audit.operation.toLowerCase();
+    return operation !== 'created' && operation !== 'deleted';
   }
 }

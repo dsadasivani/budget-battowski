@@ -21,6 +21,19 @@ export interface BudgetCategory {
   color: string;
 }
 
+export interface ExpenseTemplateAuditVersion {
+  id: string;
+  operation: 'created' | 'updated' | 'deleted';
+  recordedDate: string;
+  effectiveStartDate?: string;
+  effectiveEndDate?: string;
+  name: string;
+  categoryId: string;
+  amount: number;
+  startDate?: string;
+  endDate?: string;
+}
+
 export interface ExpenseTemplate {
   id: string;
   name: string;
@@ -30,6 +43,9 @@ export interface ExpenseTemplate {
   createdDate?: string;
   startDate?: string;
   endDate?: string;
+  skippedMonths?: string[];
+  archivedDate?: string;
+  auditTrail?: ExpenseTemplateAuditVersion[];
 }
 
 export interface ExpenseEntry {
