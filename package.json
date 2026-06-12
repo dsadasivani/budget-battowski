@@ -22,7 +22,8 @@
     "@angular/router": "^22.0.0",
     "firebase": "^12.14.0",
     "rxjs": "~7.8.0",
-    "tslib": "^2.3.0"
+    "tslib": "^2.3.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@angular/build": "^22.0.0",

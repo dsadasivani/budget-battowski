@@ -15,13 +15,17 @@ import { provideNativeDateAdapter } from '@angular/material/core';
 import type {
   BudgetCategory,
   Cadence,
+  CategoryType,
   ExpenseEntry,
   ExpenseTemplate,
   ExpenseTemplateAuditVersion,
+  IncomeAuditVersion,
   IncomeSource,
+  InvestmentAuditVersion,
   InvestmentEntry,
   InvestmentFrequency,
   Loan,
+  LoanAuditVersion,
 } from './budget.models';
 
 type DraftRow<T extends { id: string }> = T & { isNew?: boolean; pendingDelete?: boolean };
@@ -36,6 +40,15 @@ type RecurringAuditRow = {
   categoryId: string;
   endDate?: string;
   label: string;
+  name: string;
+  operation: string;
+  recordedDate?: string;
+  startDate?: string;
+};
+type AuditDisplayRow = {
+  id: string;
+  amount: number;
+  endDate?: string;
   name: string;
   operation: string;
   recordedDate?: string;
@@ -121,6 +134,13 @@ function monthStartDate(month: string): string {
   return `${month}-01`;
 }
 
+function currentMonthStartDate(): string {
+  const now = new Date();
+  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+  return monthStartDate(month);
+}
+
 function dateMonthKey(date?: string): string | undefined {
   const [year, month] = (date ?? '').split('-');
   return year && month ? `${year}-${month.padStart(2, '0')}` : undefined;
@@ -150,13 +170,23 @@ function expenseMonthKey(expense: Pick<ExpenseEntry, 'date' | 'month'>): string 
   styleUrl: './bulk-editor-dialog.scss',
 })
 export class BulkEditorDialog {
-  protected readonly incomeCadences: Cadence[] = ['monthly', 'annual', 'variable'];
+  protected readonly incomeCadences: Cadence[] = [
+    'daily',
+    'weekly',
+    'bi-weekly',
+    'monthly',
+    'quarterly',
+    'half-yearly',
+    'annual',
+    'one-time',
+    'variable',
+  ];
   protected readonly investmentFrequencies: InvestmentFrequency[] = ['one-time', 'recurring'];
+  protected readonly categoryTypes: CategoryType[] = ['Income', 'Investments', 'Expenses'];
 
   protected readonly categories: Array<DraftRow<BudgetCategory>>;
   protected readonly incomes: Array<DraftRow<IncomeSource>>;
   protected readonly templates: DraftTemplate[];
-  protected readonly deletedTemplates: ExpenseTemplate[];
   protected readonly expenses: DraftExpense[];
   protected readonly investments: Array<DraftRow<InvestmentEntry>>;
   protected readonly loans: Array<DraftRow<Loan>>;
@@ -166,6 +196,10 @@ export class BulkEditorDialog {
   protected readonly showLoanTables: boolean;
   protected readonly initialTabIndex: number;
   protected readonly expandedTemplateIds = new Set<string>();
+  protected readonly expandedAuditIds = new Set<string>();
+  private readonly originalIncomesById: Map<string, IncomeSource>;
+  private readonly originalInvestmentsById: Map<string, InvestmentEntry>;
+  private readonly originalLoansById: Map<string, Loan>;
   private readonly originalTemplatesById: Map<string, ExpenseTemplate>;
   protected validationError = '';
 
@@ -175,17 +209,21 @@ export class BulkEditorDialog {
   ) {
     const templates = cloneRows(data.templates);
     this.originalTemplatesById = new Map(templates.map((template) => [template.id, template]));
-    this.categories = cloneRows(data.categories);
-    this.incomes = cloneRows(data.incomes);
+    this.categories = cloneRows(data.categories).map((category) => ({
+      ...category,
+      type: category.type || 'Expenses',
+    }));
+    this.incomes = cloneRows(data.incomes).map((income) => ({
+      ...income,
+      month: income.month ? monthStartDate(dateMonthKey(income.month) ?? income.month) : income.month,
+    }));
+    this.originalIncomesById = new Map(data.incomes.map((income) => [income.id, { ...income }]));
     this.templates = templates
       .filter((template) => !template.archivedDate)
       .map((template) => ({
         ...template,
-        startDate: template.startDate || monthStartDate(data.selectedMonth),
+        startDate: template.startDate || currentMonthStartDate(),
       }));
-    this.deletedTemplates = templates
-      .filter((template) => !!template.archivedDate)
-      .sort((a, b) => (b.archivedDate ?? '').localeCompare(a.archivedDate ?? ''));
     this.expenses = cloneRows(data.expenses)
       .filter((expense) => expenseMonthKey(expense) === data.selectedMonth)
       .map<DraftExpense>((expense) => ({
@@ -197,7 +235,11 @@ export class BulkEditorDialog {
       date: investment.date || monthStartDate(data.selectedMonth),
       frequency: investment.frequency || 'one-time',
     }));
+    this.originalInvestmentsById = new Map(
+      data.investments.map((investment) => [investment.id, { ...investment }]),
+    );
     this.loans = cloneRows(data.loans);
+    this.originalLoansById = new Map(data.loans.map((loan) => [loan.id, { ...loan }]));
     this.title =
       data.scope === 'monthly'
         ? 'Monthly Entry Editor'
@@ -232,7 +274,7 @@ export class BulkEditorDialog {
       amount: undefined as unknown as number,
       type: 'recurring',
       createdDate: todayDate(),
-      startDate: monthStartDate(this.data.selectedMonth),
+      startDate: currentMonthStartDate(),
       endDate: '',
       skippedMonths: [],
       isNew: true,
@@ -245,6 +287,7 @@ export class BulkEditorDialog {
       source: '',
       amount: undefined as unknown as number,
       cadence: '' as Cadence,
+      categoryId: '',
       notes: '',
       month: this.data.selectedMonth,
       createdDate: todayDate(),
@@ -260,6 +303,7 @@ export class BulkEditorDialog {
       name: '',
       monthlyBudget: undefined as unknown as number,
       color: '',
+      type: 'Expenses',
       isNew: true,
     });
   }
@@ -285,6 +329,7 @@ export class BulkEditorDialog {
       id: id('investment'),
       name: '',
       amount: undefined as unknown as number,
+      categoryId: '',
       frequency: 'one-time',
       date: monthStartDate(this.data.selectedMonth),
       startDate: '',
@@ -328,6 +373,19 @@ export class BulkEditorDialog {
     return this.expandedTemplateIds.has(templateId);
   }
 
+  protected toggleAudit(recordId: string): void {
+    if (this.expandedAuditIds.has(recordId)) {
+      this.expandedAuditIds.delete(recordId);
+      return;
+    }
+
+    this.expandedAuditIds.add(recordId);
+  }
+
+  protected isAuditExpanded(recordId: string): boolean {
+    return this.expandedAuditIds.has(recordId);
+  }
+
   protected recurringAuditRows(template: ExpenseTemplate): RecurringAuditRow[] {
     return (template.auditTrail ?? [])
       .filter((audit) => this.isHistoricalAuditVersion(audit))
@@ -336,54 +394,64 @@ export class BulkEditorDialog {
       .sort((a, b) => (b.startDate ?? '').localeCompare(a.startDate ?? ''));
   }
 
-  protected deletedRecurringAuditRows(template: ExpenseTemplate): RecurringAuditRow[] {
-    return (template.auditTrail ?? [])
-      .filter((audit) => audit.operation.toLowerCase() !== 'created')
-      .map((audit) => this.auditRowFromVersion(audit))
+  protected incomeAuditRows(income: IncomeSource): AuditDisplayRow[] {
+    return (income.auditTrail ?? [])
+      .filter((audit) => this.isVisibleAuditOperation(audit.operation))
+      .map((audit) => ({
+        id: audit.id,
+        operation: this.auditOperationLabel(audit.operation),
+        name: audit.source,
+        amount: audit.amount,
+        recordedDate: audit.recordedDate,
+        startDate: audit.effectiveStartDate || audit.startDate || audit.month,
+        endDate: audit.effectiveEndDate || audit.endDate,
+      }))
       .filter((audit) => !audit.startDate || !audit.endDate || audit.startDate <= audit.endDate)
-      .sort((a, b) => (b.recordedDate ?? '').localeCompare(a.recordedDate ?? ''));
+      .sort((a, b) => (b.startDate ?? '').localeCompare(a.startDate ?? ''));
   }
 
-  protected deletedRecurringSummary(template: ExpenseTemplate): RecurringAuditRow {
-    if (!template.startDate || !template.endDate || template.startDate <= template.endDate) {
-      return {
-        id: template.id,
-        amount: template.amount,
-        categoryId: template.categoryId,
-        endDate: template.endDate,
-        label: 'Archived recurring expense',
-        name: template.name,
-        operation: 'Deleted',
-        recordedDate: template.archivedDate,
-        startDate: template.startDate,
-      };
-    }
+  protected investmentAuditRows(investment: InvestmentEntry): AuditDisplayRow[] {
+    return (investment.auditTrail ?? [])
+      .filter((audit) => this.isVisibleAuditOperation(audit.operation))
+      .map((audit) => ({
+        id: audit.id,
+        operation: this.auditOperationLabel(audit.operation),
+        name: audit.name,
+        amount: audit.amount,
+        recordedDate: audit.recordedDate,
+        startDate:
+          audit.effectiveStartDate ||
+          audit.startDate ||
+          audit.date ||
+          monthStartDate(this.data.selectedMonth),
+        endDate: audit.effectiveEndDate || audit.endDate,
+      }))
+      .filter((audit) => !audit.startDate || !audit.endDate || audit.startDate <= audit.endDate)
+      .sort((a, b) => (b.startDate ?? '').localeCompare(a.startDate ?? ''));
+  }
 
-    const historicalRow = this.deletedRecurringAuditRows(template)
-      .filter((audit) => audit.operation !== 'Deleted')
-      .sort(
-        (a, b) =>
-          (b.endDate ?? '').localeCompare(a.endDate ?? '') ||
-          (b.startDate ?? '').localeCompare(a.startDate ?? ''),
-      )[0];
-
-    return (
-      historicalRow ?? {
-        id: template.id,
-        amount: template.amount,
-        categoryId: template.categoryId,
-        endDate: template.endDate,
-        label: 'Archived recurring expense',
-        name: template.name,
-        operation: 'Deleted',
-        recordedDate: template.archivedDate,
-        startDate: template.startDate,
-      }
-    );
+  protected loanAuditRows(loan: Loan): AuditDisplayRow[] {
+    return (loan.auditTrail ?? [])
+      .filter((audit) => this.isVisibleAuditOperation(audit.operation))
+      .map((audit) => ({
+        id: audit.id,
+        operation: this.auditOperationLabel(audit.operation),
+        name: `${audit.lender} ${audit.loanType}`.trim(),
+        amount: audit.emi,
+        recordedDate: audit.recordedDate,
+        startDate: audit.effectiveStartDate || audit.startDate,
+        endDate: audit.effectiveEndDate || audit.endDate,
+      }))
+      .filter((audit) => !audit.startDate || !audit.endDate || audit.startDate <= audit.endDate)
+      .sort((a, b) => (b.startDate ?? '').localeCompare(a.startDate ?? ''));
   }
 
   protected categoryName(categoryId: string): string {
     return this.categories.find((category) => category.id === categoryId)?.name ?? 'Uncategorized';
+  }
+
+  protected categoriesByType(type: CategoryType): Array<DraftRow<BudgetCategory>> {
+    return this.categories.filter((category) => (category.type ?? 'Expenses') === type);
   }
 
   protected auditMonthLabel(date: string | undefined, fallback: string): string {
@@ -448,7 +516,7 @@ export class BulkEditorDialog {
           amount: toNumber(template.amount),
           type: 'recurring' as const,
           createdDate: template.createdDate || createdDate,
-          startDate: optionalDate(template.startDate) || monthStartDate(this.data.selectedMonth),
+          startDate: optionalDate(template.startDate) || currentMonthStartDate(),
           endDate: optionalDate(template.endDate),
           skippedMonths: template.skippedMonths ?? [],
           archivedDate: template.archivedDate,
@@ -464,7 +532,11 @@ export class BulkEditorDialog {
           name: expense.name.trim() || 'Expense',
           categoryId: expense.categoryId,
           amount: toNumber(expense.amount),
-          type: expense.templateId ? ('recurring' as const) : ('one-time' as const),
+          type: expense.templateId
+            ? ('recurring' as const)
+            : expense.type === 'recurring'
+              ? ('recurring' as const)
+              : ('one-time' as const),
           note: expense.note ?? '',
           templateId: expense.templateId || undefined,
         }))
@@ -474,49 +546,73 @@ export class BulkEditorDialog {
       scope: this.data.scope,
       categories: this.activeRows(this.categories).map((category) => ({
         id: category.id,
-        name: category.name.trim() || 'Category',
-        monthlyBudget: toNumber(category.monthlyBudget),
-        color: category.color || '#1f7a8c',
-      })),
-      incomes: this.activeRows(this.incomes).map((income) => ({
-        id: income.id,
-        source: income.source.trim() || 'Income',
-        amount: toNumber(income.amount),
-        cadence: income.cadence || 'monthly',
-        notes: income.notes ?? '',
-        month: income.month || this.data.selectedMonth,
-        createdDate: income.createdDate || createdDate,
-        startDate: optionalDate(income.startDate),
-        endDate: optionalDate(income.endDate),
-      })),
+          name: category.name.trim() || 'Category',
+          monthlyBudget: toNumber(category.monthlyBudget),
+          color: category.color || '#1f7a8c',
+          type: category.type || 'Expenses',
+        })),
+      incomes: this.incomes
+        .filter((income) => !income.pendingDelete)
+        .map((income) => ({
+          id: income.id,
+          source: income.isNew
+            ? income.source.trim() || 'Income'
+            : this.originalIncomesById.get(income.id)?.source || income.source.trim() || 'Income',
+          amount: toNumber(income.amount),
+          cadence: income.isNew
+            ? income.cadence || 'monthly'
+            : this.originalIncomesById.get(income.id)?.cadence || income.cadence || 'monthly',
+          notes: income.notes ?? '',
+          categoryId: income.categoryId,
+          month: dateMonthKey(dateValue(income.month)) || income.month || this.data.selectedMonth,
+          createdDate: income.createdDate || createdDate,
+          startDate: optionalDate(income.startDate),
+          endDate: optionalDate(income.endDate),
+          auditTrail: income.auditTrail ?? [],
+        })),
       templates,
       expenses,
-      investments: this.activeRows(this.investments).map((investment) => ({
-        id: investment.id,
-        name: investment.name.trim() || 'Investment',
-        amount: toNumber(investment.amount),
-        frequency: investment.frequency || 'one-time',
-        date: optionalDate(investment.date) || monthStartDate(this.data.selectedMonth),
-        startDate:
-          investment.frequency === 'recurring'
-            ? optionalDate(investment.startDate) || optionalDate(investment.date)
-            : optionalDate(investment.startDate),
-        endDate: optionalDate(investment.endDate),
-        notes: investment.notes ?? '',
-        createdDate: investment.createdDate || createdDate,
-      })),
-      loans: this.activeRows(this.loans).map((loan) => ({
-        id: loan.id,
-        lender: loan.lender.trim() || 'Lender',
-        loanType: loan.loanType.trim() || 'Loan',
-        principal: toNumber(loan.principal),
-        outstanding: toNumber(loan.outstanding),
-        annualRate: toNumber(loan.annualRate),
-        emi: toNumber(loan.emi),
-        startDate: requiredDate(loan.startDate),
-        endDate: requiredDate(loan.endDate),
-        notes: loan.notes ?? '',
-      })),
+      investments: this.investments
+        .filter((investment) => !investment.pendingDelete)
+        .map((investment) => ({
+          id: investment.id,
+          name: investment.isNew
+            ? investment.name.trim() || 'Investment'
+            : this.originalInvestmentsById.get(investment.id)?.name ||
+              investment.name.trim() ||
+              'Investment',
+          amount: toNumber(investment.amount),
+          categoryId: investment.categoryId,
+          frequency: investment.frequency || 'one-time',
+          date: optionalDate(investment.date) || monthStartDate(this.data.selectedMonth),
+          startDate:
+            investment.frequency === 'recurring'
+              ? optionalDate(investment.startDate) || optionalDate(investment.date)
+              : optionalDate(investment.startDate),
+          endDate: optionalDate(investment.endDate),
+          notes: investment.notes ?? '',
+          createdDate: investment.createdDate || createdDate,
+          auditTrail: investment.auditTrail ?? [],
+        })),
+      loans: this.loans
+        .filter((loan) => !loan.pendingDelete)
+        .map((loan) => ({
+          id: loan.id,
+          lender: loan.isNew
+            ? loan.lender.trim() || 'Lender'
+            : this.originalLoansById.get(loan.id)?.lender || loan.lender.trim() || 'Lender',
+          loanType: loan.isNew
+            ? loan.loanType.trim() || 'Loan'
+            : this.originalLoansById.get(loan.id)?.loanType || loan.loanType.trim() || 'Loan',
+          principal: toNumber(loan.principal),
+          outstanding: toNumber(loan.outstanding),
+          annualRate: toNumber(loan.annualRate),
+          emi: toNumber(loan.emi),
+          startDate: requiredDate(loan.startDate),
+          endDate: requiredDate(loan.endDate),
+          notes: loan.notes ?? '',
+          auditTrail: loan.auditTrail ?? [],
+        })),
       deleted: {
         categories: this.deletedIds(this.categories),
         incomes: this.deletedIds(this.incomes),
@@ -536,7 +632,7 @@ export class BulkEditorDialog {
 
   private visibleRows(): Array<DraftRow<{ id: string }>> {
     if (this.showMonthlyTables) {
-      return [...this.expenses, ...this.templates, ...this.deletedTemplates];
+      return [...this.expenses, ...this.templates];
     }
 
     if (this.showPlanningTables) {
@@ -567,7 +663,7 @@ export class BulkEditorDialog {
       return '';
     }
 
-    const earliestStartDate = monthStartDate(this.data.selectedMonth);
+    const earliestStartDate = currentMonthStartDate();
 
     for (const template of this.templates) {
       if (template.pendingDelete) {
@@ -586,7 +682,7 @@ export class BulkEditorDialog {
         return 'Amount is mandatory for every active recurring expense.';
       }
 
-      const startDate = optionalDate(template.startDate) || monthStartDate(this.data.selectedMonth);
+      const startDate = optionalDate(template.startDate) || currentMonthStartDate();
       const endDate = optionalDate(template.endDate);
 
       if (isUpdate && startDate < earliestStartDate) {
@@ -602,12 +698,12 @@ export class BulkEditorDialog {
   }
 
   private isRecurringDraftChanged(template: DraftTemplate, original: ExpenseTemplate): boolean {
-    const selectedStartDate = monthStartDate(this.data.selectedMonth);
+    const currentStartDate = currentMonthStartDate();
 
     return (
       toNumber(template.amount) !== original.amount ||
-      (optionalDate(template.startDate) || selectedStartDate) !==
-        (optionalDate(original.startDate) || selectedStartDate) ||
+      (optionalDate(template.startDate) || currentStartDate) !==
+        (optionalDate(original.startDate) || currentStartDate) ||
       (optionalDate(template.endDate) || '') !== (optionalDate(original.endDate) || '')
     );
   }
@@ -637,5 +733,19 @@ export class BulkEditorDialog {
   private isHistoricalAuditVersion(audit: ExpenseTemplateAuditVersion): boolean {
     const operation = audit.operation.toLowerCase();
     return operation !== 'created' && operation !== 'deleted';
+  }
+
+  private isVisibleAuditOperation(
+    operation:
+      | ExpenseTemplateAuditVersion['operation']
+      | IncomeAuditVersion['operation']
+      | InvestmentAuditVersion['operation']
+      | LoanAuditVersion['operation'],
+  ): boolean {
+    return operation !== 'created';
+  }
+
+  private auditOperationLabel(operation: string): string {
+    return operation === 'deleted' ? 'Deleted' : operation === 'updated' ? 'Updated' : 'Created';
   }
 }

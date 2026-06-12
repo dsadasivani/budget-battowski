@@ -460,33 +460,6 @@
   min-width: 88px;
 }
 
-.deleted-recurring-toolbar {
-  margin-top: 14px;
-  padding-top: 10px;
-  border-top: 1px solid var(--sheet-grid);
-}
-
-.deleted-recurring-wrap {
-  border-color: #e4c7cb;
-}
-
-.deleted-recurring-table {
-  .sheet-letters th,
-  thead tr:last-child th {
-    background: #fff7f7;
-  }
-}
-
-.deleted-recurring-record,
-.bulk-table tbody tr.deleted-recurring-record:nth-child(even),
-.bulk-table tbody tr.deleted-recurring-record:hover {
-  background: #fffafa;
-
-  td {
-    color: #553538;
-  }
-}
-
 .type-pill {
   display: inline-grid;
   min-width: 84px;
@@ -533,10 +506,9 @@
 
 .audit-item {
   display: grid;
-  grid-template-columns: minmax(92px, 0.55fr) minmax(170px, 1.3fr) minmax(110px, 0.7fr) minmax(
-      120px,
-      0.8fr
-    ) minmax(120px, 0.8fr) minmax(180px, 1fr);
+  grid-template-columns:
+    minmax(92px, 0.55fr) minmax(170px, 1.3fr) minmax(110px, 0.7fr) minmax(120px, 0.8fr)
+    minmax(120px, 0.8fr) minmax(180px, 1fr);
   gap: 8px;
   align-items: center;
   padding: 7px 10px;

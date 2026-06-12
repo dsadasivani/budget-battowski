@@ -105,7 +105,7 @@
                         [disabled]="!!expense.pendingDelete"
                       >
                         <mat-option value="">Uncategorized</mat-option>
-                        @for (category of categories; track category.id) {
+                        @for (category of categoriesByType('Expenses'); track category.id) {
                           <mat-option [value]="category.id">{{ category.name }}</mat-option>
                         }
                       </mat-select>
@@ -124,8 +124,8 @@
                     </mat-form-field>
                   </td>
                   <td data-label="Type">
-                    <span class="type-pill" [class.recurring]="expense.templateId">
-                      {{ expense.templateId ? 'recurring' : 'one-time' }}
+                    <span class="type-pill" [class.recurring]="expense.type === 'recurring'">
+                      {{ expense.type === 'recurring' ? 'recurring' : 'one-time' }}
                     </span>
                   </td>
                   <td data-label="Note">
@@ -227,7 +227,7 @@
                         [disabled]="!!template.pendingDelete || !template.isNew"
                       >
                         <mat-option value="">Uncategorized</mat-option>
-                        @for (category of categories; track category.id) {
+                        @for (category of categoriesByType('Expenses'); track category.id) {
                           <mat-option [value]="category.id">{{ category.name }}</mat-option>
                         }
                       </mat-select>
@@ -346,105 +346,6 @@
             </tbody>
           </table>
         </div>
-
-        @if (deletedTemplates.length) {
-          <div class="bulk-toolbar deleted-recurring-toolbar">
-            <strong>Deleted Recurring Expenses</strong>
-          </div>
-
-          <div class="table-wrap deleted-recurring-wrap">
-            <table class="bulk-table recurring-table deleted-recurring-table">
-              <thead>
-                <tr class="sheet-letters" aria-hidden="true">
-                  <th class="corner-cell"></th>
-                  <th>A</th>
-                  <th>B</th>
-                  <th>C</th>
-                  <th>D</th>
-                  <th>E</th>
-                  <th>F</th>
-                  <th></th>
-                </tr>
-                <tr>
-                  <th class="row-number-col">#</th>
-                  <th>Name</th>
-                  <th>Category</th>
-                  <th>Amount</th>
-                  <th>Start</th>
-                  <th>Ended</th>
-                  <th>Deleted</th>
-                  <th aria-label="Actions"></th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (template of deletedTemplates; track template.id; let rowIndex = $index) {
-                  @let deletedSummary = deletedRecurringSummary(template);
-                  <tr class="deleted-recurring-record">
-                    <td class="row-number" data-label="Row">{{ rowIndex + 1 }}</td>
-                    <td data-label="Name">
-                      <strong>{{ deletedSummary.name }}</strong>
-                    </td>
-                    <td data-label="Category">{{ categoryName(deletedSummary.categoryId) }}</td>
-                    <td data-label="Amount">
-                      {{ deletedSummary.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}
-                    </td>
-                    <td data-label="Start">
-                      {{ auditMonthLabel(deletedSummary.startDate, 'Beginning') }}
-                    </td>
-                    <td data-label="Ended">
-                      {{ auditMonthLabel(deletedSummary.endDate, 'Future') }}
-                    </td>
-                    <td data-label="Deleted">{{ auditDateTimeLabel(template.archivedDate) }}</td>
-                    <td data-label="Actions">
-                      @if (deletedRecurringAuditRows(template).length) {
-                        <button
-                          mat-icon-button
-                          type="button"
-                          [attr.aria-label]="
-                            isTemplateAuditExpanded(template.id)
-                              ? 'Hide deleted recurring audit'
-                              : 'Show deleted recurring audit'
-                          "
-                          [matTooltip]="
-                            isTemplateAuditExpanded(template.id) ? 'Hide audit' : 'Show audit'
-                          "
-                          (click)="toggleTemplateAudit(template.id)"
-                        >
-                          <mat-icon>{{
-                            isTemplateAuditExpanded(template.id) ? 'expand_less' : 'expand_more'
-                          }}</mat-icon>
-                        </button>
-                      }
-                    </td>
-                  </tr>
-                  @if (
-                    isTemplateAuditExpanded(template.id) &&
-                    deletedRecurringAuditRows(template).length
-                  ) {
-                    <tr class="audit-row">
-                      <td colspan="8">
-                        <div class="audit-panel">
-                          @for (audit of deletedRecurringAuditRows(template); track audit.id) {
-                            <div class="audit-item">
-                              <span class="audit-operation">{{ audit.operation }}</span>
-                              <strong>{{ audit.name }}</strong>
-                              <span>{{
-                                audit.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
-                              }}</span>
-                              <span>{{ auditMonthLabel(audit.startDate, 'Beginning') }}</span>
-                              <span>{{ auditMonthLabel(audit.endDate, 'Future') }}</span>
-                              <span>{{ auditDateTimeLabel(audit.recordedDate) }}</span>
-                            </div>
-                          }
-                        </div>
-                      </td>
-                    </tr>
-                  }
-                }
-              </tbody>
-            </table>
-          </div>
-        }
       </mat-tab>
     }
 
@@ -469,15 +370,18 @@
                 <th>D</th>
                 <th>E</th>
                 <th>F</th>
+                <th>G</th>
+                <th>H</th>
                 <th></th>
               </tr>
               <tr>
                 <th class="row-number-col">#</th>
                 <th>Source</th>
                 <th>Amount</th>
+                <th>Category</th>
                 <th>Cadence</th>
-                <th>Notes</th>
                 <th>Month</th>
+                <th>Notes</th>
                 <th aria-label="Actions"></th>
               </tr>
             </thead>
@@ -497,7 +401,7 @@
                         matInput
                         placeholder="Income source"
                         [(ngModel)]="income.source"
-                        [disabled]="!!income.pendingDelete"
+                        [disabled]="!!income.pendingDelete || !income.isNew"
                       />
                     </mat-form-field>
                   </td>
@@ -513,17 +417,47 @@
                       />
                     </mat-form-field>
                   </td>
+                  <td data-label="Category">
+                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                      <mat-select
+                        placeholder="Category"
+                        [(ngModel)]="income.categoryId"
+                        [disabled]="!!income.pendingDelete"
+                      >
+                        <mat-option value="">Uncategorized</mat-option>
+                        @for (category of categoriesByType('Income'); track category.id) {
+                          <mat-option [value]="category.id">{{ category.name }}</mat-option>
+                        }
+                      </mat-select>
+                    </mat-form-field>
+                  </td>
                   <td data-label="Cadence">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">
                       <mat-select
                         placeholder="Cadence"
                         [(ngModel)]="income.cadence"
-                        [disabled]="!!income.pendingDelete"
+                        [disabled]="!!income.pendingDelete || !income.isNew"
                       >
                         @for (cadence of incomeCadences; track cadence) {
                           <mat-option [value]="cadence">{{ cadence }}</mat-option>
                         }
                       </mat-select>
+                    </mat-form-field>
+                  </td>
+                  <td data-label="Month">
+                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                      <input
+                        matInput
+                        [matDatepicker]="incomeMonthPicker"
+                        [placeholder]="data.selectedMonth"
+                        [(ngModel)]="income.month"
+                        [disabled]="!!income.pendingDelete"
+                      />
+                      <mat-datepicker-toggle
+                        matIconSuffix
+                        [for]="incomeMonthPicker"
+                      ></mat-datepicker-toggle>
+                      <mat-datepicker #incomeMonthPicker></mat-datepicker>
                     </mat-form-field>
                   </td>
                   <td data-label="Notes">
@@ -536,18 +470,20 @@
                       />
                     </mat-form-field>
                   </td>
-                  <td data-label="Month">
-                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
-                      <input
-                        matInput
-                        type="month"
-                        [placeholder]="data.selectedMonth"
-                        [(ngModel)]="income.month"
-                        [disabled]="!!income.pendingDelete"
-                      />
-                    </mat-form-field>
-                  </td>
                   <td data-label="Actions">
+                    @if (incomeAuditRows(income).length) {
+                      <button
+                        mat-icon-button
+                        type="button"
+                        [attr.aria-label]="
+                          isAuditExpanded(income.id) ? 'Hide income audit' : 'Show income audit'
+                        "
+                        [matTooltip]="isAuditExpanded(income.id) ? 'Hide audit' : 'Show audit'"
+                        (click)="toggleAudit(income.id)"
+                      >
+                        <mat-icon>{{ isAuditExpanded(income.id) ? 'expand_less' : 'expand_more' }}</mat-icon>
+                      </button>
+                    }
                     <button
                       mat-icon-button
                       type="button"
@@ -571,6 +507,24 @@
                     </button>
                   </td>
                 </tr>
+                @if (isAuditExpanded(income.id) && incomeAuditRows(income).length) {
+                  <tr class="audit-row">
+                    <td colspan="8">
+                      <div class="audit-panel">
+                        @for (audit of incomeAuditRows(income); track audit.id) {
+                          <div class="audit-item">
+                            <span class="audit-operation">{{ audit.operation }}</span>
+                            <strong>{{ audit.name }}</strong>
+                            <span>{{ audit.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
+                            <span>{{ auditMonthLabel(audit.startDate, 'Beginning') }}</span>
+                            <span>{{ auditMonthLabel(audit.endDate, 'Future') }}</span>
+                            <span>{{ auditDateTimeLabel(audit.recordedDate) }}</span>
+                          </div>
+                        }
+                      </div>
+                    </td>
+                  </tr>
+                }
               }
             </tbody>
           </table>
@@ -581,7 +535,7 @@
     @if (showPlanningTables) {
       <mat-tab label="Categories">
         <div class="bulk-toolbar">
-          <strong>Expense Categories</strong>
+          <strong>Categories</strong>
           <button mat-flat-button color="primary" type="button" (click)="addCategory()">
             <mat-icon>add</mat-icon>
             Add row
@@ -596,11 +550,13 @@
                 <th>A</th>
                 <th>B</th>
                 <th>C</th>
+                <th>D</th>
                 <th></th>
               </tr>
               <tr>
                 <th class="row-number-col">#</th>
                 <th>Name</th>
+                <th>Type</th>
                 <th>Monthly Budget</th>
                 <th>Color</th>
                 <th aria-label="Actions"></th>
@@ -624,6 +580,19 @@
                         [(ngModel)]="category.name"
                         [disabled]="!!category.pendingDelete"
                       />
+                    </mat-form-field>
+                  </td>
+                  <td data-label="Type">
+                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                      <mat-select
+                        placeholder="Type"
+                        [(ngModel)]="category.type"
+                        [disabled]="!!category.pendingDelete"
+                      >
+                        @for (categoryType of categoryTypes; track categoryType) {
+                          <mat-option [value]="categoryType">{{ categoryType }}</mat-option>
+                        }
+                      </mat-select>
                     </mat-form-field>
                   </td>
                   <td data-label="Monthly Budget">
@@ -735,7 +704,7 @@
                         matInput
                         placeholder="Lender"
                         [(ngModel)]="loan.lender"
-                        [disabled]="!!loan.pendingDelete"
+                        [disabled]="!!loan.pendingDelete || !loan.isNew"
                       />
                     </mat-form-field>
                   </td>
@@ -745,7 +714,7 @@
                         matInput
                         placeholder="Loan type"
                         [(ngModel)]="loan.loanType"
-                        [disabled]="!!loan.pendingDelete"
+                        [disabled]="!!loan.pendingDelete || !loan.isNew"
                       />
                     </mat-form-field>
                   </td>
@@ -842,6 +811,17 @@
                     </mat-form-field>
                   </td>
                   <td data-label="Actions">
+                    @if (loanAuditRows(loan).length) {
+                      <button
+                        mat-icon-button
+                        type="button"
+                        [attr.aria-label]="isAuditExpanded(loan.id) ? 'Hide loan audit' : 'Show loan audit'"
+                        [matTooltip]="isAuditExpanded(loan.id) ? 'Hide audit' : 'Show audit'"
+                        (click)="toggleAudit(loan.id)"
+                      >
+                        <mat-icon>{{ isAuditExpanded(loan.id) ? 'expand_less' : 'expand_more' }}</mat-icon>
+                      </button>
+                    }
                     <button
                       mat-icon-button
                       type="button"
@@ -865,6 +845,24 @@
                     </button>
                   </td>
                 </tr>
+                @if (isAuditExpanded(loan.id) && loanAuditRows(loan).length) {
+                  <tr class="audit-row">
+                    <td colspan="11">
+                      <div class="audit-panel">
+                        @for (audit of loanAuditRows(loan); track audit.id) {
+                          <div class="audit-item">
+                            <span class="audit-operation">{{ audit.operation }}</span>
+                            <strong>{{ audit.name }}</strong>
+                            <span>{{ audit.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
+                            <span>{{ auditMonthLabel(audit.startDate, 'Beginning') }}</span>
+                            <span>{{ auditMonthLabel(audit.endDate, 'Future') }}</span>
+                            <span>{{ auditDateTimeLabel(audit.recordedDate) }}</span>
+                          </div>
+                        }
+                      </div>
+                    </td>
+                  </tr>
+                }
               }
             </tbody>
           </table>
@@ -900,6 +898,7 @@
                 <th class="row-number-col">#</th>
                 <th>Name</th>
                 <th>Amount</th>
+                <th>Category</th>
                 <th>Frequency</th>
                 <th>Date</th>
                 <th>Start optional</th>
@@ -927,7 +926,7 @@
                         matInput
                         placeholder="Investment"
                         [(ngModel)]="investment.name"
-                        [disabled]="!!investment.pendingDelete"
+                        [disabled]="!!investment.pendingDelete || !investment.isNew"
                       />
                     </mat-form-field>
                   </td>
@@ -941,6 +940,20 @@
                         [(ngModel)]="investment.amount"
                         [disabled]="!!investment.pendingDelete"
                       />
+                    </mat-form-field>
+                  </td>
+                  <td data-label="Category">
+                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                      <mat-select
+                        placeholder="Category"
+                        [(ngModel)]="investment.categoryId"
+                        [disabled]="!!investment.pendingDelete"
+                      >
+                        <mat-option value="">Uncategorized</mat-option>
+                        @for (category of categoriesByType('Investments'); track category.id) {
+                          <mat-option [value]="category.id">{{ category.name }}</mat-option>
+                        }
+                      </mat-select>
                     </mat-form-field>
                   </td>
                   <td data-label="Frequency">
@@ -1015,6 +1028,23 @@
                     </mat-form-field>
                   </td>
                   <td data-label="Actions">
+                    @if (investmentAuditRows(investment).length) {
+                      <button
+                        mat-icon-button
+                        type="button"
+                        [attr.aria-label]="
+                          isAuditExpanded(investment.id)
+                            ? 'Hide investment audit'
+                            : 'Show investment audit'
+                        "
+                        [matTooltip]="isAuditExpanded(investment.id) ? 'Hide audit' : 'Show audit'"
+                        (click)="toggleAudit(investment.id)"
+                      >
+                        <mat-icon>{{
+                          isAuditExpanded(investment.id) ? 'expand_less' : 'expand_more'
+                        }}</mat-icon>
+                      </button>
+                    }
                     <button
                       mat-icon-button
                       type="button"
@@ -1038,6 +1068,24 @@
                     </button>
                   </td>
                 </tr>
+                @if (isAuditExpanded(investment.id) && investmentAuditRows(investment).length) {
+                  <tr class="audit-row">
+                    <td colspan="10">
+                      <div class="audit-panel">
+                        @for (audit of investmentAuditRows(investment); track audit.id) {
+                          <div class="audit-item">
+                            <span class="audit-operation">{{ audit.operation }}</span>
+                            <strong>{{ audit.name }}</strong>
+                            <span>{{ audit.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
+                            <span>{{ auditMonthLabel(audit.startDate, 'Beginning') }}</span>
+                            <span>{{ auditMonthLabel(audit.endDate, 'Future') }}</span>
+                            <span>{{ auditDateTimeLabel(audit.recordedDate) }}</span>
+                          </div>
+                        }
+                      </div>
+                    </td>
+                  </tr>
+                }
               }
             </tbody>
           </table>

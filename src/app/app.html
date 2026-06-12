@@ -567,10 +567,10 @@
                 Edit monthly tables
               </button>
 
-              <div class="import-tools" aria-label="CSV import tools">
+              <div class="import-tools" aria-label="Budget import tools">
                 <button mat-stroked-button type="button" (click)="downloadImportTemplate()">
                   <mat-icon aria-hidden="true">download</mat-icon>
-                  Download CSV template
+                  Download Excel template
                 </button>
                 <button
                   mat-stroked-button
@@ -579,14 +579,14 @@
                   [disabled]="!canWrite()"
                 >
                   <mat-icon aria-hidden="true">upload_file</mat-icon>
-                  Upload CSV
+                  Upload file
                 </button>
                 <input
                   #budgetImportInput
                   class="visually-hidden-file"
                   type="file"
-                  accept=".csv,text/csv"
-                  aria-label="Upload budget import CSV"
+                  accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  aria-label="Upload budget import file"
                   (change)="importBudgetFile($event)"
                 />
               </div>
@@ -599,14 +599,14 @@
                       {{ summary.error }} row{{ summary.error === 1 ? '' : 's' }} need attention.
                     }
                   </span>
-                  @if (processedImportCsv()) {
+                  @if (processedImportFile()) {
                     <button mat-button type="button" (click)="downloadProcessedImport()">
                       <mat-icon aria-hidden="true">download_done</mat-icon>
                       Download processed file
                     </button>
                   }
                 } @else {
-                  <span>Use the template format so every row can be validated and reported.</span>
+                  <span>Use the sheet template so every row can be validated and reported.</span>
                 }
               </div>
             </mat-card-content>
@@ -677,7 +677,10 @@
                     <span>{{
                       income.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
                     }}</span>
-                    <small>{{ income.month || income.cadence }} &middot; {{ income.notes }}</small>
+                    <small>
+                      {{ categoryName(income.categoryId || '') }} &middot;
+                      {{ income.month || income.cadence }} &middot; {{ income.notes }}
+                    </small>
                   </article>
                 } @empty {
                   <div class="empty-state">
@@ -714,7 +717,10 @@
                   <article>
                     <strong>{{ item.name }}</strong>
                     <span>{{ item.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
-                    <small>{{ item.frequency }} &middot; {{ item.notes }}</small>
+                    <small>
+                      {{ categoryName(item.categoryId || '') }} &middot; {{ item.frequency }}
+                      &middot; {{ item.notes }}
+                    </small>
                   </article>
                 } @empty {
                   <div class="empty-state">
@@ -757,7 +763,8 @@
                     <div>
                       <strong>{{ category.name }}</strong>
                       <small
-                        >{{
+                        >{{ category.type || 'Expenses' }} &middot;
+                        {{
                           category.monthlyBudget | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
                         }}
                         monthly budget</small

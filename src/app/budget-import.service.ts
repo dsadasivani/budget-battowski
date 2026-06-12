@@ -1,6 +1,7 @@
 import type {
   BudgetCategory,
   BudgetDataMap,
+  CategoryType,
   ExpenseEntry,
   ExpenseTemplate,
   IncomeSource,
@@ -39,105 +40,196 @@ export interface BudgetImportSummary {
   error: number;
 }
 
-const TEMPLATE_HEADERS = [
-  'recordType',
-  'name',
-  'categoryName',
-  'monthlyBudget',
-  'color',
-  'source',
-  'amount',
-  'cadence',
-  'month',
-  'date',
-  'type',
-  'frequency',
-  'startDate',
-  'endDate',
-  'lender',
-  'loanType',
-  'principal',
-  'outstanding',
-  'annualRate',
-  'emi',
-  'note',
-  'notes',
-  'status',
-  'comments',
-];
+type SheetDefinition = {
+  collectionName: keyof BudgetDataMap;
+  headers: string[];
+  sample: Record<string, string>;
+};
 
-const TEMPLATE_ROWS: Array<Record<string, string>> = [
-  {
-    recordType: 'category',
-    name: 'Groceries',
-    monthlyBudget: '25000',
-    color: '#1f7a8c',
+const SHEETS: Record<ImportRecordType, SheetDefinition> = {
+  category: {
+    collectionName: 'categories',
+    headers: ['name', 'type', 'monthlyBudget', 'color'],
+    sample: {
+      name: 'Groceries',
+      type: 'Expenses',
+      monthlyBudget: '25000',
+      color: '#1f7a8c',
+    },
   },
-  {
-    recordType: 'income',
-    source: 'Salary',
-    amount: '150000',
-    cadence: 'monthly',
-    month: '2026-06',
-    notes: 'Primary income',
+  income: {
+    collectionName: 'incomes',
+    headers: ['source', 'amount', 'categoryName', 'cadence', 'month', 'startDate', 'endDate', 'notes'],
+    sample: {
+      source: 'Salary',
+      amount: '150000',
+      categoryName: 'Salary',
+      cadence: 'monthly',
+      month: '2026-06',
+      notes: 'Primary income',
+    },
   },
-  {
-    recordType: 'expense',
-    name: 'Supermarket',
-    categoryName: 'Groceries',
-    amount: '4200',
-    month: '2026-06',
-    date: '2026-06-05',
-    type: 'one-time',
-    note: 'Monthly groceries',
+  expense: {
+    collectionName: 'expenses',
+    headers: ['name', 'categoryName', 'amount', 'month', 'date', 'note'],
+    sample: {
+      name: 'Supermarket',
+      categoryName: 'Groceries',
+      amount: '4200',
+      month: '2026-06',
+      date: '2026-06-05',
+      note: 'Monthly groceries',
+    },
   },
-  {
-    recordType: 'recurring_expense',
-    name: 'Rent',
-    categoryName: 'Housing',
-    amount: '45000',
-    startDate: '2026-06-01',
-    endDate: '2027-05-31',
+  recurring_expense: {
+    collectionName: 'templates',
+    headers: ['name', 'categoryName', 'amount', 'startDate', 'endDate'],
+    sample: {
+      name: 'Rent',
+      categoryName: 'Housing',
+      amount: '45000',
+      startDate: '2026-06-01',
+      endDate: '2027-05-31',
+    },
   },
-  {
-    recordType: 'investment',
-    name: 'Index SIP',
-    amount: '20000',
-    frequency: 'recurring',
-    date: '2026-06-01',
-    startDate: '2026-06-01',
-    notes: 'Monthly index fund',
+  investment: {
+    collectionName: 'investments',
+    headers: ['name', 'amount', 'categoryName', 'frequency', 'date', 'startDate', 'endDate', 'notes'],
+    sample: {
+      name: 'Index SIP',
+      amount: '20000',
+      categoryName: 'Mutual Funds',
+      frequency: 'recurring',
+      date: '2026-06-01',
+      startDate: '2026-06-01',
+      notes: 'Monthly index fund',
+    },
   },
-  {
-    recordType: 'loan',
-    lender: 'Bank',
-    loanType: 'Home loan',
-    principal: '4000000',
-    outstanding: '3200000',
-    annualRate: '8.7',
-    emi: '38000',
-    startDate: '2024-01-01',
-    endDate: '2036-12-31',
-    notes: 'Existing EMI',
+  loan: {
+    collectionName: 'loans',
+    headers: [
+      'lender',
+      'loanType',
+      'principal',
+      'outstanding',
+      'annualRate',
+      'emi',
+      'startDate',
+      'endDate',
+      'notes',
+    ],
+    sample: {
+      lender: 'Bank',
+      loanType: 'Home loan',
+      principal: '4000000',
+      outstanding: '3200000',
+      annualRate: '8.7',
+      emi: '38000',
+      startDate: '2024-01-01',
+      endDate: '2036-12-31',
+      notes: 'Existing EMI',
+    },
   },
-];
+};
 
-const RECORD_TYPES = new Set<ImportRecordType>([
-  'category',
-  'income',
-  'expense',
-  'recurring_expense',
-  'investment',
-  'loan',
+const RECORD_TYPES = new Set<ImportRecordType>(Object.keys(SHEETS) as ImportRecordType[]);
+const CADENCES = new Set([
+  'daily',
+  'weekly',
+  'bi-weekly',
+  'monthly',
+  'quarterly',
+  'half-yearly',
+  'annual',
+  'one-time',
+  'variable',
 ]);
-const CADENCES = new Set(['monthly', 'annual', 'variable']);
-const EXPENSE_TYPES = new Set(['recurring', 'one-time']);
+const CATEGORY_TYPES = new Set<CategoryType>(['Income', 'Investments', 'Expenses']);
 const FREQUENCIES = new Set(['recurring', 'one-time']);
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_PATTERN = /^\d{4}-\d{2}$/;
+const STATUS_HEADERS = ['status', 'comments'];
+
+export async function createBudgetImportTemplateWorkbook(): Promise<Blob> {
+  const XLSX = await import('xlsx');
+  const workbook = XLSX.utils.book_new();
+
+  for (const [recordType, definition] of Object.entries(SHEETS) as Array<
+    [ImportRecordType, SheetDefinition]
+  >) {
+    const worksheet = XLSX.utils.json_to_sheet([definition.sample], {
+      header: definition.headers,
+    });
+    XLSX.utils.book_append_sheet(workbook, worksheet, recordType);
+  }
+
+  return workbookBlob(XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }));
+}
 
 export function createBudgetImportTemplateCsv(): string {
-  return toCsv(TEMPLATE_HEADERS, TEMPLATE_ROWS);
+  const headers = [
+    'recordType',
+    ...Array.from(new Set(Object.values(SHEETS).flatMap((sheet) => sheet.headers))),
+    ...STATUS_HEADERS,
+  ];
+  const rows = Object.entries(SHEETS).map(([recordType, definition]) => ({
+    recordType,
+    ...definition.sample,
+  }));
+
+  return toCsv(headers, rows);
+}
+
+export async function parseBudgetImportFile(
+  file: File,
+  existingCategories: BudgetCategory[],
+): Promise<BudgetImportParseResult> {
+  const fileName = file.name.toLowerCase();
+  if (fileName.endsWith('.csv')) {
+    return parseBudgetImportCsv(await file.text(), existingCategories);
+  }
+
+  if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
+    return errorResult(file.name, 'Only CSV, XLS, and XLSX import files are supported.');
+  }
+
+  const XLSX = await import('xlsx');
+  const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+  const rows: BudgetImportRow[] = [];
+
+  for (const sheetName of workbook.SheetNames) {
+    const recordType = recordTypeFromSheetName(sheetName);
+    if (!recordType) {
+      rows.push({
+        rowNumber: 1,
+        values: { sheet: sheetName },
+        status: 'error',
+        comments: [`Sheet "${sheetName}" must be named one of: ${Array.from(RECORD_TYPES).join(', ')}.`],
+      });
+      continue;
+    }
+
+    const worksheet = workbook.Sheets[sheetName];
+    const records = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, {
+      defval: '',
+      raw: false,
+    });
+
+    for (const [index, values] of records.entries()) {
+      const normalizedValues = Object.fromEntries(
+        Object.entries(values).map(([key, entryValue]) => [key, normalizeCellValue(entryValue)]),
+      );
+      rows.push({
+        rowNumber: index + 2,
+        values: normalizedValues,
+        status: importedSuccessStatus(normalizedValues) ? 'success' : 'pending',
+        comments: importedSuccessStatus(normalizedValues) ? ['Previously imported; skipped.'] : [],
+        recordType,
+      });
+    }
+  }
+
+  return validateRows(rows, existingCategories);
 }
 
 export function parseBudgetImportCsv(
@@ -145,81 +237,57 @@ export function parseBudgetImportCsv(
   existingCategories: BudgetCategory[],
 ): BudgetImportParseResult {
   const parsed = parseCsv(text);
-  const inputHeaders = parsed.headers.filter(
-    (header) => header !== 'status' && header !== 'comments',
-  );
-  const outputHeaders = [...inputHeaders, 'status', 'comments'];
+  if (!parsed.headers.length) {
+    return errorResult('CSV', 'File is empty or does not contain a header row.');
+  }
 
-  if (!inputHeaders.length) {
+  const rows = parsed.rows.map<BudgetImportRow>((row) => {
+    const recordType = parseRecordTypeValue(row.values['recordType']);
+    const alreadySuccess = importedSuccessStatus(row.values);
     return {
-      headers: outputHeaders,
-      rows: [
-        {
-          rowNumber: 1,
-          values: {},
-          status: 'error',
-          comments: ['File is empty or does not contain a header row.'],
-        },
-      ],
+      rowNumber: row.rowNumber,
+      values: row.values,
+      status: alreadySuccess ? 'success' : 'pending',
+      comments: alreadySuccess ? ['Previously imported; skipped.'] : [],
+      recordType,
     };
+  });
+
+  return validateRows(rows, existingCategories);
+}
+
+export async function buildProcessedImportWorkbook(rows: BudgetImportRow[]): Promise<Blob> {
+  const XLSX = await import('xlsx');
+  const workbook = XLSX.utils.book_new();
+
+  for (const recordType of Object.keys(SHEETS) as ImportRecordType[]) {
+    const definition = SHEETS[recordType];
+    const sheetRows = rows
+      .filter((row) => row.recordType === recordType)
+      .map((row) => ({
+        ...row.values,
+        status: row.status === 'pending' ? 'success' : row.status,
+        comments: row.comments.join('; '),
+      }));
+    const worksheet = XLSX.utils.json_to_sheet(sheetRows, {
+      header: [...definition.headers, ...STATUS_HEADERS],
+    });
+    XLSX.utils.book_append_sheet(workbook, worksheet, recordType);
   }
 
-  const workingRows = parsed.rows.map<BudgetImportRow>((row) => ({
-    rowNumber: row.rowNumber,
-    values: row.values,
-    status: 'pending',
-    comments: [],
-  }));
-
-  const categoryNameToId = new Map(
-    existingCategories.map((category) => [normalizeKey(category.name), category.id] as const),
-  );
-
-  for (const row of workingRows) {
-    const recordType = parseRecordType(row);
-    if (recordType === 'category') {
-      validateCategory(row, categoryNameToId);
-      if (!row.comments.length) {
-        const category = row.record as BudgetCategory;
-        categoryNameToId.set(normalizeKey(category.name), category.id);
-      }
-    }
+  const unknownRows = rows.filter((row) => !row.recordType);
+  if (unknownRows.length) {
+    const worksheet = XLSX.utils.json_to_sheet(
+      unknownRows.map((row) => ({
+        ...row.values,
+        status: row.status,
+        comments: row.comments.join('; '),
+      })),
+    );
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'errors');
   }
 
-  for (const row of workingRows) {
-    if (row.recordType === 'category') {
-      continue;
-    }
-
-    const recordType = row.recordType ?? parseRecordType(row);
-    switch (recordType) {
-      case 'income':
-        validateIncome(row);
-        break;
-      case 'expense':
-        validateExpense(row, categoryNameToId);
-        break;
-      case 'recurring_expense':
-        validateTemplate(row, categoryNameToId);
-        break;
-      case 'investment':
-        validateInvestment(row);
-        break;
-      case 'loan':
-        validateLoan(row);
-        break;
-      default:
-        break;
-    }
-  }
-
-  for (const row of workingRows) {
-    if (row.status === 'pending' && row.comments.length) {
-      row.status = 'error';
-    }
-  }
-
-  return { headers: outputHeaders, rows: workingRows };
+  return workbookBlob(XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }));
 }
 
 export function buildProcessedImportCsv(headers: string[], rows: BudgetImportRow[]): string {
@@ -248,8 +316,74 @@ export function summarizeImportRows(rows: BudgetImportRow[]): BudgetImportSummar
   );
 }
 
+function validateRows(
+  rows: BudgetImportRow[],
+  existingCategories: BudgetCategory[],
+): BudgetImportParseResult {
+  const categoryNameToId = new Map(
+    existingCategories.map((category) => [
+      categoryKey(category.name, category.type ?? 'Expenses'),
+      category.id,
+    ] as const),
+  );
+
+  for (const row of rows) {
+    if (row.status === 'success') {
+      continue;
+    }
+
+    if (!row.recordType) {
+      row.comments.push('recordType is required or sheet name is invalid.');
+      continue;
+    }
+
+    if (row.recordType === 'category') {
+      validateCategory(row, categoryNameToId);
+      if (!row.comments.length) {
+        const category = row.record as BudgetCategory;
+        categoryNameToId.set(categoryKey(category.name, category.type ?? 'Expenses'), category.id);
+      }
+    }
+  }
+
+  for (const row of rows) {
+    if (row.status === 'success' || row.recordType === 'category') {
+      continue;
+    }
+
+    switch (row.recordType) {
+      case 'income':
+        validateIncome(row, categoryNameToId);
+        break;
+      case 'expense':
+        validateExpense(row, categoryNameToId);
+        break;
+      case 'recurring_expense':
+        validateTemplate(row, categoryNameToId);
+        break;
+      case 'investment':
+        validateInvestment(row, categoryNameToId);
+        break;
+      case 'loan':
+        validateLoan(row);
+        break;
+      default:
+        break;
+    }
+  }
+
+  for (const row of rows) {
+    if (row.status === 'pending' && row.comments.length) {
+      row.status = 'error';
+    }
+  }
+
+  return { headers: [], rows };
+}
+
 function validateCategory(row: BudgetImportRow, categoryNameToId: Map<string, string>): void {
   const name = required(row, 'name');
+  const type = categoryTypeField(row);
   const monthlyBudget = numberField(row, 'monthlyBudget');
   const color = optional(row, 'color') || '#1f7a8c';
 
@@ -259,20 +393,22 @@ function validateCategory(row: BudgetImportRow, categoryNameToId: Map<string, st
 
   row.collectionName = 'categories';
   row.record = {
-    id: categoryNameToId.get(normalizeKey(name)) ?? createImportId('category'),
+    id: categoryNameToId.get(categoryKey(name, type)) ?? createImportId('category'),
     name,
+    type,
     monthlyBudget,
     color,
   } satisfies BudgetCategory;
 }
 
-function validateIncome(row: BudgetImportRow): void {
+function validateIncome(row: BudgetImportRow, categoryNameToId: Map<string, string>): void {
   const source = required(row, 'source');
   const amount = numberField(row, 'amount');
   const cadence = enumField(row, 'cadence', CADENCES);
-  const month = optionalMonth(row, 'month');
+  const month = optionalMonth(row, 'month') ?? dateMonth(optionalDate(row, 'month'));
   const startDate = optionalDate(row, 'startDate');
   const endDate = optionalDate(row, 'endDate');
+  const categoryId = optionalCategoryIdField(row, categoryNameToId, 'Income');
 
   if (row.comments.length) {
     return;
@@ -283,6 +419,7 @@ function validateIncome(row: BudgetImportRow): void {
     id: createImportId('income'),
     source,
     amount,
+    categoryId,
     cadence: cadence as IncomeSource['cadence'],
     notes: optional(row, 'notes'),
     month,
@@ -295,10 +432,9 @@ function validateIncome(row: BudgetImportRow): void {
 function validateExpense(row: BudgetImportRow, categoryNameToId: Map<string, string>): void {
   const name = required(row, 'name');
   const amount = numberField(row, 'amount');
-  const type = enumField(row, 'type', EXPENSE_TYPES);
   const month = optionalMonth(row, 'month');
   const date = optionalDate(row, 'date');
-  const categoryId = categoryIdField(row, categoryNameToId);
+  const categoryId = categoryIdField(row, categoryNameToId, 'Expenses');
 
   if (!month && !date) {
     row.comments.push('Either month or date is required.');
@@ -316,7 +452,7 @@ function validateExpense(row: BudgetImportRow, categoryNameToId: Map<string, str
     name,
     categoryId,
     amount,
-    type: type as ExpenseEntry['type'],
+    type: 'one-time',
     note: optional(row, 'note') || optional(row, 'notes'),
   } satisfies ExpenseEntry;
 }
@@ -326,7 +462,7 @@ function validateTemplate(row: BudgetImportRow, categoryNameToId: Map<string, st
   const amount = numberField(row, 'amount');
   const startDate = optionalDate(row, 'startDate');
   const endDate = optionalDate(row, 'endDate');
-  const categoryId = categoryIdField(row, categoryNameToId);
+  const categoryId = categoryIdField(row, categoryNameToId, 'Expenses');
 
   if (!startDate) {
     row.comments.push('startDate is required for recurring_expense rows.');
@@ -349,13 +485,14 @@ function validateTemplate(row: BudgetImportRow, categoryNameToId: Map<string, st
   } satisfies ExpenseTemplate;
 }
 
-function validateInvestment(row: BudgetImportRow): void {
+function validateInvestment(row: BudgetImportRow, categoryNameToId: Map<string, string>): void {
   const name = required(row, 'name');
   const amount = numberField(row, 'amount');
   const frequency = enumField(row, 'frequency', FREQUENCIES);
   const date = optionalDate(row, 'date');
   const startDate = optionalDate(row, 'startDate');
   const endDate = optionalDate(row, 'endDate');
+  const categoryId = optionalCategoryIdField(row, categoryNameToId, 'Investments');
 
   if (!date && !startDate) {
     row.comments.push('Either date or startDate is required for investment rows.');
@@ -370,6 +507,7 @@ function validateInvestment(row: BudgetImportRow): void {
     id: createImportId('investment'),
     name,
     amount,
+    categoryId,
     frequency: frequency as InvestmentEntry['frequency'],
     date,
     startDate,
@@ -416,20 +554,18 @@ function validateLoan(row: BudgetImportRow): void {
   } satisfies Loan;
 }
 
-function parseRecordType(row: BudgetImportRow): ImportRecordType | undefined {
-  const rawType = value(row, 'recordType').toLowerCase();
-  if (!rawType) {
-    row.comments.push('recordType is required.');
-    return undefined;
+function categoryTypeField(row: BudgetImportRow): CategoryType {
+  const fieldValue = optional(row, 'type') || 'Expenses';
+  const match = Array.from(CATEGORY_TYPES).find(
+    (categoryType) => normalizeKey(categoryType) === normalizeKey(fieldValue),
+  );
+
+  if (!match) {
+    row.comments.push(`type must be one of: ${Array.from(CATEGORY_TYPES).join(', ')}.`);
+    return 'Expenses';
   }
 
-  if (!RECORD_TYPES.has(rawType as ImportRecordType)) {
-    row.comments.push(`recordType must be one of: ${Array.from(RECORD_TYPES).join(', ')}.`);
-    return undefined;
-  }
-
-  row.recordType = rawType as ImportRecordType;
-  return row.recordType;
+  return match;
 }
 
 function required(row: BudgetImportRow, field: string): string {
@@ -476,12 +612,13 @@ function optionalDate(row: BudgetImportRow, field: string): string | undefined {
     return undefined;
   }
 
-  if (!DATE_PATTERN.test(fieldValue) || Number.isNaN(Date.parse(`${fieldValue}T00:00:00`))) {
+  const dateValue = normalizeDateValue(fieldValue);
+  if (!dateValue) {
     row.comments.push(`${field} must be YYYY-MM-DD.`);
     return undefined;
   }
 
-  return fieldValue;
+  return dateValue;
 }
 
 function optionalMonth(row: BudgetImportRow, field: string): string | undefined {
@@ -491,25 +628,40 @@ function optionalMonth(row: BudgetImportRow, field: string): string | undefined 
   }
 
   if (!MONTH_PATTERN.test(fieldValue)) {
-    row.comments.push(`${field} must be YYYY-MM.`);
     return undefined;
   }
 
   return fieldValue;
 }
 
-function categoryIdField(row: BudgetImportRow, categoryNameToId: Map<string, string>): string {
+function categoryIdField(
+  row: BudgetImportRow,
+  categoryNameToId: Map<string, string>,
+  type: CategoryType,
+): string {
   const categoryName = required(row, 'categoryName');
-  const categoryId = categoryNameToId.get(normalizeKey(categoryName));
+  const categoryId = categoryNameToId.get(categoryKey(categoryName, type));
 
   if (!categoryId) {
     row.comments.push(
-      `categoryName "${categoryName}" was not found in saved or imported categories.`,
+      `categoryName "${categoryName}" was not found in saved or imported ${type} categories.`,
     );
     return '';
   }
 
   return categoryId;
+}
+
+function optionalCategoryIdField(
+  row: BudgetImportRow,
+  categoryNameToId: Map<string, string>,
+  type: CategoryType,
+): string | undefined {
+  if (!optional(row, 'categoryName')) {
+    return undefined;
+  }
+
+  return categoryIdField(row, categoryNameToId, type);
 }
 
 function value(row: BudgetImportRow, field: string): string {
@@ -611,10 +763,74 @@ function normalizeKey(valueToNormalize: string): string {
   return valueToNormalize.trim().toLowerCase();
 }
 
+function categoryKey(name: string, type: CategoryType): string {
+  return `${normalizeKey(type)}:${normalizeKey(name)}`;
+}
+
 function createImportId(prefix: string): string {
   return `${prefix}-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
 }
 
 function todayDate(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function parseRecordTypeValue(rawType: string | undefined): ImportRecordType | undefined {
+  const normalizedType = (rawType ?? '').trim().toLowerCase();
+  return RECORD_TYPES.has(normalizedType as ImportRecordType)
+    ? (normalizedType as ImportRecordType)
+    : undefined;
+}
+
+function recordTypeFromSheetName(sheetName: string): ImportRecordType | undefined {
+  return parseRecordTypeValue(sheetName.replace(/\s+/g, '_'));
+}
+
+function importedSuccessStatus(values: Record<string, string>): boolean {
+  return normalizeKey(values['status'] ?? '') === 'success';
+}
+
+function errorResult(fileName: string, message: string): BudgetImportParseResult {
+  return {
+    headers: ['file', 'status', 'comments'],
+    rows: [
+      {
+        rowNumber: 1,
+        values: { file: fileName },
+        status: 'error',
+        comments: [message],
+      },
+    ],
+  };
+}
+
+function normalizeCellValue(valueToNormalize: unknown): string {
+  if (valueToNormalize instanceof Date) {
+    return valueToNormalize.toISOString().slice(0, 10);
+  }
+
+  return String(valueToNormalize ?? '').trim();
+}
+
+function normalizeDateValue(valueToNormalize: string): string | undefined {
+  if (DATE_PATTERN.test(valueToNormalize) && !Number.isNaN(Date.parse(`${valueToNormalize}T00:00:00`))) {
+    return valueToNormalize;
+  }
+
+  const parsed = new Date(valueToNormalize);
+  if (Number.isNaN(parsed.getTime())) {
+    return undefined;
+  }
+
+  return parsed.toISOString().slice(0, 10);
+}
+
+function dateMonth(date?: string): string | undefined {
+  return date?.slice(0, 7);
+}
+
+function workbookBlob(content: ArrayBuffer): Blob {
+  return new Blob([content], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
 }
