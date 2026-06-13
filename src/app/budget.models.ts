@@ -100,6 +100,8 @@ export interface InvestmentEntry {
   endDate?: string;
   notes: string;
   createdDate?: string;
+  skippedMonths?: string[];
+  sourceInvestmentId?: string;
   auditTrail?: InvestmentAuditVersion[];
 }
 

@@ -73,6 +73,187 @@ describe('App', () => {
     expect(app.monthlyIncome()).toBe(120000);
   });
 
+  it('should treat legacy expenses without an explicit type as one-time entries', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      expenses: {
+        set: (records: unknown[]) => void;
+      };
+      oneTimeTotal: () => number;
+      selectedEntries: () => Array<{ id: string; name: string }>;
+      selectedMonth: { set: (month: string) => void };
+    };
+
+    app.selectedMonth.set('2026-06');
+    app.expenses.set([
+      {
+        id: 'expense-legacy',
+        month: '2026-06',
+        date: '2026-06-04',
+        name: 'Groceries',
+        categoryId: 'category-food',
+        amount: 1200,
+        note: '',
+      },
+    ]);
+
+    expect(app.selectedEntries().map((expense) => expense.id)).toContain('expense-legacy');
+    expect(app.oneTimeTotal()).toBe(1200);
+  });
+
+  it('should approve reviewed recurring expenses into the selected month', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 11));
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      applyMonthlyReview: (result: unknown) => Promise<void>;
+      buildMonthlyReviewRows: (month: string) => Array<{ sourceId: string; sourceType: string }>;
+      expenses: {
+        (): Array<{ amount: number; month: string; templateId?: string }>;
+      };
+      firebase: { mode: string };
+      hasMonthlyReviewRows: () => boolean;
+      selectedEntries: () => Array<{ amount: number; templateId?: string }>;
+      selectedMonth: { set: (month: string) => void };
+      templates: { set: (records: unknown[]) => void };
+    };
+
+    app.firebase.mode = 'local';
+    app.selectedMonth.set('2026-06');
+    app.templates.set([
+      {
+        id: 'fixed-rent',
+        name: 'Rent',
+        categoryId: 'category-home',
+        amount: 25000,
+        type: 'recurring',
+        startDate: '2026-01-01',
+      },
+    ]);
+
+    expect(app.hasMonthlyReviewRows()).toBe(true);
+
+    await app.applyMonthlyReview({
+      rows: [
+        {
+          id: 'expense:fixed-rent',
+          sourceId: 'fixed-rent',
+          sourceType: 'expense',
+          label: 'Rent',
+          categoryName: 'Home',
+          amount: 26000,
+        },
+      ],
+    });
+
+    expect(app.expenses()).toHaveLength(1);
+    expect(app.selectedEntries()[0]).toMatchObject({
+      amount: 26000,
+      templateId: 'fixed-rent',
+    });
+    expect(app.buildMonthlyReviewRows('2026-06')).not.toContainEqual(
+      expect.objectContaining({ sourceId: 'fixed-rent', sourceType: 'expense' }),
+    );
+    expect(app.hasMonthlyReviewRows()).toBe(false);
+  });
+
+  it('should require current recurring investments to be reviewed before they count', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 11));
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      applyMonthlyReview: (result: unknown) => Promise<void>;
+      buildMonthlyReviewRows: (month: string) => Array<{ sourceId: string; sourceType: string }>;
+      firebase: { mode: string };
+      investmentTotal: () => number;
+      investments: {
+        set: (records: unknown[]) => void;
+        (): Array<{ id: string; frequency: string; sourceInvestmentId?: string }>;
+      };
+      selectedMonth: { set: (month: string) => void };
+    };
+
+    app.firebase.mode = 'local';
+    app.selectedMonth.set('2026-06');
+    app.investments.set([
+      {
+        id: 'sip-index',
+        name: 'Index SIP',
+        amount: 12000,
+        categoryId: 'category-invest',
+        frequency: 'recurring',
+        startDate: '2026-01-01',
+        notes: '',
+      },
+    ]);
+
+    expect(app.investmentTotal()).toBe(0);
+
+    await app.applyMonthlyReview({
+      rows: [
+        {
+          id: 'investment:sip-index',
+          sourceId: 'sip-index',
+          sourceType: 'investment',
+          label: 'Index SIP',
+          categoryName: 'Investments',
+          amount: 15000,
+        },
+      ],
+    });
+
+    expect(app.investmentTotal()).toBe(15000);
+    expect(app.investments().some((record) => record.sourceInvestmentId === 'sip-index')).toBe(
+      true,
+    );
+    expect(app.buildMonthlyReviewRows('2026-06')).not.toContainEqual(
+      expect.objectContaining({ sourceId: 'sip-index', sourceType: 'investment' }),
+    );
+  });
+
+  it('should ignore monthly review actions for past months', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 11));
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      applyMonthlyReview: (result: unknown) => Promise<void>;
+      expenses: { (): unknown[] };
+      firebase: { mode: string };
+      selectedMonth: { set: (month: string) => void };
+      syncStatus: () => string;
+      templates: { set: (records: unknown[]) => void };
+    };
+
+    app.firebase.mode = 'local';
+    app.selectedMonth.set('2026-05');
+    app.templates.set([
+      {
+        id: 'fixed-rent',
+        name: 'Rent',
+        categoryId: 'category-home',
+        amount: 25000,
+        type: 'recurring',
+        startDate: '2026-01-01',
+      },
+    ]);
+
+    await app.applyMonthlyReview({
+      rows: [
+        {
+          id: 'expense:fixed-rent',
+          sourceId: 'fixed-rent',
+          sourceType: 'expense',
+          label: 'Rent',
+          categoryName: 'Home',
+          amount: 26000,
+        },
+      ],
+    });
+
+    expect(app.expenses()).toHaveLength(0);
+    expect(app.syncStatus()).toContain('current and future months');
+  });
+
   it('should version recurring parent updates from the selected month forward', () => {
     const fixture = TestBed.createComponent(App);
     const app = fixture.componentInstance as unknown as {
@@ -392,6 +573,55 @@ describe('App', () => {
     expect(app.expenses().map((expense) => expense.id)).not.toContain('emi-jul');
   });
 
+  it('should preserve the selected loan start date during updates', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 11));
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      applyBulkChanges: (result: unknown) => Promise<void>;
+      firebase: { mode: string };
+      loans: {
+        set: (records: unknown[]) => void;
+        (): Array<{ id: string; startDate: string; emi: number }>;
+      };
+    };
+    const loan = {
+      id: 'loan-car',
+      lender: 'Bank',
+      loanType: 'Car loan',
+      principal: 800000,
+      outstanding: 500000,
+      annualRate: 9,
+      emi: 18000,
+      startDate: '2026-06-01',
+      endDate: '2030-05-31',
+      notes: '',
+    };
+
+    app.firebase.mode = 'local';
+    app.loans.set([loan]);
+
+    await app.applyBulkChanges({
+      scope: 'loans',
+      categories: [],
+      incomes: [],
+      templates: [],
+      expenses: [],
+      investments: [],
+      loans: [{ ...loan, emi: 19000, startDate: '2025-01-01' }],
+      deleted: {
+        categories: [],
+        incomes: [],
+        templates: [],
+        expenses: [],
+        investments: [],
+        loans: [],
+      },
+    });
+
+    expect(app.loans()[0]).toMatchObject({ startDate: '2025-01-01', emi: 19000 });
+  });
+
   it('should show generated loan EMI expenses with the special display category', () => {
     const fixture = TestBed.createComponent(App);
     const app = fixture.componentInstance as unknown as {
@@ -415,14 +645,50 @@ describe('App', () => {
       },
     ]);
 
-    const loanExpense = app.buildDefaultMonthEntries('2026-06').find((expense) =>
-      expense.name.includes('Bank - Home loan'),
-    );
+    const loanExpense = app
+      .buildDefaultMonthEntries('2026-06')
+      .find((expense) => expense.name.includes('Bank - Home loan'));
 
     expect(loanExpense).toBeTruthy();
     expect(loanExpense?.name).toBe('Bank - Home loan');
     expect(loanExpense?.categoryId).toBe('category-loan-emi');
     expect(app.categoryName(loanExpense?.categoryId ?? '')).toBe('Loan EMI');
+  });
+
+  it('should materialize past recurring expenses while current months wait for review', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 11));
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      buildDefaultMonthEntries: (
+        month: string,
+      ) => Array<{ name: string; templateId?: string; type: string }>;
+      templates: { set: (records: unknown[]) => void };
+    };
+
+    app.templates.set([
+      {
+        id: 'fixed-rent',
+        name: 'Rent',
+        categoryId: 'category-home',
+        amount: 25000,
+        type: 'recurring',
+        startDate: '2026-05-01',
+      },
+    ]);
+
+    expect(app.buildDefaultMonthEntries('2026-05')).toContainEqual(
+      expect.objectContaining({
+        name: 'Rent',
+        templateId: 'fixed-rent',
+        type: 'recurring',
+      }),
+    );
+    expect(
+      app
+        .buildDefaultMonthEntries('2026-06')
+        .some((expense) => expense.templateId === 'fixed-rent'),
+    ).toBe(false);
   });
 });
 
@@ -507,6 +773,75 @@ describe('BulkEditorDialog', () => {
     expect(compiled.textContent).not.toContain('Loans');
   });
 
+  it('should suggest previous one-time expenses that are not already in the selected month', () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        expenses: [
+          ...dialogData.expenses,
+          {
+            id: 'expense-grocery-apr',
+            month: '2026-04',
+            date: '2026-04-10',
+            name: 'Groceries',
+            categoryId: 'category-home',
+            amount: 3200,
+            type: 'one-time',
+            note: '',
+          },
+          {
+            id: 'expense-medical-jan',
+            month: '2026-01',
+            date: '2026-01-10',
+            name: 'Medical',
+            categoryId: 'category-home',
+            amount: 900,
+            type: 'one-time',
+            note: '',
+          },
+          {
+            id: 'expense-fuel-apr',
+            month: '2026-04',
+            date: '2026-04-12',
+            name: 'Fuel',
+            categoryId: 'category-home',
+            amount: 2500,
+            type: 'one-time',
+            note: '',
+          },
+          {
+            id: 'expense-fuel-may',
+            month: '2026-05',
+            date: '2026-05-02',
+            name: 'Fuel',
+            categoryId: 'category-home',
+            amount: 2600,
+            type: 'one-time',
+            note: '',
+          },
+        ],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      expenses: Array<{
+        name: string;
+        categoryId: string;
+        isSuggested?: boolean;
+        suggestionMonth?: string;
+      }>;
+    };
+
+    const suggestions = dialog.expenses.filter((expense) => expense.isSuggested);
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0]).toMatchObject({
+      name: 'Groceries',
+      categoryId: 'category-home',
+      suggestionMonth: '2026-04',
+    });
+  });
+
   it('should save recurring parents separately and infer expense types', () => {
     const fixture = TestBed.createComponent(BulkEditorDialog);
     const dialogRef = TestBed.inject(MatDialogRef) as unknown as {
@@ -532,6 +867,85 @@ describe('BulkEditorDialog', () => {
     expect(
       result.expenses.find((expense: { name: string }) => expense.name === 'Snacks')?.type,
     ).toBe('one-time');
+  });
+
+  it('should not persist untouched suggested one-time expense rows', () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        expenses: [
+          ...dialogData.expenses,
+          {
+            id: 'expense-grocery-apr',
+            month: '2026-04',
+            date: '2026-04-10',
+            name: 'Groceries',
+            categoryId: 'category-home',
+            amount: 3200,
+            type: 'one-time',
+            note: '',
+          },
+        ],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialogRef = TestBed.inject(MatDialogRef) as unknown as {
+      close: ReturnType<typeof vi.fn>;
+    };
+    const dialog = fixture.componentInstance as unknown as {
+      apply: () => void;
+    };
+
+    dialog.apply();
+
+    const result = dialogRef.close.mock.calls[0][0];
+    expect(result.expenses.some((expense: { name: string }) => expense.name === 'Groceries')).toBe(
+      false,
+    );
+  });
+
+  it('should persist suggested one-time expense rows after an amount is entered', () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        expenses: [
+          ...dialogData.expenses,
+          {
+            id: 'expense-grocery-apr',
+            month: '2026-04',
+            date: '2026-04-10',
+            name: 'Groceries',
+            categoryId: 'category-home',
+            amount: 3200,
+            type: 'one-time',
+            note: '',
+          },
+        ],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialogRef = TestBed.inject(MatDialogRef) as unknown as {
+      close: ReturnType<typeof vi.fn>;
+    };
+    const dialog = fixture.componentInstance as unknown as {
+      apply: () => void;
+      expenses: Array<{ name: string; amount: number; isSuggested?: boolean }>;
+    };
+
+    const suggestion = dialog.expenses.find((expense) => expense.isSuggested);
+    if (suggestion) {
+      suggestion.amount = 3300;
+    }
+    dialog.apply();
+
+    const result = dialogRef.close.mock.calls[0][0];
+    expect(
+      result.expenses.find((expense: { name: string }) => expense.name === 'Groceries'),
+    ).toMatchObject({
+      amount: 3300,
+      month: '2026-05',
+      type: 'one-time',
+    });
   });
 
   it('should keep existing recurring name and category unchanged from the modal', () => {

@@ -427,6 +427,11 @@
   color: var(--sheet-green-dark);
 }
 
+.suggested-row .row-number {
+  background: #eef6fb;
+  color: #0f5c73;
+}
+
 .row-status {
   display: inline-grid;
   min-width: 30px;
@@ -438,6 +443,28 @@
   font-size: 0.64rem;
   font-weight: 900;
   text-transform: uppercase;
+}
+
+.suggestion-status {
+  background: rgba(14, 116, 144, 0.12);
+  color: #0f5c73;
+}
+
+.suggested-row,
+.suggested-row:nth-child(even) {
+  background: #f7fbfd;
+}
+
+.suggested-row:hover {
+  background: #eef7fb;
+}
+
+.suggestion-hint {
+  display: block;
+  padding: 0 8px 6px;
+  color: var(--sheet-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
 }
 
 .corner-cell,

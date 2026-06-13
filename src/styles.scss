@@ -67,6 +67,10 @@ select {
   max-width: 98vw !important;
 }
 
+.cdk-overlay-pane.monthly-review-panel {
+  max-width: 96vw !important;
+}
+
 @media (max-width: 760px) {
   .cdk-overlay-pane.bulk-editor-panel {
     width: 100vw !important;
@@ -80,6 +84,21 @@ select {
   }
 
   .cdk-overlay-pane.bulk-editor-panel .mat-mdc-dialog-surface {
+    border-radius: 0 !important;
+  }
+
+  .cdk-overlay-pane.monthly-review-panel {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+  }
+
+  .cdk-overlay-pane.monthly-review-panel .mat-mdc-dialog-container {
+    height: 100%;
+  }
+
+  .cdk-overlay-pane.monthly-review-panel .mat-mdc-dialog-surface {
     border-radius: 0 !important;
   }
 }

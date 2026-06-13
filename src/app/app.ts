@@ -37,6 +37,11 @@ import {
   type BulkEditorScope,
 } from './bulk-editor-dialog';
 import {
+  MonthlyReviewDialog,
+  type MonthlyReviewResult,
+  type MonthlyReviewRow,
+} from './monthly-review-dialog';
+import {
   initializeBudgetFirebase,
   observeBudgetAuth,
   signInWithGoogle,
@@ -157,8 +162,26 @@ function legacyExpenseType(entry: ExpenseEntry): string {
   return (entry as unknown as { type: string }).type;
 }
 
+function normalizedExpenseType(entry: ExpenseEntry): ExpenseType | 'investment' {
+  const legacyType = legacyExpenseType(entry);
+  if (legacyType === 'recurring') {
+    return 'recurring';
+  }
+
+  if (legacyType === 'investment') {
+    return 'investment';
+  }
+
+  return 'one-time';
+}
+
 function activeStartDate(startDate?: string, createdDate?: string): string | undefined {
   return startDate || createdDate;
+}
+
+function incomeMonthStartDate(month?: string): string | undefined {
+  const monthKey = dateMonthKey(month);
+  return monthKey ? monthStartDate(monthKey) : undefined;
 }
 
 function incomeBaseId(incomeId: string): string {
@@ -280,6 +303,11 @@ export class App implements OnDestroy {
   protected readonly canWrite = computed(
     () => this.firebase.mode !== 'firebase' || (!!this.workspaceId() && !this.isSyncing()),
   );
+  protected readonly canReviewMonth = computed(() => this.selectedMonth() >= currentMonth());
+  protected readonly monthlyReviewRows = computed(() =>
+    this.canReviewMonth() ? this.buildMonthlyReviewRows(this.selectedMonth()) : [],
+  );
+  protected readonly hasMonthlyReviewRows = computed(() => this.monthlyReviewRows().length > 0);
   protected readonly expenseCategories = computed(() =>
     this.categories().filter((category) => this.categoryType(category) === 'Expenses'),
   );
@@ -312,7 +340,7 @@ export class App implements OnDestroy {
       const incomeMonth = income.month ? dateMonthKey(income.month) : null;
       const startDate = activeStartDate(
         income.startDate,
-        income.createdDate || (incomeMonth ? monthStartDate(incomeMonth) : undefined),
+        incomeMonthStartDate(income.month) || income.createdDate,
       );
 
       return (
@@ -355,12 +383,16 @@ export class App implements OnDestroy {
     this.expenses().filter(
       (expense) =>
         entryMonthKey(expense) === this.selectedMonth() &&
-        (expense.type === 'recurring' || expense.type === 'one-time'),
+        normalizedExpenseType(expense) !== 'investment',
     ),
   );
   protected readonly selectedInvestments = computed(() =>
     this.investments().filter((investment) => {
       if (investment.frequency === 'recurring') {
+        if (this.selectedMonth() >= currentMonth()) {
+          return false;
+        }
+
         return isMonthInRange(
           this.selectedMonth(),
           activeStartDate(investment.startDate, investment.date || investment.createdDate),
@@ -442,7 +474,8 @@ export class App implements OnDestroy {
         this.investments()
           .filter((investment) =>
             investment.frequency === 'recurring'
-              ? isMonthInRange(
+              ? month < currentMonth() &&
+                isMonthInRange(
                   month,
                   activeStartDate(investment.startDate, investment.date || investment.createdDate),
                   investment.endDate,
@@ -774,7 +807,9 @@ export class App implements OnDestroy {
           : `Imported ${summary.success} row${summary.success === 1 ? '' : 's'}`,
       );
     } catch (error) {
-      this.handleSyncError(error instanceof Error ? error.message : 'Unable to import budget file.');
+      this.handleSyncError(
+        error instanceof Error ? error.message : 'Unable to import budget file.',
+      );
     } finally {
       this.isSyncing.set(false);
     }
@@ -805,6 +840,232 @@ export class App implements OnDestroy {
         void this.applyBulkChanges(result);
       }
     });
+  }
+
+  protected openMonthlyReview(): void {
+    if (!this.canReviewMonth()) {
+      this.syncStatus.set('Review is available for current and future months only');
+      return;
+    }
+
+    const dialogRef = this.dialog.open(MonthlyReviewDialog, {
+      autoFocus: false,
+      data: {
+        monthLabel: this.monthLabel(),
+        rows: this.monthlyReviewRows(),
+      },
+      maxHeight: '96dvh',
+      maxWidth: '96vw',
+      panelClass: 'monthly-review-panel',
+      width: 'min(980px, 96vw)',
+    });
+
+    dialogRef.afterClosed().subscribe((result) => {
+      if (result) {
+        void this.applyMonthlyReview(result);
+      }
+    });
+  }
+
+  private buildMonthlyReviewRows(month: string): MonthlyReviewRow[] {
+    const existingExpensesByTemplateId = new Map(
+      this.expenses()
+        .filter((expense) => entryMonthKey(expense) === month && expense.templateId)
+        .map((expense) => [expense.templateId!, expense]),
+    );
+    const expenseRows = this.templates()
+      .filter((template) => !this.isTemplateMonthSkipped(template, month))
+      .map((template) => this.templateVersionForMonth(template, month))
+      .filter((template): template is ExpenseTemplate => !!template)
+      .filter((template) => !existingExpensesByTemplateId.has(template.id))
+      .map<MonthlyReviewRow>((template) => {
+        return {
+          id: `expense:${template.id}`,
+          sourceId: template.id,
+          sourceType: 'expense',
+          label: template.name,
+          categoryName: this.categoryName(template.categoryId),
+          amount: template.amount,
+        };
+      });
+
+    const existingInvestmentsByPlanId = new Map(
+      this.investments()
+        .filter(
+          (investment) =>
+            investment.frequency === 'one-time' &&
+            dateMonthKey(investment.date || investment.startDate || investment.createdDate) ===
+              month &&
+            investment.sourceInvestmentId,
+        )
+        .map((investment) => [investment.sourceInvestmentId!, investment]),
+    );
+    const investmentRows = this.investments()
+      .filter(
+        (investment) =>
+          investment.frequency === 'recurring' &&
+          !existingInvestmentsByPlanId.has(investment.id) &&
+          !this.investments().some(
+            (record) => record.id === this.reviewedInvestmentId(investment.id, month),
+          ) &&
+          !this.isInvestmentMonthSkipped(investment, month) &&
+          isMonthInRange(
+            month,
+            activeStartDate(investment.startDate, investment.date || investment.createdDate),
+            investment.endDate,
+          ),
+      )
+      .map<MonthlyReviewRow>((investment) => {
+        return {
+          id: `investment:${investment.id}`,
+          sourceId: investment.id,
+          sourceType: 'investment',
+          label: investment.name,
+          categoryName: investment.categoryId
+            ? this.categoryName(investment.categoryId)
+            : 'Investments',
+          amount: investment.amount,
+        };
+      });
+
+    return [...expenseRows, ...investmentRows];
+  }
+
+  private async applyMonthlyReview(result: MonthlyReviewResult): Promise<void> {
+    const month = this.selectedMonth();
+    if (month < currentMonth()) {
+      this.syncStatus.set('Review is available for current and future months only');
+      return;
+    }
+
+    const templatesById = new Map(this.templates().map((template) => [template.id, template]));
+    const expensesByTemplateId = new Map(
+      this.expenses()
+        .filter((expense) => entryMonthKey(expense) === month && expense.templateId)
+        .map((expense) => [expense.templateId!, expense]),
+    );
+    const investmentsById = new Map(
+      this.investments().map((investment) => [investment.id, investment]),
+    );
+    const approvedExpenses: ExpenseEntry[] = [];
+    const approvedInvestments: InvestmentEntry[] = [];
+    const deletedExpenseIds = new Set<string>();
+    const deletedInvestmentIds = new Set<string>();
+
+    let templates = this.templates();
+    let investments = this.investments();
+
+    for (const row of result.rows) {
+      if (row.sourceType === 'expense') {
+        const template = templatesById.get(row.sourceId);
+        const effectiveTemplate = template ? this.templateVersionForMonth(template, month) : null;
+        const existing = expensesByTemplateId.get(row.sourceId);
+
+        if (!template || !effectiveTemplate) {
+          continue;
+        }
+
+        if (row.pendingDelete) {
+          templates = templates.map((item) =>
+            item.id === row.sourceId ? this.withSkippedTemplateMonth(item, month) : item,
+          );
+          if (existing) {
+            deletedExpenseIds.add(existing.id);
+          }
+          continue;
+        }
+
+        approvedExpenses.push({
+          ...this.expenseFromTemplate(effectiveTemplate, month, existing),
+          amount: row.amount,
+        });
+        continue;
+      }
+
+      const plan = investmentsById.get(row.sourceId);
+      if (!plan || plan.frequency !== 'recurring') {
+        continue;
+      }
+
+      const existing =
+        this.investments().find(
+          (investment) =>
+            investment.sourceInvestmentId === plan.id &&
+            dateMonthKey(investment.date || investment.startDate || investment.createdDate) ===
+              month,
+        ) ??
+        this.investments().find(
+          (investment) => investment.id === this.reviewedInvestmentId(plan.id, month),
+        );
+
+      if (row.pendingDelete) {
+        investments = investments.map((item) =>
+          item.id === plan.id ? this.withSkippedInvestmentMonth(item, month) : item,
+        );
+        if (existing) {
+          deletedInvestmentIds.add(existing.id);
+        }
+        continue;
+      }
+
+      approvedInvestments.push({
+        id: existing?.id ?? this.reviewedInvestmentId(plan.id, month),
+        name: plan.name,
+        amount: row.amount,
+        categoryId: plan.categoryId,
+        frequency: 'one-time',
+        date: dateInMonth(month, activeStartDate(plan.startDate, plan.date || plan.createdDate)),
+        notes: plan.notes || 'Approved from recurring investment plan',
+        createdDate: existing?.createdDate || new Date().toISOString(),
+        sourceInvestmentId: plan.id,
+        auditTrail: existing?.auditTrail ?? [],
+      });
+    }
+
+    const approvedExpenseIds = new Set(approvedExpenses.map((expense) => expense.id));
+    const approvedInvestmentIds = new Set(approvedInvestments.map((investment) => investment.id));
+    const expenses = [
+      ...this.expenses().filter(
+        (expense) => !deletedExpenseIds.has(expense.id) && !approvedExpenseIds.has(expense.id),
+      ),
+      ...approvedExpenses,
+    ];
+    investments = [
+      ...investments.filter(
+        (investment) =>
+          !deletedInvestmentIds.has(investment.id) && !approvedInvestmentIds.has(investment.id),
+      ),
+      ...approvedInvestments,
+    ];
+
+    const saved = await this.runFirebaseWrite(
+      async () => {
+        await Promise.all([
+          ...[...deletedExpenseIds].map((recordId) =>
+            this.repository?.delete('expenses', recordId),
+          ),
+          ...[...deletedInvestmentIds].map((recordId) =>
+            this.repository?.delete('investments', recordId),
+          ),
+        ]);
+        await Promise.all([
+          this.repository?.upsertMany('templates', templates),
+          this.repository?.upsertMany('expenses', expenses),
+          this.repository?.upsertMany('investments', investments),
+        ]);
+      },
+      () => {
+        this.templates.set(templates);
+        this.expenses.set(expenses);
+        this.investments.set(investments);
+      },
+    );
+
+    if (saved) {
+      this.syncStatus.set(
+        this.repository ? 'Monthly review saved to Firebase' : 'Monthly review saved',
+      );
+    }
   }
 
   private async applyImportRows(rows: BudgetImportRow[]): Promise<boolean> {
@@ -839,7 +1100,9 @@ export class App implements OnDestroy {
         ]);
       },
       () => {
-        this.categories.update((items) => this.withDefaultCategories([...items, ...records.categories]));
+        this.categories.update((items) =>
+          this.withDefaultCategories([...items, ...records.categories]),
+        );
         this.incomes.update((items) => [...items, ...records.incomes]);
         this.templates.update((items) => [...items, ...records.templates]);
         this.expenses.update((items) => [...items, ...records.expenses]);
@@ -904,14 +1167,18 @@ export class App implements OnDestroy {
         .map((expense) => expense.templateId),
     );
 
-    const templateEntries = this.templates()
-      .filter(
-        (template) =>
-          !existingTemplateIds.has(template.id) && !this.isTemplateMonthSkipped(template, month),
-      )
-      .map((template) => this.templateVersionForMonth(template, month))
-      .filter((template): template is ExpenseTemplate => !!template)
-      .map<ExpenseEntry>((template) => this.expenseFromTemplate(template, month));
+    const templateEntries =
+      month < currentMonth()
+        ? this.templates()
+            .filter(
+              (template) =>
+                !existingTemplateIds.has(template.id) &&
+                !this.isTemplateMonthSkipped(template, month),
+            )
+            .map((template) => this.templateVersionForMonth(template, month))
+            .filter((template): template is ExpenseTemplate => !!template)
+            .map<ExpenseEntry>((template) => this.expenseFromTemplate(template, month))
+        : [];
 
     const loanEntries = this.loans()
       .filter((loan) => {
@@ -953,6 +1220,10 @@ export class App implements OnDestroy {
       currency: 'INR',
       maximumFractionDigits: 0,
     }).format(value);
+  }
+
+  protected expenseTypeLabel(expense: ExpenseEntry): ExpenseType {
+    return normalizedExpenseType(expense) === 'recurring' ? 'recurring' : 'one-time';
   }
 
   private monthlyIncomeAmount(income: IncomeSource): number {
@@ -1213,6 +1484,25 @@ export class App implements OnDestroy {
     };
   }
 
+  private isInvestmentMonthSkipped(investment: InvestmentEntry, month: string): boolean {
+    return (investment.skippedMonths ?? []).includes(month);
+  }
+
+  private withSkippedInvestmentMonth(investment: InvestmentEntry, month: string): InvestmentEntry {
+    if (this.isInvestmentMonthSkipped(investment, month)) {
+      return investment;
+    }
+
+    return {
+      ...investment,
+      skippedMonths: [...(investment.skippedMonths ?? []), month].sort(),
+    };
+  }
+
+  private reviewedInvestmentId(investmentId: string, month: string): string {
+    return `review:${investmentId}:${month}`;
+  }
+
   private loanTemplateId(loanId: string): string {
     return `loan:${loanId}`;
   }
@@ -1250,7 +1540,9 @@ export class App implements OnDestroy {
     const effectiveStartDate = laterDate(
       immutableIncome.startDate ||
         previous.startDate ||
-        (previous.month ? monthStartDate(previous.month) : monthStartDate(operationMonth)),
+        incomeMonthStartDate(previous.month) ||
+        incomeMonthStartDate(immutableIncome.month) ||
+        monthStartDate(operationMonth),
       monthStartDate(operationMonth),
     );
     const auditVersion = this.auditVersionFromIncome(
@@ -1267,10 +1559,7 @@ export class App implements OnDestroy {
     };
   }
 
-  private closeIncomeRecord(
-    previous: IncomeSource,
-    operationMonth: string,
-  ): IncomeSource {
+  private closeIncomeRecord(previous: IncomeSource, operationMonth: string): IncomeSource {
     const effectiveEndDate = monthEndDate(operationMonth);
     if (previous.endDate && (dateMonthKey(previous.endDate) ?? '') <= operationMonth) {
       return previous;
@@ -1331,7 +1620,10 @@ export class App implements OnDestroy {
     return {
       ...immutableInvestment,
       startDate: immutableInvestment.frequency === 'recurring' ? effectiveStartDate : undefined,
-      date: immutableInvestment.frequency === 'one-time' ? effectiveStartDate : immutableInvestment.date,
+      date:
+        immutableInvestment.frequency === 'one-time'
+          ? effectiveStartDate
+          : immutableInvestment.date,
       auditTrail: this.appendInvestmentAudit(previous.auditTrail, auditVersion),
     };
   }
@@ -1358,7 +1650,11 @@ export class App implements OnDestroy {
     };
   }
 
-  private normalizeLoanRecord(loan: Loan, previous: Loan | undefined, operationMonth: string): Loan {
+  private normalizeLoanRecord(
+    loan: Loan,
+    previous: Loan | undefined,
+    operationMonth: string,
+  ): Loan {
     if (!previous) {
       return {
         ...loan,
@@ -1379,15 +1675,12 @@ export class App implements OnDestroy {
       };
     }
 
-    const effectiveStartDate = laterDate(
-      immutableLoan.startDate || previous.startDate || monthStartDate(operationMonth),
-      monthStartDate(operationMonth),
+    const effectiveStartDate =
+      immutableLoan.startDate || previous.startDate || monthStartDate(operationMonth);
+    const auditEndDate = previousDate(
+      laterDate(effectiveStartDate, monthStartDate(operationMonth)),
     );
-    const auditVersion = this.auditVersionFromLoan(
-      previous,
-      'updated',
-      previousDate(effectiveStartDate),
-    );
+    const auditVersion = this.auditVersionFromLoan(previous, 'updated', auditEndDate);
 
     return {
       ...immutableLoan,
@@ -1461,8 +1754,7 @@ export class App implements OnDestroy {
       recordedDate: new Date().toISOString(),
       effectiveStartDate: activeStartDate(
         income.startDate,
-        income.createdDate ||
-          (dateMonthKey(income.month) ? monthStartDate(dateMonthKey(income.month)!) : undefined),
+        incomeMonthStartDate(income.month) || income.createdDate,
       ),
       effectiveEndDate,
       source: income.source,
@@ -1754,7 +2046,11 @@ export class App implements OnDestroy {
       ...result.incomes
         .filter((income) => !deletedIncomeIds.has(income.id))
         .map((income) =>
-          this.normalizeIncomeRecord(income, existingIncomesById.get(income.id), planOperationMonth),
+          this.normalizeIncomeRecord(
+            income,
+            existingIncomesById.get(income.id),
+            planOperationMonth,
+          ),
         ),
       ...result.deleted.incomes
         .map((recordId) => existingIncomesById.get(recordId))
@@ -1792,7 +2088,9 @@ export class App implements OnDestroy {
           : expense,
       );
     const loans = [
-      ...this.loans().filter((loan) => !returnedLoanIds.has(loan.id) && !deletedLoanIds.has(loan.id)),
+      ...this.loans().filter(
+        (loan) => !returnedLoanIds.has(loan.id) && !deletedLoanIds.has(loan.id),
+      ),
       ...result.loans
         .filter((loan) => !deletedLoanIds.has(loan.id))
         .map((loan) =>
@@ -2105,7 +2403,7 @@ export class App implements OnDestroy {
 
   private totalByType(type: ExpenseType): number {
     return this.selectedEntries()
-      .filter((expense) => expense.type === type)
+      .filter((expense) => this.expenseTypeLabel(expense) === type)
       .reduce((total, expense) => total + expense.amount, 0);
   }
 

@@ -1,0 +1,85 @@
+<div class="dialog-title" mat-dialog-title>
+  <div>
+    <span>Review Expected Records</span>
+    <small>{{ data.monthLabel }}</small>
+  </div>
+  <button mat-icon-button type="button" mat-dialog-close aria-label="Close review">
+    <mat-icon aria-hidden="true">close</mat-icon>
+  </button>
+</div>
+
+<mat-dialog-content class="review-dialog">
+  @if (rows.length) {
+    <div class="review-table-wrap">
+      <table class="review-table">
+        <thead>
+          <tr>
+            <th scope="col">Record</th>
+            <th scope="col">Source</th>
+            <th scope="col">Category</th>
+            <th scope="col">Amount</th>
+            <th scope="col" aria-label="Actions"></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of rows; track row.id) {
+            <tr [class.marked-delete]="row.pendingDelete">
+              <td>
+                <strong>{{ row.label }}</strong>
+                @if (row.existingRecordId) {
+                  <small>Already applied</small>
+                } @else {
+                  <small>Expected this month</small>
+                }
+              </td>
+              <td>{{ sourceLabel(row) }}</td>
+              <td>{{ row.categoryName }}</td>
+              <td>
+                <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                  <input
+                    matInput
+                    type="number"
+                    min="0"
+                    step="1"
+                    [(ngModel)]="row.amount"
+                    [disabled]="!!row.pendingDelete"
+                    [attr.aria-label]="'Amount for ' + row.label"
+                  />
+                </mat-form-field>
+              </td>
+              <td>
+                <button
+                  mat-icon-button
+                  type="button"
+                  [attr.aria-label]="row.pendingDelete ? 'Keep record' : 'Delete record'"
+                  [matTooltip]="row.pendingDelete ? 'Keep' : 'Delete'"
+                  (click)="toggleDelete(row)"
+                >
+                  <mat-icon aria-hidden="true">{{
+                    row.pendingDelete ? 'undo' : 'delete'
+                  }}</mat-icon>
+                </button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  } @else {
+    <div class="empty-review">
+      <mat-icon aria-hidden="true">fact_check</mat-icon>
+      <span>No expected recurring records for this month</span>
+    </div>
+  }
+</mat-dialog-content>
+
+<mat-dialog-actions class="review-actions" align="end">
+  @if (validationError) {
+    <span class="dialog-error" role="alert">{{ validationError }}</span>
+  }
+  <button mat-stroked-button type="button" mat-dialog-close>Cancel</button>
+  <button mat-flat-button type="button" (click)="approve()" [disabled]="!rows.length">
+    <mat-icon aria-hidden="true">check_circle</mat-icon>
+    Approve
+  </button>
+</mat-dialog-actions>

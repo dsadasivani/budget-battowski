@@ -31,6 +31,8 @@ import type {
 type DraftRow<T extends { id: string }> = T & { isNew?: boolean; pendingDelete?: boolean };
 type DraftExpense = DraftRow<ExpenseEntry> & {
   endDate?: string;
+  isSuggested?: boolean;
+  suggestionMonth?: string;
   startDate?: string;
 };
 type DraftTemplate = DraftRow<ExpenseTemplate>;
@@ -134,6 +136,13 @@ function monthStartDate(month: string): string {
   return `${month}-01`;
 }
 
+function addMonths(month: string, offset: number): string {
+  const [year, monthIndex] = month.split('-').map(Number);
+  const shifted = new Date(year, monthIndex - 1 + offset, 1);
+
+  return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, '0')}`;
+}
+
 function currentMonthStartDate(): string {
   const now = new Date();
   const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -148,6 +157,15 @@ function dateMonthKey(date?: string): string | undefined {
 
 function expenseMonthKey(expense: Pick<ExpenseEntry, 'date' | 'month'>): string {
   return dateMonthKey(expense.date) ?? expense.month;
+}
+
+function expenseSuggestionKey(expense: Pick<ExpenseEntry, 'name' | 'categoryId'>): string {
+  return `${expense.name.trim().toLowerCase()}::${expense.categoryId}`;
+}
+
+function isOneTimeExpense(expense: ExpenseEntry): boolean {
+  const runtimeType = (expense as unknown as { type?: string }).type;
+  return !expense.templateId && runtimeType !== 'recurring' && runtimeType !== 'investment';
 }
 
 @Component({
@@ -215,7 +233,9 @@ export class BulkEditorDialog {
     }));
     this.incomes = cloneRows(data.incomes).map((income) => ({
       ...income,
-      month: income.month ? monthStartDate(dateMonthKey(income.month) ?? income.month) : income.month,
+      month: income.month
+        ? monthStartDate(dateMonthKey(income.month) ?? income.month)
+        : income.month,
     }));
     this.originalIncomesById = new Map(data.incomes.map((income) => [income.id, { ...income }]));
     this.templates = templates
@@ -224,12 +244,57 @@ export class BulkEditorDialog {
         ...template,
         startDate: template.startDate || currentMonthStartDate(),
       }));
-    this.expenses = cloneRows(data.expenses)
+    const currentMonthExpenses = cloneRows(data.expenses)
       .filter((expense) => expenseMonthKey(expense) === data.selectedMonth)
       .map<DraftExpense>((expense) => ({
         ...expense,
         date: expense.date || monthStartDate(expense.month || data.selectedMonth),
       }));
+    const currentExpenseKeys = new Set(
+      currentMonthExpenses
+        .filter((expense) => isOneTimeExpense(expense))
+        .map((expense) => expenseSuggestionKey(expense)),
+    );
+    const suggestedExpensesByKey = new Map<string, DraftExpense>();
+    const earliestSuggestionMonth = addMonths(data.selectedMonth, -3);
+
+    for (const expense of data.expenses) {
+      const expenseMonth = expenseMonthKey(expense);
+      if (
+        !isOneTimeExpense(expense) ||
+        !expenseMonth ||
+        expenseMonth < earliestSuggestionMonth ||
+        expenseMonth >= data.selectedMonth ||
+        !expense.name.trim()
+      ) {
+        continue;
+      }
+
+      const suggestionKey = expenseSuggestionKey(expense);
+      const existingSuggestion = suggestedExpensesByKey.get(suggestionKey);
+      if (currentExpenseKeys.has(suggestionKey)) {
+        continue;
+      }
+
+      if (existingSuggestion && (existingSuggestion.suggestionMonth ?? '') >= expenseMonth) {
+        continue;
+      }
+
+      suggestedExpensesByKey.set(suggestionKey, {
+        id: id('expense-suggestion'),
+        month: data.selectedMonth,
+        date: monthStartDate(data.selectedMonth),
+        name: expense.name,
+        categoryId: expense.categoryId,
+        amount: undefined as unknown as number,
+        type: 'one-time',
+        note: '',
+        isSuggested: true,
+        suggestionMonth: expenseMonth,
+      });
+    }
+
+    this.expenses = [...currentMonthExpenses, ...suggestedExpensesByKey.values()];
     this.investments = cloneRows(data.investments).map((investment) => ({
       ...investment,
       date: investment.date || monthStartDate(data.selectedMonth),
@@ -546,11 +611,11 @@ export class BulkEditorDialog {
       scope: this.data.scope,
       categories: this.activeRows(this.categories).map((category) => ({
         id: category.id,
-          name: category.name.trim() || 'Category',
-          monthlyBudget: toNumber(category.monthlyBudget),
-          color: category.color || '#1f7a8c',
-          type: category.type || 'Expenses',
-        })),
+        name: category.name.trim() || 'Category',
+        monthlyBudget: toNumber(category.monthlyBudget),
+        color: category.color || '#1f7a8c',
+        type: category.type || 'Expenses',
+      })),
       incomes: this.incomes
         .filter((income) => !income.pendingDelete)
         .map((income) => ({
@@ -592,6 +657,8 @@ export class BulkEditorDialog {
           endDate: optionalDate(investment.endDate),
           notes: investment.notes ?? '',
           createdDate: investment.createdDate || createdDate,
+          skippedMonths: investment.skippedMonths ?? [],
+          sourceInvestmentId: investment.sourceInvestmentId,
           auditTrail: investment.auditTrail ?? [],
         })),
       loans: this.loans
@@ -655,7 +722,13 @@ export class BulkEditorDialog {
   private activeExpenseRows(): DraftExpense[] {
     return this.expenses
       .filter((expense) => !expense.pendingDelete)
+      .filter((expense) => !expense.isSuggested || this.isSuggestedExpenseReady(expense))
       .map(({ isNew: _isNew, pendingDelete: _pendingDelete, ...expense }) => expense);
+  }
+
+  private isSuggestedExpenseReady(expense: DraftExpense): boolean {
+    const amount = Number(expense.amount);
+    return Number.isFinite(amount) && amount > 0;
   }
 
   private recurringValidationError(): string {

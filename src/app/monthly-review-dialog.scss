@@ -1,0 +1,142 @@
+:host {
+  display: block;
+}
+
+.dialog-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 22px 8px;
+
+  span,
+  small {
+    display: block;
+  }
+
+  span {
+    color: #101827;
+    font-size: 1.1rem;
+    font-weight: 800;
+  }
+
+  small {
+    margin-top: 3px;
+    color: #64748b;
+    font-size: 0.86rem;
+    font-weight: 700;
+  }
+}
+
+.review-dialog {
+  width: min(960px, 92vw);
+  max-height: min(68dvh, 680px);
+  padding: 10px 22px 18px;
+}
+
+.review-table-wrap {
+  overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.review-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+
+  th,
+  td {
+    padding: 12px;
+    border-bottom: 1px solid #e2e8f0;
+    text-align: left;
+    vertical-align: middle;
+  }
+
+  th {
+    background: #f8fafc;
+    color: #475569;
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  td {
+    color: #0f172a;
+    font-weight: 650;
+  }
+
+  tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  strong,
+  small {
+    display: block;
+    overflow-wrap: anywhere;
+  }
+
+  small {
+    margin-top: 3px;
+    color: #64748b;
+    font-size: 0.78rem;
+  }
+
+  mat-form-field {
+    width: 132px;
+  }
+}
+
+.marked-delete {
+  color: #64748b;
+  background: #f8fafc;
+
+  td {
+    opacity: 0.68;
+  }
+
+  strong {
+    text-decoration: line-through;
+  }
+}
+
+.empty-review {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+  gap: 8px;
+  color: #64748b;
+  font-weight: 750;
+
+  mat-icon {
+    color: #155e75;
+  }
+}
+
+.review-actions {
+  gap: 10px;
+  padding: 12px 22px 20px;
+}
+
+.dialog-error {
+  margin-right: auto;
+  color: #be123c;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+@media (max-width: 760px) {
+  .dialog-title {
+    padding: 16px 16px 8px;
+  }
+
+  .review-dialog {
+    width: 100vw;
+    max-height: calc(100dvh - 132px);
+    padding: 8px 16px 14px;
+  }
+
+  .review-actions {
+    padding: 10px 16px 16px;
+  }
+}

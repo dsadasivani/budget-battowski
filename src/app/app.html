@@ -613,26 +613,58 @@
           </mat-card>
 
           <mat-card class="panel entries-panel">
-            <mat-card-header>
-              <mat-card-title>{{ monthLabel() }} Entries</mat-card-title>
-              <mat-card-subtitle
-                >Recurring and active EMI rows are added automatically</mat-card-subtitle
+            <div class="entries-header">
+              <div>
+                <mat-card-title>{{ monthLabel() }} Entries</mat-card-title>
+                <mat-card-subtitle
+                  >Review expected recurring rows before applying them</mat-card-subtitle
+                >
+              </div>
+              <button
+                mat-stroked-button
+                class="review-button"
+                type="button"
+                (click)="openMonthlyReview()"
+                [disabled]="!canWrite() || !canReviewMonth() || !hasMonthlyReviewRows()"
+                [matTooltip]="
+                  !canReviewMonth()
+                    ? 'Review is available for current and future months only'
+                    : hasMonthlyReviewRows()
+                      ? 'Review expected recurring records'
+                      : 'Nothing to review'
+                "
               >
-            </mat-card-header>
+                <mat-icon aria-hidden="true">fact_check</mat-icon>
+                Review
+              </button>
+            </div>
             <mat-card-content class="entry-list">
               <header class="mobile-card-heading">
                 <strong>{{ monthLabel() }} Entries</strong>
-                <small>Recurring and active EMI rows are added automatically</small>
+                <small>Review expected recurring rows before applying them</small>
               </header>
+              <button
+                mat-stroked-button
+                class="mobile-review-button"
+                type="button"
+                (click)="openMonthlyReview()"
+                [disabled]="!canWrite() || !canReviewMonth() || !hasMonthlyReviewRows()"
+              >
+                <mat-icon aria-hidden="true">fact_check</mat-icon>
+                Review
+              </button>
               @for (expense of selectedEntries(); track expense.id) {
                 <article class="data-row">
                   <mat-icon aria-hidden="true">
-                    {{ expense.type === 'recurring' ? 'event_repeat' : 'receipt_long' }}
+                    {{
+                      expenseTypeLabel(expense) === 'recurring' ? 'event_repeat' : 'receipt_long'
+                    }}
                   </mat-icon>
                   <div>
                     <strong>{{ expense.name }}</strong>
                     <small
-                      >{{ categoryName(expense.categoryId) }} &middot; {{ expense.type }}</small
+                      >{{ categoryName(expense.categoryId) }} &middot;
+                      {{ expenseTypeLabel(expense) }}</small
                     >
                   </div>
                   <span>{{ expense.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
@@ -718,8 +750,8 @@
                     <strong>{{ item.name }}</strong>
                     <span>{{ item.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
                     <small>
-                      {{ categoryName(item.categoryId || '') }} &middot; {{ item.frequency }}
-                      &middot; {{ item.notes }}
+                      {{ categoryName(item.categoryId || '') }} &middot;
+                      {{ item.frequency }} &middot; {{ item.notes }}
                     </small>
                   </article>
                 } @empty {

@@ -63,10 +63,16 @@
             </thead>
             <tbody>
               @for (expense of expenses; track expense.id; let rowIndex = $index) {
-                <tr [class.marked-delete]="expense.pendingDelete" [class.new-row]="expense.isNew">
+                <tr
+                  [class.marked-delete]="expense.pendingDelete"
+                  [class.new-row]="expense.isNew"
+                  [class.suggested-row]="expense.isSuggested"
+                >
                   <td class="row-number" data-label="Row">
                     @if (expense.isNew) {
                       <span class="row-status">New</span>
+                    } @else if (expense.isSuggested) {
+                      <span class="row-status suggestion-status">Suggest</span>
                     } @else {
                       {{ rowIndex + 1 }}
                     }
@@ -80,6 +86,11 @@
                         [disabled]="!!expense.pendingDelete"
                       />
                     </mat-form-field>
+                    @if (expense.isSuggested && expense.suggestionMonth) {
+                      <small class="suggestion-hint">
+                        Based on {{ auditMonthLabel(expense.suggestionMonth + '-01', 'Past') }}
+                      </small>
+                    }
                   </td>
                   <td data-label="Date">
                     <mat-form-field appearance="outline" subscriptSizing="dynamic">

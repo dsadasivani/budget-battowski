@@ -866,6 +866,28 @@ mat-progress-bar {
   padding-right: 4px;
 }
 
+.entries-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 22px 22px 8px;
+
+  > div {
+    min-width: 0;
+  }
+
+  .review-button {
+    min-height: 38px;
+    flex: 0 0 auto;
+    margin-top: 1px;
+  }
+}
+
+.mobile-review-button {
+  display: none;
+}
+
 .data-row {
   display: grid;
   grid-template-columns: 46px minmax(0, 1fr) auto;
@@ -1481,6 +1503,10 @@ mat-progress-bar {
       display: none;
     }
 
+    .entries-header {
+      display: none;
+    }
+
     mat-card-content {
       padding: 14px 16px 16px;
     }
@@ -1562,6 +1588,13 @@ mat-progress-bar {
     max-height: none;
     overflow: visible;
     padding-right: 0;
+  }
+
+  .mobile-review-button {
+    display: inline-flex;
+    min-height: 42px;
+    margin-bottom: 10px;
+    justify-self: start;
   }
 
   .data-row,
