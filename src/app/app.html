@@ -745,7 +745,7 @@
               </button>
 
               <div class="compact-list">
-                @for (item of investments(); track item.id) {
+                @for (item of investmentPlans(); track item.id) {
                   <article>
                     <strong>{{ item.name }}</strong>
                     <span>{{ item.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>

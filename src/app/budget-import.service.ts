@@ -59,7 +59,16 @@ const SHEETS: Record<ImportRecordType, SheetDefinition> = {
   },
   income: {
     collectionName: 'incomes',
-    headers: ['source', 'amount', 'categoryName', 'cadence', 'month', 'startDate', 'endDate', 'notes'],
+    headers: [
+      'source',
+      'amount',
+      'categoryName',
+      'cadence',
+      'month',
+      'startDate',
+      'endDate',
+      'notes',
+    ],
     sample: {
       source: 'Salary',
       amount: '150000',
@@ -94,7 +103,16 @@ const SHEETS: Record<ImportRecordType, SheetDefinition> = {
   },
   investment: {
     collectionName: 'investments',
-    headers: ['name', 'amount', 'categoryName', 'frequency', 'date', 'startDate', 'endDate', 'notes'],
+    headers: [
+      'name',
+      'amount',
+      'categoryName',
+      'frequency',
+      'date',
+      'startDate',
+      'endDate',
+      'notes',
+    ],
     sample: {
       name: 'Index SIP',
       amount: '20000',
@@ -149,10 +167,28 @@ const FREQUENCIES = new Set(['recurring', 'one-time']);
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_PATTERN = /^\d{4}-\d{2}$/;
 const STATUS_HEADERS = ['status', 'comments'];
+const MASTER_CATEGORIES_SHEET = 'master_categories';
 
-export async function createBudgetImportTemplateWorkbook(): Promise<Blob> {
+export async function createBudgetImportTemplateWorkbook(
+  existingCategories: BudgetCategory[] = [],
+): Promise<Blob> {
   const XLSX = await import('xlsx');
   const workbook = XLSX.utils.book_new();
+
+  const masterRows = existingCategories
+    .map((category) => ({
+      name: category.name,
+      type: category.type ?? 'Expenses',
+      monthlyBudget: category.monthlyBudget,
+      color: category.color,
+    }))
+    .sort((left, right) =>
+      `${left.type}:${left.name}`.localeCompare(`${right.type}:${right.name}`),
+    );
+  const masterWorksheet = XLSX.utils.json_to_sheet(masterRows, {
+    header: ['name', 'type', 'monthlyBudget', 'color'],
+  });
+  XLSX.utils.book_append_sheet(workbook, masterWorksheet, MASTER_CATEGORIES_SHEET);
 
   for (const [recordType, definition] of Object.entries(SHEETS) as Array<
     [ImportRecordType, SheetDefinition]
@@ -198,13 +234,19 @@ export async function parseBudgetImportFile(
   const rows: BudgetImportRow[] = [];
 
   for (const sheetName of workbook.SheetNames) {
+    if (sheetName.trim().toLowerCase() === MASTER_CATEGORIES_SHEET) {
+      continue;
+    }
+
     const recordType = recordTypeFromSheetName(sheetName);
     if (!recordType) {
       rows.push({
         rowNumber: 1,
         values: { sheet: sheetName },
         status: 'error',
-        comments: [`Sheet "${sheetName}" must be named one of: ${Array.from(RECORD_TYPES).join(', ')}.`],
+        comments: [
+          `Sheet "${sheetName}" must be named one of: ${Array.from(RECORD_TYPES).join(', ')}.`,
+        ],
       });
       continue;
     }
@@ -321,10 +363,9 @@ function validateRows(
   existingCategories: BudgetCategory[],
 ): BudgetImportParseResult {
   const categoryNameToId = new Map(
-    existingCategories.map((category) => [
-      categoryKey(category.name, category.type ?? 'Expenses'),
-      category.id,
-    ] as const),
+    existingCategories.map(
+      (category) => [categoryKey(category.name, category.type ?? 'Expenses'), category.id] as const,
+    ),
   );
 
   for (const row of rows) {
@@ -813,7 +854,10 @@ function normalizeCellValue(valueToNormalize: unknown): string {
 }
 
 function normalizeDateValue(valueToNormalize: string): string | undefined {
-  if (DATE_PATTERN.test(valueToNormalize) && !Number.isNaN(Date.parse(`${valueToNormalize}T00:00:00`))) {
+  if (
+    DATE_PATTERN.test(valueToNormalize) &&
+    !Number.isNaN(Date.parse(`${valueToNormalize}T00:00:00`))
+  ) {
     return valueToNormalize;
   }
 

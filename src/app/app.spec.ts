@@ -6,7 +6,9 @@ import { BulkEditorDialog, type BulkEditorData } from './bulk-editor-dialog';
 import {
   buildProcessedImportCsv,
   createBudgetImportTemplateCsv,
+  createBudgetImportTemplateWorkbook,
   parseBudgetImportCsv,
+  parseBudgetImportFile,
 } from './budget-import.service';
 
 describe('App', () => {
@@ -166,6 +168,7 @@ describe('App', () => {
       buildMonthlyReviewRows: (month: string) => Array<{ sourceId: string; sourceType: string }>;
       firebase: { mode: string };
       investmentTotal: () => number;
+      investmentPlans: () => Array<{ id: string; sourceInvestmentId?: string }>;
       investments: {
         set: (records: unknown[]) => void;
         (): Array<{ id: string; frequency: string; sourceInvestmentId?: string }>;
@@ -206,6 +209,11 @@ describe('App', () => {
     expect(app.investments().some((record) => record.sourceInvestmentId === 'sip-index')).toBe(
       true,
     );
+    expect(app.investmentPlans()).toEqual([
+      expect.objectContaining({
+        id: 'sip-index',
+      }),
+    ]);
     expect(app.buildMonthlyReviewRows('2026-06')).not.toContainEqual(
       expect.objectContaining({ sourceId: 'sip-index', sourceType: 'investment' }),
     );
@@ -1261,6 +1269,69 @@ describe('budget import helpers', () => {
     expect(template).toContain('status');
     expect(template).toContain('comments');
     expect(template).toContain('recurring_expense');
+  });
+
+  it('should add existing categories to the workbook master sheet', async () => {
+    const XLSX = await import('xlsx');
+    const workbookBlob = await createBudgetImportTemplateWorkbook([
+      {
+        id: 'category-home',
+        name: 'Home',
+        monthlyBudget: 35000,
+        color: '#1f7a8c',
+        type: 'Expenses',
+      },
+      {
+        id: 'category-mf',
+        name: 'Mutual Funds',
+        monthlyBudget: 20000,
+        color: '#047857',
+        type: 'Investments',
+      },
+    ]);
+    const workbook = XLSX.read(await workbookBlob.arrayBuffer(), { type: 'array' });
+    const rows = XLSX.utils.sheet_to_json<Record<string, string | number>>(
+      workbook.Sheets['master_categories'],
+      { defval: '' },
+    );
+
+    expect(workbook.SheetNames[0]).toBe('master_categories');
+    expect(rows).toContainEqual(
+      expect.objectContaining({
+        name: 'Home',
+        type: 'Expenses',
+        monthlyBudget: 35000,
+        color: '#1f7a8c',
+      }),
+    );
+    expect(rows).toContainEqual(
+      expect.objectContaining({
+        name: 'Mutual Funds',
+        type: 'Investments',
+      }),
+    );
+  });
+
+  it('should ignore the workbook master sheet during import parsing', async () => {
+    const workbookBlob = await createBudgetImportTemplateWorkbook([
+      {
+        id: 'category-home',
+        name: 'Home',
+        monthlyBudget: 35000,
+        color: '#1f7a8c',
+        type: 'Expenses',
+      },
+    ]);
+    const file = new File([workbookBlob], 'budget-template.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+
+    const parsed = await parseBudgetImportFile(file, []);
+
+    expect(parsed.rows.every((row) => row.values['sheet'] !== 'master_categories')).toBe(true);
+    expect(parsed.rows.some((row) => row.comments.join(' ').includes('master_categories'))).toBe(
+      false,
+    );
   });
 
   it('should validate each row and map valid rows into app collections', () => {

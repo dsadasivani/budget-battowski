@@ -373,6 +373,9 @@ export class App implements OnDestroy {
       (loan) => loan.emi > 0 && isMonthInRange(this.selectedMonth(), loan.startDate, loan.endDate),
     ),
   );
+  protected readonly investmentPlans = computed(() =>
+    this.investments().filter((investment) => !investment.sourceInvestmentId),
+  );
   protected readonly monthlyIncome = computed(() =>
     this.activeIncomeSources().reduce(
       (total, income) => total + this.monthlyIncomeAmount(income),
@@ -746,7 +749,7 @@ export class App implements OnDestroy {
 
   protected async downloadImportTemplate(): Promise<void> {
     this.downloadBlob(
-      await createBudgetImportTemplateWorkbook(),
+      await createBudgetImportTemplateWorkbook(this.categories()),
       'budget-battowski-import-template.xlsx',
     );
   }
@@ -826,7 +829,7 @@ export class App implements OnDestroy {
         incomes: this.incomes(),
         templates: this.templates(),
         expenses: this.expenses(),
-        investments: this.investments(),
+        investments: this.investmentPlans(),
         loans: this.loans(),
       },
       maxHeight: '100dvh',
