@@ -9,7 +9,7 @@
 </div>
 
 <mat-dialog-content class="review-dialog">
-  @if (rows.length) {
+  @if (rows().length) {
     <div class="review-table-wrap">
       <table class="review-table">
         <thead>
@@ -22,7 +22,7 @@
           </tr>
         </thead>
         <tbody>
-          @for (row of rows; track row.id) {
+          @for (row of rows(); track row.id) {
             <tr [class.marked-delete]="row.pendingDelete">
               <td>
                 <strong>{{ row.label }}</strong>
@@ -74,11 +74,11 @@
 </mat-dialog-content>
 
 <mat-dialog-actions class="review-actions" align="end">
-  @if (validationError) {
-    <span class="dialog-error" role="alert">{{ validationError }}</span>
+  @if (validationError()) {
+    <span class="dialog-error" role="alert">{{ validationError() }}</span>
   }
   <button mat-stroked-button type="button" mat-dialog-close>Cancel</button>
-  <button mat-flat-button type="button" (click)="approve()" [disabled]="!rows.length">
+  <button mat-flat-button type="button" (click)="approve()" [disabled]="!rows().length">
     <mat-icon aria-hidden="true">check_circle</mat-icon>
     Approve
   </button>

@@ -396,15 +396,15 @@ export class App implements OnDestroy {
   private readonly dialog = inject(MatDialog);
   private readonly storagePrefix = 'budget-battowski';
   private readonly workspaceTabCount = 5;
-  private authUnsubscribe?: () => void;
-  private tabSwipeStart: { x: number; y: number } | null = null;
-  private readonly unsubscribes: Array<() => void> = [];
-  private readonly prefillAttemptedSignatures = new Set<string>();
-  private readonly prefillInFlightSignatures = new Set<string>();
-  private loanEmiCategoryUpsertInFlight = false;
+  private readonly authUnsubscribe = signal<(() => void) | null>(null);
+  private readonly tabSwipeStart = signal<{ x: number; y: number } | null>(null);
+  private readonly unsubscribes = signal<Array<() => void>>([]);
+  private readonly prefillAttemptedSignatures = signal(new Set<string>());
+  private readonly prefillInFlightSignatures = signal(new Set<string>());
+  private readonly loanEmiCategoryUpsertInFlight = signal(false);
 
   protected readonly firebase = initializeBudgetFirebase();
-  private repository?: BudgetFirestoreRepository;
+  private readonly repository = signal<BudgetFirestoreRepository | null>(null);
   protected readonly isSessionChecking = signal(this.firebase.mode === 'firebase');
   protected readonly isSyncing = signal(false);
   protected readonly syncStatus = signal(
@@ -753,7 +753,7 @@ export class App implements OnDestroy {
   }
 
   ngOnDestroy(): void {
-    this.authUnsubscribe?.();
+    this.authUnsubscribe()?.();
     this.stopFirestoreListeners();
   }
 
@@ -848,20 +848,20 @@ export class App implements OnDestroy {
       !this.isMobileViewport() ||
       this.isSwipeIgnoredTarget(event.target)
     ) {
-      this.tabSwipeStart = null;
+      this.tabSwipeStart.set(null);
       return;
     }
 
     const [touch] = event.touches;
-    this.tabSwipeStart = {
+    this.tabSwipeStart.set({
       x: touch.clientX,
       y: touch.clientY,
-    };
+    });
   }
 
   protected finishTabSwipe(event: TouchEvent): void {
-    const start = this.tabSwipeStart;
-    this.tabSwipeStart = null;
+    const start = this.tabSwipeStart();
+    this.tabSwipeStart.set(null);
 
     if (!start || !this.isMobileViewport() || event.changedTouches.length !== 1) {
       return;
@@ -880,7 +880,7 @@ export class App implements OnDestroy {
   }
 
   protected cancelTabSwipe(): void {
-    this.tabSwipeStart = null;
+    this.tabSwipeStart.set(null);
   }
 
   protected async downloadImportTemplate(): Promise<void> {
@@ -1182,18 +1182,21 @@ export class App implements OnDestroy {
 
     const saved = await this.runFirebaseWrite(
       async () => {
+        const repository = this.repository();
+        if (!repository) {
+          return;
+        }
+
         await Promise.all([
-          ...[...deletedExpenseIds].map((recordId) =>
-            this.repository?.delete('expenses', recordId),
-          ),
+          ...[...deletedExpenseIds].map((recordId) => repository.delete('expenses', recordId)),
           ...[...deletedInvestmentIds].map((recordId) =>
-            this.repository?.delete('investments', recordId),
+            repository.delete('investments', recordId),
           ),
         ]);
         await Promise.all([
-          this.repository?.upsertMany('templates', templates),
-          this.repository?.upsertMany('expenses', expenses),
-          this.repository?.upsertMany('investments', investments),
+          repository.upsertMany('templates', templates),
+          repository.upsertMany('expenses', expenses),
+          repository.upsertMany('investments', investments),
         ]);
       },
       () => {
@@ -1205,7 +1208,7 @@ export class App implements OnDestroy {
 
     if (saved) {
       this.syncStatus.set(
-        this.repository ? 'Monthly review saved to Firebase' : 'Monthly review saved',
+        this.repository() ? 'Monthly review saved to Firebase' : 'Monthly review saved',
       );
     }
   }
@@ -1232,13 +1235,18 @@ export class App implements OnDestroy {
 
     return this.runFirebaseWrite(
       async () => {
+        const repository = this.repository();
+        if (!repository) {
+          return;
+        }
+
         await Promise.all([
-          this.repository?.upsertMany('categories', records.categories),
-          this.repository?.upsertMany('incomes', records.incomes),
-          this.repository?.upsertMany('templates', records.templates),
-          this.repository?.upsertMany('expenses', records.expenses),
-          this.repository?.upsertMany('investments', records.investments),
-          this.repository?.upsertMany('loans', records.loans),
+          repository.upsertMany('categories', records.categories),
+          repository.upsertMany('incomes', records.incomes),
+          repository.upsertMany('templates', records.templates),
+          repository.upsertMany('expenses', records.expenses),
+          repository.upsertMany('investments', records.investments),
+          repository.upsertMany('loans', records.loans),
         ]);
       },
       () => {
@@ -1282,23 +1290,27 @@ export class App implements OnDestroy {
       .join('|')}`;
 
     if (
-      this.prefillAttemptedSignatures.has(signature) ||
-      this.prefillInFlightSignatures.has(signature)
+      this.prefillAttemptedSignatures().has(signature) ||
+      this.prefillInFlightSignatures().has(signature)
     ) {
       return;
     }
 
-    this.prefillInFlightSignatures.add(signature);
+    this.prefillInFlightSignatures.update((signatures) => new Set(signatures).add(signature));
 
     try {
       const saved = await this.saveRecords('expenses', newEntries, () =>
         this.expenses.update((items) => [...items, ...newEntries]),
       );
       if (saved) {
-        this.prefillAttemptedSignatures.add(signature);
+        this.prefillAttemptedSignatures.update((signatures) => new Set(signatures).add(signature));
       }
     } finally {
-      this.prefillInFlightSignatures.delete(signature);
+      this.prefillInFlightSignatures.update((signatures) => {
+        const next = new Set(signatures);
+        next.delete(signature);
+        return next;
+      });
     }
   }
 
@@ -1425,16 +1437,17 @@ export class App implements OnDestroy {
   }
 
   private ensureDefaultCategoryRecord(categories: BudgetCategory[]): void {
+    const repository = this.repository();
     if (
-      !this.repository ||
+      !repository ||
       this.findLoanEmiCategory(categories) ||
-      this.loanEmiCategoryUpsertInFlight
+      this.loanEmiCategoryUpsertInFlight()
     ) {
       return;
     }
 
-    this.loanEmiCategoryUpsertInFlight = true;
-    void this.repository
+    this.loanEmiCategoryUpsertInFlight.set(true);
+    void repository
       .upsert('categories', DEFAULT_LOAN_EMI_CATEGORY)
       .catch((error: unknown) =>
         this.handleSyncError(
@@ -1442,7 +1455,7 @@ export class App implements OnDestroy {
         ),
       )
       .finally(() => {
-        this.loanEmiCategoryUpsertInFlight = false;
+        this.loanEmiCategoryUpsertInFlight.set(false);
       });
   }
 
@@ -2070,9 +2083,11 @@ export class App implements OnDestroy {
     this.syncError.set(null);
 
     try {
-      this.authUnsubscribe = await observeBudgetAuth(this.firebase.app, (user) => {
-        void this.handleAuthUser(user);
-      });
+      this.authUnsubscribe.set(
+        await observeBudgetAuth(this.firebase.app, (user) => {
+          void this.handleAuthUser(user);
+        }),
+      );
       this.syncStatus.set('Sign in with Google');
     } catch (error) {
       this.handleSyncError(
@@ -2086,7 +2101,7 @@ export class App implements OnDestroy {
 
   private async handleAuthUser(user: User | null): Promise<void> {
     this.stopFirestoreListeners();
-    this.repository = undefined;
+    this.repository.set(null);
     const email = user?.email ?? null;
     this.workspaceId.set(email);
     this.userName.set(user?.displayName ?? null);
@@ -2103,11 +2118,12 @@ export class App implements OnDestroy {
 
     this.isSyncing.set(true);
     this.syncError.set(null);
-    this.repository = new BudgetFirestoreRepository(this.firebase.app, email);
+    const repository = new BudgetFirestoreRepository(this.firebase.app, email);
+    this.repository.set(repository);
 
     try {
       const subscriptions = await Promise.all([
-        this.repository.listen(
+        repository.listen(
           'categories',
           (records) => {
             this.categories.set(this.withDefaultCategories(records));
@@ -2115,34 +2131,34 @@ export class App implements OnDestroy {
           },
           (message) => this.handleSyncError(message),
         ),
-        this.repository.listen(
+        repository.listen(
           'incomes',
           (records) => this.incomes.set(records),
           (message) => this.handleSyncError(message),
         ),
-        this.repository.listen(
+        repository.listen(
           'templates',
           (records) => this.templates.set(records),
           (message) => this.handleSyncError(message),
         ),
-        this.repository.listen(
+        repository.listen(
           'expenses',
           (records) => this.expenses.set(records),
           (message) => this.handleSyncError(message),
         ),
-        this.repository.listen(
+        repository.listen(
           'investments',
           (records) => this.investments.set(records),
           (message) => this.handleSyncError(message),
         ),
-        this.repository.listen(
+        repository.listen(
           'loans',
           (records) => this.loans.set(records),
           (message) => this.handleSyncError(message),
         ),
       ]);
 
-      this.unsubscribes.push(...subscriptions);
+      this.unsubscribes.update((unsubscribes) => [...unsubscribes, ...subscriptions]);
       this.syncStatus.set('Synced with Firebase');
     } catch (error) {
       this.handleSyncError(
@@ -2160,7 +2176,7 @@ export class App implements OnDestroy {
     applyLocal: () => void,
   ): Promise<boolean> {
     return this.runFirebaseWrite(async () => {
-      await this.repository?.upsertMany(collectionName, records);
+      await this.repository()?.upsertMany(collectionName, records);
     }, applyLocal);
   }
 
@@ -2470,8 +2486,13 @@ export class App implements OnDestroy {
 
     const saved = await this.runFirebaseWrite(
       async () => {
+        const repository = this.repository();
+        if (!repository) {
+          return;
+        }
+
         for (const categoryId of deletedCategoryIds) {
-          await this.repository?.deleteCategory(
+          await repository.deleteCategory(
             categoryId,
             existingTemplates.filter((template) => template.categoryId === categoryId),
             existingExpenses.filter((expense) => expense.categoryId === categoryId),
@@ -2480,20 +2501,20 @@ export class App implements OnDestroy {
 
         await Promise.all([
           ...[...hardDeletedTemplateIds].map((recordId) =>
-            this.repository?.delete('templates', recordId),
+            repository.delete('templates', recordId),
           ),
           ...[...new Set([...result.deleted.expenses, ...extraDeletedExpenseIds])].map((recordId) =>
-            this.repository?.delete('expenses', recordId),
+            repository.delete('expenses', recordId),
           ),
         ]);
 
         await Promise.all([
-          this.repository?.upsertMany('categories', categories),
-          this.repository?.upsertMany('incomes', incomes),
-          this.repository?.upsertMany('templates', templates),
-          this.repository?.upsertMany('expenses', expenses),
-          this.repository?.upsertMany('investments', investments),
-          this.repository?.upsertMany('loans', loans),
+          repository.upsertMany('categories', categories),
+          repository.upsertMany('incomes', incomes),
+          repository.upsertMany('templates', templates),
+          repository.upsertMany('expenses', expenses),
+          repository.upsertMany('investments', investments),
+          repository.upsertMany('loans', loans),
         ]);
       },
       () => {
@@ -2508,7 +2529,7 @@ export class App implements OnDestroy {
 
     if (saved) {
       this.syncStatus.set(
-        this.repository ? 'Bulk changes saved to Firebase' : 'Bulk changes saved',
+        this.repository() ? 'Bulk changes saved to Firebase' : 'Bulk changes saved',
       );
     }
   }
@@ -2517,7 +2538,7 @@ export class App implements OnDestroy {
     action: () => Promise<void>,
     applyLocal: () => void,
   ): Promise<boolean> {
-    if (!this.repository) {
+    if (!this.repository()) {
       if (this.firebase.mode === 'firebase') {
         this.syncStatus.set('Sign in required');
         return false;
@@ -2581,9 +2602,11 @@ export class App implements OnDestroy {
   }
 
   private stopFirestoreListeners(): void {
-    while (this.unsubscribes.length) {
-      this.unsubscribes.pop()?.();
+    const unsubscribes = this.unsubscribes();
+    while (unsubscribes.length) {
+      unsubscribes.pop()?.();
     }
+    this.unsubscribes.set([]);
   }
 
   private clearAppData(): void {

@@ -982,7 +982,7 @@ describe('BulkEditorDialog', () => {
     });
     const fixture = TestBed.createComponent(BulkEditorDialog);
     const dialog = fixture.componentInstance as unknown as {
-      expenses: Array<{
+      expenses: () => Array<{
         name: string;
         categoryId: string;
         isSuggested?: boolean;
@@ -990,7 +990,7 @@ describe('BulkEditorDialog', () => {
       }>;
     };
 
-    const suggestions = dialog.expenses.filter((expense) => expense.isSuggested);
+    const suggestions = dialog.expenses().filter((expense) => expense.isSuggested);
 
     expect(suggestions).toHaveLength(1);
     expect(suggestions[0]).toMatchObject({
@@ -1008,13 +1008,18 @@ describe('BulkEditorDialog', () => {
     const dialog = fixture.componentInstance as unknown as {
       addExpense: () => void;
       apply: () => void;
-      expenses: Array<{ name: string; amount: number; categoryId: string; templateId?: string }>;
+      expenses: () => Array<{
+        name: string;
+        amount: number;
+        categoryId: string;
+        templateId?: string;
+      }>;
     };
 
     dialog.addExpense();
-    dialog.expenses[0].name = 'Snacks';
-    dialog.expenses[0].amount = 450;
-    dialog.expenses[0].categoryId = 'category-home';
+    dialog.expenses()[0].name = 'Snacks';
+    dialog.expenses()[0].amount = 450;
+    dialog.expenses()[0].categoryId = 'category-home';
     dialog.apply();
 
     const result = dialogRef.close.mock.calls[0][0];
@@ -1087,10 +1092,10 @@ describe('BulkEditorDialog', () => {
     };
     const dialog = fixture.componentInstance as unknown as {
       apply: () => void;
-      expenses: Array<{ name: string; amount: number; isSuggested?: boolean }>;
+      expenses: () => Array<{ name: string; amount: number; isSuggested?: boolean }>;
     };
 
-    const suggestion = dialog.expenses.find((expense) => expense.isSuggested);
+    const suggestion = dialog.expenses().find((expense) => expense.isSuggested);
     if (suggestion) {
       suggestion.amount = 3300;
     }
@@ -1113,12 +1118,12 @@ describe('BulkEditorDialog', () => {
     };
     const dialog = fixture.componentInstance as unknown as {
       apply: () => void;
-      templates: Array<{ name: string; categoryId: string; amount: number }>;
+      templates: () => Array<{ name: string; categoryId: string; amount: number }>;
     };
 
-    dialog.templates[0].name = 'Lease';
-    dialog.templates[0].categoryId = '';
-    dialog.templates[0].amount = 26000;
+    dialog.templates()[0].name = 'Lease';
+    dialog.templates()[0].categoryId = '';
+    dialog.templates()[0].amount = 26000;
     dialog.apply();
 
     const result = dialogRef.close.mock.calls[0][0];
@@ -1136,19 +1141,19 @@ describe('BulkEditorDialog', () => {
     };
     const dialog = fixture.componentInstance as unknown as {
       apply: () => void;
-      incomes: Array<{ source: string; cadence: string; amount: number }>;
-      investments: Array<{ name: string; amount: number }>;
-      loans: Array<{ lender: string; loanType: string; emi: number }>;
+      incomes: () => Array<{ source: string; cadence: string; amount: number }>;
+      investments: () => Array<{ name: string; amount: number }>;
+      loans: () => Array<{ lender: string; loanType: string; emi: number }>;
     };
 
-    dialog.incomes[0].source = 'Changed salary';
-    dialog.incomes[0].cadence = 'annual';
-    dialog.incomes[0].amount = 130000;
-    dialog.investments[0].name = 'Changed SIP';
-    dialog.investments[0].amount = 18000;
-    dialog.loans[0].lender = 'Changed bank';
-    dialog.loans[0].loanType = 'Changed loan';
-    dialog.loans[0].emi = 39000;
+    dialog.incomes()[0].source = 'Changed salary';
+    dialog.incomes()[0].cadence = 'annual';
+    dialog.incomes()[0].amount = 130000;
+    dialog.investments()[0].name = 'Changed SIP';
+    dialog.investments()[0].amount = 18000;
+    dialog.loans()[0].lender = 'Changed bank';
+    dialog.loans()[0].loanType = 'Changed loan';
+    dialog.loans()[0].emi = 39000;
     dialog.apply();
 
     const result = dialogRef.close.mock.calls[0][0];
@@ -1178,12 +1183,12 @@ describe('BulkEditorDialog', () => {
     };
     const dialog = fixture.componentInstance as unknown as {
       apply: () => void;
-      validationError: string;
+      validationError: () => string;
     };
 
     dialog.apply();
 
-    expect(dialog.validationError).toBe('');
+    expect(dialog.validationError()).toBe('');
     expect(dialogRef.close).toHaveBeenCalled();
   });
 
@@ -1195,23 +1200,23 @@ describe('BulkEditorDialog', () => {
     const dialog = fixture.componentInstance as unknown as {
       addRecurringExpense: () => void;
       apply: () => void;
-      templates: Array<{
+      templates: () => Array<{
         amount: number;
         categoryId: string;
         name: string;
         startDate?: string;
       }>;
-      validationError: string;
+      validationError: () => string;
     };
 
     dialog.addRecurringExpense();
-    dialog.templates[0].name = 'Hyd Rent';
-    dialog.templates[0].categoryId = 'category-home';
-    dialog.templates[0].amount = 35000;
-    dialog.templates[0].startDate = '2026-05-01';
+    dialog.templates()[0].name = 'Hyd Rent';
+    dialog.templates()[0].categoryId = 'category-home';
+    dialog.templates()[0].amount = 35000;
+    dialog.templates()[0].startDate = '2026-05-01';
     dialog.apply();
 
-    expect(dialog.validationError).toBe('');
+    expect(dialog.validationError()).toBe('');
     expect(dialogRef.close).toHaveBeenCalled();
   });
 
@@ -1224,12 +1229,12 @@ describe('BulkEditorDialog', () => {
     const fixture = TestBed.createComponent(BulkEditorDialog);
     const dialog = fixture.componentInstance as unknown as {
       addRecurringExpense: () => void;
-      templates: Array<{ startDate?: string }>;
+      templates: () => Array<{ startDate?: string }>;
     };
 
     dialog.addRecurringExpense();
 
-    expect(dialog.templates[0].startDate).toBe('2026-06-01');
+    expect(dialog.templates()[0].startDate).toBe('2026-06-01');
   });
 
   it('should validate recurring update dates and amount before applying', () => {
@@ -1241,28 +1246,28 @@ describe('BulkEditorDialog', () => {
     };
     const dialog = fixture.componentInstance as unknown as {
       apply: () => void;
-      templates: Array<{ amount: number; startDate?: string; endDate?: string }>;
-      validationError: string;
+      templates: () => Array<{ amount: number; startDate?: string; endDate?: string }>;
+      validationError: () => string;
     };
 
-    dialog.templates[0].amount = undefined as unknown as number;
+    dialog.templates()[0].amount = undefined as unknown as number;
     dialog.apply();
 
-    expect(dialog.validationError).toContain('Amount is mandatory');
+    expect(dialog.validationError()).toContain('Amount is mandatory');
     expect(dialogRef.close).not.toHaveBeenCalled();
 
-    dialog.templates[0].amount = 25000;
-    dialog.templates[0].startDate = '2026-04-01';
+    dialog.templates()[0].amount = 25000;
+    dialog.templates()[0].startDate = '2026-04-01';
     dialog.apply();
 
-    expect(dialog.validationError).toContain('selected month or a future month');
+    expect(dialog.validationError()).toContain('selected month or a future month');
     expect(dialogRef.close).not.toHaveBeenCalled();
 
-    dialog.templates[0].startDate = '2026-06-01';
-    dialog.templates[0].endDate = '2026-05-31';
+    dialog.templates()[0].startDate = '2026-06-01';
+    dialog.templates()[0].endDate = '2026-05-31';
     dialog.apply();
 
-    expect(dialog.validationError).toContain('greater than the start date');
+    expect(dialog.validationError()).toContain('greater than the start date');
     expect(dialogRef.close).not.toHaveBeenCalled();
   });
 

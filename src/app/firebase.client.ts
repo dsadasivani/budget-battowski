@@ -12,12 +12,15 @@ interface BudgetFirebaseClient {
 }
 
 export function initializeBudgetFirebase(): BudgetFirebaseClient {
-  const hasProjectConfig = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId);
+  const hasProjectConfig = Boolean(
+    firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId,
+  );
 
   if (!hasProjectConfig) {
     return {
       mode: 'local',
-      reason: 'Add your Firebase web config in src/environments/environment.ts to enable Firestore.',
+      reason:
+        'Add your Firebase web config in src/environments/environment.ts to enable Firestore.',
     };
   }
 
@@ -34,7 +37,10 @@ export async function getBudgetFirestore(app: FirebaseApp) {
   return getFirestore(app);
 }
 
-export async function observeBudgetAuth(app: FirebaseApp, next: (user: User | null) => void): Promise<() => void> {
+export async function observeBudgetAuth(
+  app: FirebaseApp,
+  next: (user: User | null) => void,
+): Promise<() => void> {
   const { getAuth, onAuthStateChanged } = await import('firebase/auth');
   const auth = getAuth(app);
 

@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, Inject } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
@@ -46,15 +46,11 @@ export interface MonthlyReviewResult {
   styleUrl: './monthly-review-dialog.scss',
 })
 export class MonthlyReviewDialog {
-  protected readonly rows: MonthlyReviewRow[];
-  protected validationError = '';
-
-  constructor(
-    private readonly dialogRef: MatDialogRef<MonthlyReviewDialog, MonthlyReviewResult>,
-    @Inject(MAT_DIALOG_DATA) protected readonly data: MonthlyReviewData,
-  ) {
-    this.rows = data.rows.map((row) => ({ ...row }));
-  }
+  private readonly dialogRef =
+    inject<MatDialogRef<MonthlyReviewDialog, MonthlyReviewResult>>(MatDialogRef);
+  protected readonly data = inject<MonthlyReviewData>(MAT_DIALOG_DATA);
+  protected readonly rows = signal<MonthlyReviewRow[]>(this.data.rows.map((row) => ({ ...row })));
+  protected readonly validationError = signal('');
 
   protected sourceLabel(row: MonthlyReviewRow): string {
     return row.sourceType === 'expense' ? 'Recurring expense' : 'Investment';
@@ -62,21 +58,22 @@ export class MonthlyReviewDialog {
 
   protected toggleDelete(row: MonthlyReviewRow): void {
     row.pendingDelete = !row.pendingDelete;
+    this.rows.update((rows) => [...rows]);
   }
 
   protected approve(): void {
-    const invalidRow = this.rows.find(
+    const invalidRow = this.rows().find(
       (row) =>
         !row.pendingDelete && (!Number.isFinite(Number(row.amount)) || Number(row.amount) < 0),
     );
 
     if (invalidRow) {
-      this.validationError = 'Amount must be zero or more for every approved row.';
+      this.validationError.set('Amount must be zero or more for every approved row.');
       return;
     }
 
     this.dialogRef.close({
-      rows: this.rows.map((row) => ({
+      rows: this.rows().map((row) => ({
         ...row,
         amount: Number(row.amount) || 0,
       })),

@@ -3,7 +3,7 @@
     <mat-icon>grid_on</mat-icon>
   </div>
   <div>
-    <h2>{{ title }}</h2>
+    <h2>{{ title() }}</h2>
   </div>
 </div>
 
@@ -23,11 +23,11 @@
     </div>
   </section>
   <mat-tab-group
-    [selectedIndex]="initialTabIndex"
+    [selectedIndex]="initialTabIndex()"
     animationDuration="160ms"
     mat-stretch-tabs="false"
   >
-    @if (showMonthlyTables) {
+    @if (showMonthlyTables()) {
       <mat-tab label="Expenses">
         <div class="bulk-toolbar">
           <strong>Expenses</strong>
@@ -62,7 +62,7 @@
               </tr>
             </thead>
             <tbody>
-              @for (expense of expenses; track expense.id; let rowIndex = $index) {
+              @for (expense of expenses(); track expense.id; let rowIndex = $index) {
                 <tr
                   [class.marked-delete]="expense.pendingDelete"
                   [class.new-row]="expense.isNew"
@@ -213,7 +213,7 @@
               </tr>
             </thead>
             <tbody>
-              @for (template of templates; track template.id; let rowIndex = $index) {
+              @for (template of templates(); track template.id; let rowIndex = $index) {
                 <tr [class.marked-delete]="template.pendingDelete" [class.new-row]="template.isNew">
                   <td class="row-number" data-label="Row">
                     @if (template.isNew) {
@@ -375,7 +375,7 @@
       </mat-tab>
     }
 
-    @if (showPlanningTables) {
+    @if (showPlanningTables()) {
       <mat-tab label="Income">
         <div class="bulk-toolbar">
           <strong>Income</strong>
@@ -412,7 +412,7 @@
               </tr>
             </thead>
             <tbody>
-              @for (income of incomes; track income.id; let rowIndex = $index) {
+              @for (income of incomes(); track income.id; let rowIndex = $index) {
                 <tr [class.marked-delete]="income.pendingDelete" [class.new-row]="income.isNew">
                   <td class="row-number" data-label="Row">
                     @if (income.isNew) {
@@ -562,7 +562,7 @@
       </mat-tab>
     }
 
-    @if (showPlanningTables) {
+    @if (showPlanningTables()) {
       <mat-tab label="Categories">
         <div class="bulk-toolbar">
           <strong>Categories</strong>
@@ -593,7 +593,7 @@
               </tr>
             </thead>
             <tbody>
-              @for (category of categories; track category.id; let rowIndex = $index) {
+              @for (category of categories(); track category.id; let rowIndex = $index) {
                 <tr [class.marked-delete]="category.pendingDelete" [class.new-row]="category.isNew">
                   <td class="row-number" data-label="Row">
                     @if (category.isNew) {
@@ -678,7 +678,7 @@
       </mat-tab>
     }
 
-    @if (showLoanTables) {
+    @if (showLoanTables()) {
       <mat-tab label="Loans">
         <div class="bulk-toolbar">
           <strong>Loans</strong>
@@ -719,7 +719,7 @@
               </tr>
             </thead>
             <tbody>
-              @for (loan of loans; track loan.id; let rowIndex = $index) {
+              @for (loan of loans(); track loan.id; let rowIndex = $index) {
                 <tr [class.marked-delete]="loan.pendingDelete" [class.new-row]="loan.isNew">
                   <td class="row-number" data-label="Row">
                     @if (loan.isNew) {
@@ -906,7 +906,7 @@
       </mat-tab>
     }
 
-    @if (showPlanningTables) {
+    @if (showPlanningTables()) {
       <mat-tab label="Investments">
         <div class="bulk-toolbar">
           <strong>Investments</strong>
@@ -944,7 +944,7 @@
               </tr>
             </thead>
             <tbody>
-              @for (investment of investments; track investment.id; let rowIndex = $index) {
+              @for (investment of investments(); track investment.id; let rowIndex = $index) {
                 <tr
                   [class.marked-delete]="investment.pendingDelete"
                   [class.new-row]="investment.isNew"
@@ -1134,8 +1134,8 @@
 </mat-dialog-content>
 
 <mat-dialog-actions class="sheet-actions" align="end">
-  @if (validationError) {
-    <span class="dialog-error" role="alert">{{ validationError }}</span>
+  @if (validationError()) {
+    <span class="dialog-error" role="alert">{{ validationError() }}</span>
   }
   <button mat-stroked-button type="button" mat-dialog-close>
     <mat-icon>close</mat-icon>
