@@ -17,6 +17,7 @@ export interface MonthlyReviewRow {
   label: string;
   categoryName: string;
   amount: number;
+  memberName?: string;
   pendingDelete?: boolean;
   existingRecordId?: string;
 }

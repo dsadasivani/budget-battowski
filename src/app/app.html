@@ -23,6 +23,34 @@
       </mat-chip>
     </mat-chip-set>
 
+    @if (firebase.mode === 'firebase' && workspaceId()) {
+      <div class="workspace-switcher" aria-label="Workspace controls">
+        <mat-form-field appearance="outline" subscriptSizing="dynamic">
+          <mat-label>Workspace</mat-label>
+          <mat-select
+            [value]="workspaceId()"
+            aria-label="Select workspace"
+            (selectionChange)="selectWorkspace($event.value)"
+            [disabled]="isSyncing()"
+          >
+            @for (workspace of workspaces(); track workspace.id) {
+              <mat-option [value]="workspace.id">{{ workspace.name }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+        <button
+          mat-icon-button
+          type="button"
+          aria-label="Create workspace"
+          matTooltip="Create workspace"
+          (click)="createWorkspace()"
+          [disabled]="isSyncing()"
+        >
+          <mat-icon aria-hidden="true">add_business</mat-icon>
+        </button>
+      </div>
+    }
+
     <div class="auth-actions" aria-label="Account actions">
       @if (firebase.mode === 'firebase' && workspaceId()) {
         <span class="user-summary">
@@ -346,6 +374,72 @@
         >
           <mat-icon aria-hidden="true">chevron_right</mat-icon>
         </button>
+
+        <mat-form-field appearance="outline" subscriptSizing="dynamic">
+          <mat-label>User</mat-label>
+          <mat-select
+            [value]="selectedMemberEmail()"
+            aria-label="Select workspace user"
+            (selectionChange)="setSelectedMember($event.value)"
+          >
+            <mat-option value="ALL">ALL</mat-option>
+            @for (member of activeMembers(); track member.email) {
+              <mat-option [value]="member.email">{{ memberDisplayName(member) }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <button
+          mat-icon-button
+          type="button"
+          aria-label="Workspace sharing"
+          matTooltip="Workspace sharing"
+          [matMenuTriggerFor]="workspaceMembersMenu"
+          [disabled]="!workspaceId()"
+        >
+          <mat-icon aria-hidden="true">group</mat-icon>
+        </button>
+
+        <mat-menu #workspaceMembersMenu="matMenu" class="members-menu">
+          <div class="members-menu-panel" (click)="$event.stopPropagation()">
+            <strong>Workspace members</strong>
+            @for (member of activeMembers(); track member.email) {
+              <div class="member-row">
+                <span>
+                  {{ memberDisplayName(member) }}
+                  <small>{{ member.email }} · {{ member.role }}</small>
+                </span>
+                @if (canManageWorkspace() && member.role !== 'owner') {
+                  <button
+                    mat-icon-button
+                    type="button"
+                    [attr.aria-label]="'Remove access for ' + memberDisplayName(member)"
+                    matTooltip="Remove access"
+                    (click)="archiveWorkspaceMember(member.email)"
+                  >
+                    <mat-icon aria-hidden="true">person_remove</mat-icon>
+                  </button>
+                }
+              </div>
+            } @empty {
+              <span class="member-empty">No members yet</span>
+            }
+            @if (canManageWorkspace()) {
+              <button mat-stroked-button type="button" (click)="renameWorkspace()">
+                <mat-icon aria-hidden="true">drive_file_rename_outline</mat-icon>
+                Rename workspace
+              </button>
+              <button mat-stroked-button type="button" (click)="addWorkspaceMember()">
+                <mat-icon aria-hidden="true">person_add</mat-icon>
+                Add editor
+              </button>
+              <button mat-stroked-button type="button" (click)="archiveWorkspace()">
+                <mat-icon aria-hidden="true">archive</mat-icon>
+                Archive workspace
+              </button>
+            }
+          </div>
+        </mat-menu>
       </div>
 
       <div class="metric-grid" aria-label="Monthly financial summary">

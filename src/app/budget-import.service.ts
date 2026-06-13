@@ -7,6 +7,7 @@ import type {
   IncomeSource,
   InvestmentEntry,
   Loan,
+  WorkspaceMember,
 } from './budget.models';
 
 export type ImportRecordType =
@@ -68,6 +69,7 @@ const SHEETS: Record<ImportRecordType, SheetDefinition> = {
       'startDate',
       'endDate',
       'notes',
+      'memberEmail',
     ],
     sample: {
       source: 'Salary',
@@ -76,11 +78,12 @@ const SHEETS: Record<ImportRecordType, SheetDefinition> = {
       cadence: 'monthly',
       month: '2026-06',
       notes: 'Primary income',
+      memberEmail: '',
     },
   },
   expense: {
     collectionName: 'expenses',
-    headers: ['name', 'categoryName', 'amount', 'month', 'date', 'note'],
+    headers: ['name', 'categoryName', 'amount', 'month', 'date', 'note', 'memberEmail'],
     sample: {
       name: 'Supermarket',
       categoryName: 'Groceries',
@@ -88,11 +91,12 @@ const SHEETS: Record<ImportRecordType, SheetDefinition> = {
       month: '2026-06',
       date: '2026-06-05',
       note: 'Monthly groceries',
+      memberEmail: '',
     },
   },
   recurring_expense: {
     collectionName: 'templates',
-    headers: ['name', 'categoryName', 'amount', 'frequency', 'startDate', 'endDate'],
+    headers: ['name', 'categoryName', 'amount', 'frequency', 'startDate', 'endDate', 'memberEmail'],
     sample: {
       name: 'Rent',
       categoryName: 'Housing',
@@ -100,6 +104,7 @@ const SHEETS: Record<ImportRecordType, SheetDefinition> = {
       frequency: 'monthly',
       startDate: '2026-06-01',
       endDate: '2027-05-31',
+      memberEmail: '',
     },
   },
   investment: {
@@ -113,6 +118,7 @@ const SHEETS: Record<ImportRecordType, SheetDefinition> = {
       'startDate',
       'endDate',
       'notes',
+      'memberEmail',
     ],
     sample: {
       name: 'Index SIP',
@@ -122,6 +128,7 @@ const SHEETS: Record<ImportRecordType, SheetDefinition> = {
       date: '2026-06-01',
       startDate: '2026-06-01',
       notes: 'Monthly index fund',
+      memberEmail: '',
     },
   },
   loan: {
@@ -136,6 +143,7 @@ const SHEETS: Record<ImportRecordType, SheetDefinition> = {
       'startDate',
       'endDate',
       'notes',
+      'memberEmail',
     ],
     sample: {
       lender: 'Bank',
@@ -147,6 +155,7 @@ const SHEETS: Record<ImportRecordType, SheetDefinition> = {
       startDate: '2024-01-01',
       endDate: '2036-12-31',
       notes: 'Existing EMI',
+      memberEmail: '',
     },
   },
 };
@@ -226,10 +235,11 @@ export function createBudgetImportTemplateCsv(): string {
 export async function parseBudgetImportFile(
   file: File,
   existingCategories: BudgetCategory[],
+  members: WorkspaceMember[] = [],
 ): Promise<BudgetImportParseResult> {
   const fileName = file.name.toLowerCase();
   if (fileName.endsWith('.csv')) {
-    return parseBudgetImportCsv(await file.text(), existingCategories);
+    return parseBudgetImportCsv(await file.text(), existingCategories, members);
   }
 
   if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
@@ -278,12 +288,13 @@ export async function parseBudgetImportFile(
     }
   }
 
-  return validateRows(rows, existingCategories);
+  return validateRows(rows, existingCategories, members);
 }
 
 export function parseBudgetImportCsv(
   text: string,
   existingCategories: BudgetCategory[],
+  members: WorkspaceMember[] = [],
 ): BudgetImportParseResult {
   const parsed = parseCsv(text);
   if (!parsed.headers.length) {
@@ -302,7 +313,7 @@ export function parseBudgetImportCsv(
     };
   });
 
-  return validateRows(rows, existingCategories);
+  return validateRows(rows, existingCategories, members);
 }
 
 export async function buildProcessedImportWorkbook(rows: BudgetImportRow[]): Promise<Blob> {
@@ -368,11 +379,15 @@ export function summarizeImportRows(rows: BudgetImportRow[]): BudgetImportSummar
 function validateRows(
   rows: BudgetImportRow[],
   existingCategories: BudgetCategory[],
+  members: WorkspaceMember[],
 ): BudgetImportParseResult {
   const categoryNameToId = new Map(
     existingCategories.map(
       (category) => [categoryKey(category.name, category.type ?? 'Expenses'), category.id] as const,
     ),
+  );
+  const memberEmails = new Set(
+    members.filter((member) => !member.archivedDate).map((member) => member.email),
   );
 
   for (const row of rows) {
@@ -401,19 +416,19 @@ function validateRows(
 
     switch (row.recordType) {
       case 'income':
-        validateIncome(row, categoryNameToId);
+        validateIncome(row, categoryNameToId, memberEmails);
         break;
       case 'expense':
-        validateExpense(row, categoryNameToId);
+        validateExpense(row, categoryNameToId, memberEmails);
         break;
       case 'recurring_expense':
-        validateTemplate(row, categoryNameToId);
+        validateTemplate(row, categoryNameToId, memberEmails);
         break;
       case 'investment':
-        validateInvestment(row, categoryNameToId);
+        validateInvestment(row, categoryNameToId, memberEmails);
         break;
       case 'loan':
-        validateLoan(row);
+        validateLoan(row, memberEmails);
         break;
       default:
         break;
@@ -449,7 +464,11 @@ function validateCategory(row: BudgetImportRow, categoryNameToId: Map<string, st
   } satisfies BudgetCategory;
 }
 
-function validateIncome(row: BudgetImportRow, categoryNameToId: Map<string, string>): void {
+function validateIncome(
+  row: BudgetImportRow,
+  categoryNameToId: Map<string, string>,
+  memberEmails: Set<string>,
+): void {
   const source = required(row, 'source');
   const amount = numberField(row, 'amount');
   const cadence = enumField(row, 'cadence', CADENCES);
@@ -457,6 +476,7 @@ function validateIncome(row: BudgetImportRow, categoryNameToId: Map<string, stri
   const startDate = optionalDate(row, 'startDate');
   const endDate = optionalDate(row, 'endDate');
   const categoryId = optionalCategoryIdField(row, categoryNameToId, 'Income');
+  const memberEmail = optionalMemberEmailField(row, memberEmails);
 
   if (row.comments.length) {
     return;
@@ -474,15 +494,21 @@ function validateIncome(row: BudgetImportRow, categoryNameToId: Map<string, stri
     createdDate: todayDate(),
     startDate,
     endDate,
+    memberEmail,
   } satisfies IncomeSource;
 }
 
-function validateExpense(row: BudgetImportRow, categoryNameToId: Map<string, string>): void {
+function validateExpense(
+  row: BudgetImportRow,
+  categoryNameToId: Map<string, string>,
+  memberEmails: Set<string>,
+): void {
   const name = required(row, 'name');
   const amount = numberField(row, 'amount');
   const month = optionalMonth(row, 'month');
   const date = optionalDate(row, 'date');
   const categoryId = categoryIdField(row, categoryNameToId, 'Expenses');
+  const memberEmail = optionalMemberEmailField(row, memberEmails);
 
   if (!month && !date) {
     row.comments.push('Either month or date is required.');
@@ -502,10 +528,15 @@ function validateExpense(row: BudgetImportRow, categoryNameToId: Map<string, str
     amount,
     type: 'one-time',
     note: optional(row, 'note') || optional(row, 'notes'),
+    memberEmail,
   } satisfies ExpenseEntry;
 }
 
-function validateTemplate(row: BudgetImportRow, categoryNameToId: Map<string, string>): void {
+function validateTemplate(
+  row: BudgetImportRow,
+  categoryNameToId: Map<string, string>,
+  memberEmails: Set<string>,
+): void {
   const name = required(row, 'name');
   const amount = numberField(row, 'amount');
   const frequency = optional(row, 'frequency')
@@ -514,6 +545,7 @@ function validateTemplate(row: BudgetImportRow, categoryNameToId: Map<string, st
   const startDate = optionalDate(row, 'startDate');
   const endDate = optionalDate(row, 'endDate');
   const categoryId = categoryIdField(row, categoryNameToId, 'Expenses');
+  const memberEmail = optionalMemberEmailField(row, memberEmails);
 
   if (!startDate) {
     row.comments.push('startDate is required for recurring_expense rows.');
@@ -534,10 +566,15 @@ function validateTemplate(row: BudgetImportRow, categoryNameToId: Map<string, st
     createdDate: todayDate(),
     startDate,
     endDate,
+    memberEmail,
   } satisfies ExpenseTemplate;
 }
 
-function validateInvestment(row: BudgetImportRow, categoryNameToId: Map<string, string>): void {
+function validateInvestment(
+  row: BudgetImportRow,
+  categoryNameToId: Map<string, string>,
+  memberEmails: Set<string>,
+): void {
   const name = required(row, 'name');
   const amount = numberField(row, 'amount');
   const frequency = enumField(row, 'frequency', INVESTMENT_FREQUENCIES);
@@ -545,6 +582,7 @@ function validateInvestment(row: BudgetImportRow, categoryNameToId: Map<string, 
   const startDate = optionalDate(row, 'startDate');
   const endDate = optionalDate(row, 'endDate');
   const categoryId = optionalCategoryIdField(row, categoryNameToId, 'Investments');
+  const memberEmail = optionalMemberEmailField(row, memberEmails);
 
   if (!date && !startDate) {
     row.comments.push('Either date or startDate is required for investment rows.');
@@ -566,10 +604,11 @@ function validateInvestment(row: BudgetImportRow, categoryNameToId: Map<string, 
     endDate,
     notes: optional(row, 'notes'),
     createdDate: todayDate(),
+    memberEmail,
   } satisfies InvestmentEntry;
 }
 
-function validateLoan(row: BudgetImportRow): void {
+function validateLoan(row: BudgetImportRow, memberEmails: Set<string>): void {
   const lender = required(row, 'lender');
   const loanType = required(row, 'loanType');
   const principal = numberField(row, 'principal');
@@ -578,6 +617,7 @@ function validateLoan(row: BudgetImportRow): void {
   const emi = numberField(row, 'emi');
   const startDate = optionalDate(row, 'startDate');
   const endDate = optionalDate(row, 'endDate');
+  const memberEmail = optionalMemberEmailField(row, memberEmails);
 
   if (!startDate) {
     row.comments.push('startDate is required.');
@@ -603,6 +643,7 @@ function validateLoan(row: BudgetImportRow): void {
     startDate: startDate!,
     endDate: endDate!,
     notes: optional(row, 'notes'),
+    memberEmail,
   } satisfies Loan;
 }
 
@@ -714,6 +755,23 @@ function optionalCategoryIdField(
   }
 
   return categoryIdField(row, categoryNameToId, type);
+}
+
+function optionalMemberEmailField(
+  row: BudgetImportRow,
+  memberEmails: Set<string>,
+): string | undefined {
+  const memberEmail = optional(row, 'memberEmail').trim().toLowerCase();
+  if (!memberEmail) {
+    return undefined;
+  }
+
+  if (memberEmails.size && !memberEmails.has(memberEmail)) {
+    row.comments.push(`memberEmail "${memberEmail}" is not an active workspace member.`);
+    return undefined;
+  }
+
+  return memberEmail;
 }
 
 function value(row: BudgetImportRow, field: string): string {

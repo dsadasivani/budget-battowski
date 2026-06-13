@@ -103,6 +103,78 @@ describe('App', () => {
     expect(app.oneTimeTotal()).toBe(1200);
   });
 
+  it('should filter financial data by selected workspace member', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      expenses: { set: (records: unknown[]) => void };
+      incomes: { set: (records: unknown[]) => void };
+      monthlyIncome: () => number;
+      outflowTotal: () => number;
+      selectedEntries: () => Array<{ id: string }>;
+      selectedMemberEmail: { set: (email: string) => void };
+      selectedMonth: { set: (month: string) => void };
+    };
+
+    app.selectedMonth.set('2026-06');
+    app.incomes.set([
+      {
+        id: 'income-a',
+        source: 'A Salary',
+        amount: 100000,
+        cadence: 'monthly',
+        notes: '',
+        memberEmail: 'a@example.com',
+      },
+      {
+        id: 'income-b',
+        source: 'B Salary',
+        amount: 80000,
+        cadence: 'monthly',
+        notes: '',
+        memberEmail: 'b@example.com',
+      },
+      {
+        id: 'income-legacy',
+        source: 'Legacy',
+        amount: 20000,
+        cadence: 'monthly',
+        notes: '',
+      },
+    ]);
+    app.expenses.set([
+      {
+        id: 'expense-a',
+        month: '2026-06',
+        date: '2026-06-01',
+        name: 'A Rent',
+        categoryId: 'category-home',
+        amount: 30000,
+        type: 'one-time',
+        note: '',
+        memberEmail: 'a@example.com',
+      },
+      {
+        id: 'expense-legacy',
+        month: '2026-06',
+        date: '2026-06-02',
+        name: 'Legacy',
+        categoryId: 'category-home',
+        amount: 5000,
+        type: 'one-time',
+        note: '',
+      },
+    ]);
+
+    app.selectedMemberEmail.set('ALL');
+    expect(app.monthlyIncome()).toBe(200000);
+    expect(app.outflowTotal()).toBe(35000);
+
+    app.selectedMemberEmail.set('a@example.com');
+    expect(app.monthlyIncome()).toBe(100000);
+    expect(app.selectedEntries().map((expense) => expense.id)).toEqual(['expense-a']);
+    expect(app.outflowTotal()).toBe(30000);
+  });
+
   it('should approve reviewed recurring expenses into the selected month', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 5, 11));
@@ -157,6 +229,55 @@ describe('App', () => {
       expect.objectContaining({ sourceId: 'fixed-rent', sourceType: 'expense' }),
     );
     expect(app.hasMonthlyReviewRows()).toBe(false);
+  });
+
+  it('should preserve member ownership on generated recurring and loan expenses', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 11));
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      buildDefaultMonthEntries: (
+        month: string,
+      ) => Array<{ memberEmail?: string; templateId?: string }>;
+      loans: { set: (records: unknown[]) => void };
+      selectedMemberEmail: { set: (email: string) => void };
+      templates: { set: (records: unknown[]) => void };
+    };
+
+    app.selectedMemberEmail.set('a@example.com');
+    app.templates.set([
+      {
+        id: 'fixed-rent',
+        name: 'Rent',
+        categoryId: 'category-home',
+        amount: 25000,
+        type: 'recurring',
+        startDate: '2026-05-01',
+        memberEmail: 'a@example.com',
+      },
+    ]);
+    app.loans.set([
+      {
+        id: 'loan-home',
+        lender: 'Bank',
+        loanType: 'Home',
+        principal: 1000000,
+        outstanding: 900000,
+        annualRate: 8,
+        emi: 30000,
+        startDate: '2026-01-01',
+        endDate: '2026-12-31',
+        notes: '',
+        memberEmail: 'a@example.com',
+      },
+    ]);
+
+    expect(app.buildDefaultMonthEntries('2026-05')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ templateId: 'fixed-rent', memberEmail: 'a@example.com' }),
+        expect.objectContaining({ templateId: 'loan:loan-home', memberEmail: 'a@example.com' }),
+      ]),
+    );
   });
 
   it('should require current recurring investments to be reviewed before they count', async () => {
@@ -1506,6 +1627,34 @@ describe('budget import helpers', () => {
     expect(parsed.rows[2].status).toBe('error');
     expect(parsed.rows[2].comments.join(' ')).toContain('amount must be a number');
     expect(parsed.rows[2].comments.join(' ')).toContain('categoryName "Unknown" was not found');
+  });
+
+  it('should validate imported member emails for financial rows', () => {
+    const csv = [
+      'recordType,name,categoryName,monthlyBudget,color,amount,month,date,memberEmail',
+      'category,Food,,15000,#1f7a8c,,,,',
+      'expense,Groceries,Food,,,1200,2026-06,2026-06-04,a@example.com',
+      'expense,Unknown user,Food,,,900,2026-06,2026-06-05,missing@example.com',
+    ].join('\n');
+
+    const parsed = parseBudgetImportCsv(
+      csv,
+      [],
+      [
+        {
+          email: 'a@example.com',
+          displayName: 'A',
+          role: 'editor',
+          createdDate: '2026-06-01T00:00:00.000Z',
+        },
+      ],
+    );
+
+    expect(parsed.rows[1].record).toEqual(
+      expect.objectContaining({ memberEmail: 'a@example.com' }),
+    );
+    expect(parsed.rows[2].status).toBe('error');
+    expect(parsed.rows[2].comments.join(' ')).toContain('missing@example.com');
   });
 
   it('should reject unsupported investment import frequencies', () => {

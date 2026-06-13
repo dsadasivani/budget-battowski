@@ -25,6 +25,7 @@ import { MatListModule } from '@angular/material/list';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatInputModule } from '@angular/material/input';
 import { MatMenuModule, MatMenuTrigger } from '@angular/material/menu';
+import { MatSelectModule } from '@angular/material/select';
 import { MatTabsModule } from '@angular/material/tabs';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatToolbarModule } from '@angular/material/toolbar';
@@ -71,6 +72,8 @@ import type {
   InvestmentFrequency,
   Loan,
   LoanAuditVersion,
+  Workspace,
+  WorkspaceMember,
 } from './budget.models';
 
 registerLocaleData(localeEnIn);
@@ -384,6 +387,7 @@ const DEFAULT_LOAN_EMI_CATEGORY: BudgetCategory = {
     MatListModule,
     MatMenuModule,
     MatProgressBarModule,
+    MatSelectModule,
     MatTabsModule,
     MatTooltipModule,
     MatToolbarModule,
@@ -412,8 +416,13 @@ export class App implements OnDestroy {
   );
   protected readonly syncError = signal<string | null>(null);
   protected readonly workspaceId = signal<string | null>(null);
+  protected readonly workspaces = signal<Workspace[]>([]);
+  protected readonly activeWorkspace = computed(
+    () => this.workspaces().find((workspace) => workspace.id === this.workspaceId()) ?? null,
+  );
   protected readonly userName = signal<string | null>(null);
   protected readonly userEmail = signal<string | null>(null);
+  protected readonly selectedMemberEmail = signal('ALL');
   protected readonly selectedMonth = signal(currentMonth());
   protected readonly monthPickerOpen = signal(false);
   protected readonly monthPickerView = signal<'months' | 'years'>('months');
@@ -430,6 +439,26 @@ export class App implements OnDestroy {
   protected readonly processedImportFile = signal<{ blob: Blob; filename: string } | null>(null);
 
   protected readonly monthNames = MONTH_NAMES;
+  protected readonly activeMembers = computed(() =>
+    (this.activeWorkspace()?.members ?? [])
+      .filter((member) => !member.archivedDate)
+      .sort((left, right) =>
+        this.memberDisplayName(left).localeCompare(this.memberDisplayName(right)),
+      ),
+  );
+  protected readonly canManageWorkspace = computed(() => {
+    const email = this.userEmail();
+    const workspace = this.activeWorkspace();
+    return !!email && !!workspace && workspace.ownerEmail === email;
+  });
+  protected readonly selectedMemberLabel = computed(() => {
+    const selected = this.selectedMemberEmail();
+    if (selected === 'ALL') {
+      return 'All members';
+    }
+
+    return this.memberName(selected);
+  });
   protected readonly selectedMonthParts = computed(() => monthParts(this.selectedMonth()));
   protected readonly pickerYears = computed(() =>
     Array.from({ length: 16 }, (_, index) => this.pickerYearPageStart() + index),
@@ -446,6 +475,21 @@ export class App implements OnDestroy {
         this.investments().length +
         this.loans().length >
       0,
+  );
+  protected readonly filteredIncomes = computed(() =>
+    this.incomes().filter((record) => this.matchesSelectedMember(record)),
+  );
+  protected readonly filteredTemplates = computed(() =>
+    this.templates().filter((record) => this.matchesSelectedMember(record)),
+  );
+  protected readonly filteredExpenses = computed(() =>
+    this.expenses().filter((record) => this.matchesSelectedMember(record)),
+  );
+  protected readonly filteredInvestments = computed(() =>
+    this.investments().filter((record) => this.matchesSelectedMember(record)),
+  );
+  protected readonly filteredLoans = computed(() =>
+    this.loans().filter((record) => this.matchesSelectedMember(record)),
   );
   protected readonly showDashboardSkeleton = computed(
     () => this.isSyncing() && !this.hasBudgetData(),
@@ -489,7 +533,7 @@ export class App implements OnDestroy {
   protected readonly monthLabel = computed(() => monthLabel(this.selectedMonth()));
   protected readonly activeIncomeSources = computed(() => {
     const selectedMonth = this.selectedMonth();
-    const activeIncomes = this.incomes().filter((income) => {
+    const activeIncomes = this.filteredIncomes().filter((income) => {
       const incomeMonth = income.month ? dateMonthKey(income.month) : null;
       const startDate = activeStartDate(
         income.startDate,
@@ -522,12 +566,12 @@ export class App implements OnDestroy {
     return activeIncomes.filter((income) => !income.month);
   });
   protected readonly activeLoans = computed(() =>
-    this.loans().filter(
+    this.filteredLoans().filter(
       (loan) => loan.emi > 0 && isMonthInRange(this.selectedMonth(), loan.startDate, loan.endDate),
     ),
   );
   protected readonly investmentPlans = computed(() =>
-    this.investments().filter((investment) => !investment.sourceInvestmentId),
+    this.filteredInvestments().filter((investment) => !investment.sourceInvestmentId),
   );
   protected readonly monthlyIncome = computed(() =>
     this.activeIncomeSources().reduce(
@@ -536,14 +580,14 @@ export class App implements OnDestroy {
     ),
   );
   protected readonly selectedEntries = computed(() =>
-    this.expenses().filter(
+    this.filteredExpenses().filter(
       (expense) =>
         entryMonthKey(expense) === this.selectedMonth() &&
         normalizedExpenseType(expense) !== 'investment',
     ),
   );
   protected readonly selectedInvestments = computed(() =>
-    this.investments().filter((investment) => {
+    this.filteredInvestments().filter((investment) => {
       if (!isOneTimeInvestment(investment)) {
         if (this.selectedMonth() >= currentMonth()) {
           return false;
@@ -554,7 +598,7 @@ export class App implements OnDestroy {
     }),
   );
   protected readonly legacyInvestmentEntries = computed(() =>
-    this.expenses().filter(
+    this.filteredExpenses().filter(
       (expense) =>
         entryMonthKey(expense) === this.selectedMonth() &&
         legacyExpenseType(expense) === 'investment',
@@ -608,7 +652,7 @@ export class App implements OnDestroy {
     );
 
     return months.map((month) => {
-      const entries = this.expenses().filter(
+      const entries = this.filteredExpenses().filter(
         (expense) =>
           entryMonthKey(expense) === month &&
           ((expense as ExpenseEntry & { type: string }).type === 'recurring' ||
@@ -616,14 +660,14 @@ export class App implements OnDestroy {
       );
       const outflow = entries.reduce((total, expense) => total + expense.amount, 0);
       const invested =
-        this.investments()
+        this.filteredInvestments()
           .filter((investment) => isOneTimeInvestment(investment) || month < currentMonth())
           .reduce(
             (total, investment) =>
               total + (investmentScheduleForMonth(investment, month)?.amount ?? 0),
             0,
           ) +
-        this.expenses()
+        this.filteredExpenses()
           .filter(
             (expense) =>
               entryMonthKey(expense) === month && legacyExpenseType(expense) === 'investment',
@@ -641,7 +685,7 @@ export class App implements OnDestroy {
     });
   });
   protected readonly loanPlans = computed(() =>
-    this.loans().map((loan) => {
+    this.filteredLoans().map((loan) => {
       const monthsLeft = Math.max(1, Math.ceil(loan.outstanding / loan.emi));
       const payoff = loan.endDate ? new Date(loan.endDate) : new Date();
       if (!loan.endDate) {
@@ -657,7 +701,7 @@ export class App implements OnDestroy {
     }),
   );
   protected readonly totalDebt = computed(() =>
-    this.loans().reduce((total, loan) => total + loan.outstanding, 0),
+    this.filteredLoans().reduce((total, loan) => total + loan.outstanding, 0),
   );
   protected readonly donutStyle = computed(() => {
     const stats = this.categoryStats().filter((category) => category.spent > 0);
@@ -838,6 +882,176 @@ export class App implements OnDestroy {
     this.selectedMonth.update((month) => addMonths(month, offset));
   }
 
+  protected setSelectedMember(memberEmail: string): void {
+    this.selectedMemberEmail.set(memberEmail);
+  }
+
+  protected async selectWorkspace(workspaceId: string): Promise<void> {
+    if (!this.firebase.app) {
+      return;
+    }
+
+    this.stopFirestoreListeners();
+    this.clearAppData();
+    this.workspaceId.set(workspaceId);
+    this.selectedMemberEmail.set('ALL');
+    this.repository.set(new BudgetFirestoreRepository(this.firebase.app, workspaceId));
+    await this.listenToWorkspaceData();
+  }
+
+  protected async createWorkspace(): Promise<void> {
+    const email = this.userEmail();
+    if (!this.firebase.app || !email) {
+      return;
+    }
+
+    const name = globalThis.prompt?.('Workspace name');
+    if (!name?.trim()) {
+      return;
+    }
+
+    this.isSyncing.set(true);
+    this.syncError.set(null);
+
+    try {
+      const workspace = await BudgetFirestoreRepository.createWorkspace(
+        this.firebase.app,
+        email,
+        this.userName() || email,
+        name,
+      );
+      this.workspaces.update((workspaces) =>
+        [...workspaces, workspace].sort((left, right) => left.name.localeCompare(right.name)),
+      );
+      await this.selectWorkspace(workspace.id);
+      this.syncStatus.set('Workspace created');
+    } catch (error) {
+      this.handleSyncError(error instanceof Error ? error.message : 'Unable to create workspace.');
+    } finally {
+      this.isSyncing.set(false);
+    }
+  }
+
+  protected async addWorkspaceMember(): Promise<void> {
+    const workspace = this.activeWorkspace();
+    const repository = this.repository();
+    if (!workspace || !repository || !this.canManageWorkspace()) {
+      return;
+    }
+
+    const email = this.normalizeEmail(globalThis.prompt?.('Member Google email') ?? '');
+    if (!email) {
+      return;
+    }
+
+    const displayName = globalThis.prompt?.('Display name', email)?.trim() || email;
+    const existingMember = workspace.members.find((member) => member.email === email);
+    const today = new Date().toISOString();
+    const nextWorkspace: Workspace = {
+      ...workspace,
+      updatedDate: today,
+      members: existingMember
+        ? workspace.members.map((member) =>
+            member.email === email
+              ? { ...member, displayName, role: 'editor', archivedDate: undefined }
+              : member,
+          )
+        : [
+            ...workspace.members,
+            {
+              email,
+              displayName,
+              role: 'editor',
+              createdDate: today,
+            },
+          ],
+    };
+
+    await this.saveWorkspace(nextWorkspace, 'Member access updated');
+  }
+
+  protected async renameWorkspace(): Promise<void> {
+    const workspace = this.activeWorkspace();
+    if (!workspace || !this.canManageWorkspace()) {
+      return;
+    }
+
+    const name = globalThis.prompt?.('Workspace name', workspace.name)?.trim();
+    if (!name || name === workspace.name) {
+      return;
+    }
+
+    await this.saveWorkspace(
+      {
+        ...workspace,
+        name,
+        updatedDate: new Date().toISOString(),
+      },
+      'Workspace renamed',
+    );
+  }
+
+  protected async archiveWorkspace(): Promise<void> {
+    const workspace = this.activeWorkspace();
+    if (!workspace || !this.canManageWorkspace()) {
+      return;
+    }
+
+    const confirmed = globalThis.confirm?.(`Archive ${workspace.name}?`);
+    if (!confirmed) {
+      return;
+    }
+
+    const today = new Date().toISOString();
+    const archivedWorkspace: Workspace = {
+      ...workspace,
+      archivedDate: today,
+      updatedDate: today,
+    };
+
+    await this.saveWorkspace(archivedWorkspace, 'Workspace archived');
+    const remainingWorkspaces = this.workspaces().filter((item) => item.id !== workspace.id);
+    this.workspaces.set(remainingWorkspaces);
+
+    if (remainingWorkspaces[0]) {
+      await this.selectWorkspace(remainingWorkspaces[0].id);
+      return;
+    }
+
+    await this.createWorkspace();
+  }
+
+  protected async archiveWorkspaceMember(memberEmail: string): Promise<void> {
+    const workspace = this.activeWorkspace();
+    if (!workspace || !this.canManageWorkspace() || memberEmail === workspace.ownerEmail) {
+      return;
+    }
+
+    const member = workspace.members.find((item) => item.email === memberEmail);
+    if (!member || member.archivedDate) {
+      return;
+    }
+
+    const confirmed = globalThis.confirm?.(`Remove access for ${this.memberName(memberEmail)}?`);
+    if (!confirmed) {
+      return;
+    }
+
+    const today = new Date().toISOString();
+    const nextWorkspace: Workspace = {
+      ...workspace,
+      updatedDate: today,
+      members: workspace.members.map((item) =>
+        item.email === memberEmail ? { ...item, archivedDate: today } : item,
+      ),
+    };
+
+    await this.saveWorkspace(nextWorkspace, 'Member access removed');
+    if (this.selectedMemberEmail() === memberEmail) {
+      this.selectedMemberEmail.set('ALL');
+    }
+  }
+
   protected setActiveTab(index: number): void {
     this.activeTabIndex.set(Math.max(0, Math.min(this.workspaceTabCount - 1, index)));
   }
@@ -912,7 +1126,7 @@ export class App implements OnDestroy {
     this.syncError.set(null);
 
     try {
-      const parsed = await parseBudgetImportFile(file, this.categories());
+      const parsed = await parseBudgetImportFile(file, this.categories(), this.activeMembers());
       const validRows = parsed.rows.filter(
         (row) => row.status !== 'error' && row.record && row.collectionName,
       );
@@ -961,12 +1175,14 @@ export class App implements OnDestroy {
         scope,
         initialTabIndex,
         selectedMonth: this.selectedMonth(),
+        members: this.activeMembers(),
+        selectedMemberEmail: this.selectedMemberEmail(),
         categories: this.categories(),
-        incomes: this.incomes(),
-        templates: this.templates(),
-        expenses: this.expenses(),
+        incomes: this.filteredIncomes(),
+        templates: this.filteredTemplates(),
+        expenses: this.filteredExpenses(),
         investments: this.investmentPlans(),
-        loans: this.loans(),
+        loans: this.filteredLoans(),
       },
       maxHeight: '100dvh',
       maxWidth: '98vw',
@@ -1008,11 +1224,11 @@ export class App implements OnDestroy {
 
   private buildMonthlyReviewRows(month: string): MonthlyReviewRow[] {
     const existingExpensesByTemplateId = new Map(
-      this.expenses()
+      this.filteredExpenses()
         .filter((expense) => entryMonthKey(expense) === month && expense.templateId)
         .map((expense) => [expense.templateId!, expense]),
     );
-    const expenseRows = this.templates()
+    const expenseRows = this.filteredTemplates()
       .filter((template) => !this.isTemplateMonthSkipped(template, month))
       .map((template) => this.templateVersionForMonth(template, month))
       .filter((template): template is ExpenseTemplate => !!template)
@@ -1027,12 +1243,13 @@ export class App implements OnDestroy {
           sourceType: 'expense',
           label: template.name,
           categoryName: this.categoryName(template.categoryId),
+          memberName: this.memberName(template.memberEmail),
           amount: schedule?.amount ?? template.amount,
         };
       });
 
     const existingInvestmentsByPlanId = new Map(
-      this.investments()
+      this.filteredInvestments()
         .filter(
           (investment) =>
             isOneTimeInvestment(investment) &&
@@ -1042,12 +1259,12 @@ export class App implements OnDestroy {
         )
         .map((investment) => [investment.sourceInvestmentId!, investment]),
     );
-    const investmentRows = this.investments()
+    const investmentRows = this.filteredInvestments()
       .filter(
         (investment) =>
           !isOneTimeInvestment(investment) &&
           !existingInvestmentsByPlanId.has(investment.id) &&
-          !this.investments().some(
+          !this.filteredInvestments().some(
             (record) => record.id === this.reviewedInvestmentId(investment.id, month),
           ) &&
           !this.isInvestmentMonthSkipped(investment, month) &&
@@ -1064,6 +1281,7 @@ export class App implements OnDestroy {
           categoryName: investment.categoryId
             ? this.categoryName(investment.categoryId)
             : 'Investments',
+          memberName: this.memberName(investment.memberEmail),
           amount: schedule?.amount ?? investment.amount,
         };
       });
@@ -1160,6 +1378,7 @@ export class App implements OnDestroy {
         notes: plan.notes || 'Approved from recurring investment plan',
         createdDate: existing?.createdDate || new Date().toISOString(),
         sourceInvestmentId: plan.id,
+        memberEmail: plan.memberEmail,
         auditTrail: existing?.auditTrail ?? [],
       });
     }
@@ -1287,7 +1506,7 @@ export class App implements OnDestroy {
     const signature = `${month}:${newEntries
       .map((entry) => entry.templateId)
       .sort()
-      .join('|')}`;
+      .join('|')}:${this.selectedMemberEmail()}`;
 
     if (
       this.prefillAttemptedSignatures().has(signature) ||
@@ -1316,14 +1535,14 @@ export class App implements OnDestroy {
 
   private buildDefaultMonthEntries(month: string): ExpenseEntry[] {
     const existingTemplateIds = new Set(
-      this.expenses()
+      this.filteredExpenses()
         .filter((expense) => entryMonthKey(expense) === month && expense.templateId)
         .map((expense) => expense.templateId),
     );
 
     const templateEntries =
       month < currentMonth()
-        ? this.templates()
+        ? this.filteredTemplates()
             .filter(
               (template) =>
                 !existingTemplateIds.has(template.id) &&
@@ -1335,7 +1554,7 @@ export class App implements OnDestroy {
             .map<ExpenseEntry>((template) => this.expenseFromTemplate(template, month))
         : [];
 
-    const loanEntries = this.loans()
+    const loanEntries = this.filteredLoans()
       .filter((loan) => {
         const templateId = this.loanTemplateId(loan.id);
         return (
@@ -1354,6 +1573,7 @@ export class App implements OnDestroy {
         type: 'recurring',
         note: 'Prepopulated from loan EMI',
         templateId: this.loanTemplateId(loan.id),
+        memberEmail: loan.memberEmail,
       }));
 
     return [...templateEntries, ...loanEntries];
@@ -1367,6 +1587,32 @@ export class App implements OnDestroy {
     return (
       this.categories().find((category) => category.id === categoryId)?.name ?? 'Uncategorized'
     );
+  }
+
+  protected memberName(memberEmail: string | undefined): string {
+    if (!memberEmail) {
+      return 'Unassigned';
+    }
+
+    const member = this.activeWorkspace()?.members.find((item) => item.email === memberEmail);
+    return member ? this.memberDisplayName(member) : memberEmail;
+  }
+
+  protected memberDisplayName(member: WorkspaceMember): string {
+    return member.displayName || member.email;
+  }
+
+  private matchesSelectedMember(record: { memberEmail?: string }): boolean {
+    const selected = this.selectedMemberEmail();
+    if (selected === 'ALL') {
+      return true;
+    }
+
+    return record.memberEmail === selected;
+  }
+
+  private normalizeEmail(email: string): string {
+    return email.trim().toLowerCase();
   }
 
   protected formatMoney(value: number): string {
@@ -1475,6 +1721,7 @@ export class App implements OnDestroy {
       type: 'recurring',
       note: existing?.note || 'Prepopulated from recurring plan',
       templateId: template.id,
+      memberEmail: template.memberEmail,
     };
   }
 
@@ -1509,6 +1756,7 @@ export class App implements OnDestroy {
         frequency: auditVersion.frequency ?? template.frequency ?? 'monthly',
         startDate: auditVersion.effectiveStartDate || auditVersion.startDate,
         endDate: auditVersion.effectiveEndDate || auditVersion.endDate,
+        memberEmail: auditVersion.memberEmail ?? template.memberEmail,
       };
     }
 
@@ -1531,7 +1779,8 @@ export class App implements OnDestroy {
       previous.amount !== next.amount ||
       (previous.frequency ?? 'monthly') !== (next.frequency ?? 'monthly') ||
       (previous.startDate || '') !== (next.startDate || '') ||
-      (previous.endDate || '') !== (next.endDate || '')
+      (previous.endDate || '') !== (next.endDate || '') ||
+      (previous.memberEmail || '') !== (next.memberEmail || '')
     );
   }
 
@@ -1552,6 +1801,7 @@ export class App implements OnDestroy {
       frequency: template.frequency ?? 'monthly',
       startDate: template.startDate,
       endDate: template.endDate,
+      memberEmail: template.memberEmail,
     };
   }
 
@@ -1569,7 +1819,8 @@ export class App implements OnDestroy {
         audit.amount === auditVersion.amount &&
         (audit.frequency ?? 'monthly') === (auditVersion.frequency ?? 'monthly') &&
         (audit.startDate || '') === (auditVersion.startDate || '') &&
-        (audit.endDate || '') === (auditVersion.endDate || ''),
+        (audit.endDate || '') === (auditVersion.endDate || '') &&
+        (audit.memberEmail || '') === (auditVersion.memberEmail || ''),
     );
   }
 
@@ -1585,6 +1836,7 @@ export class App implements OnDestroy {
       frequency: template.frequency ?? 'monthly',
       startDate: template.startDate,
       endDate: template.endDate,
+      memberEmail: template.memberEmail,
     };
   }
 
@@ -1882,7 +2134,8 @@ export class App implements OnDestroy {
       (previous.notes || '') !== (next.notes || '') ||
       (previous.month || '') !== (next.month || '') ||
       (previous.startDate || '') !== (next.startDate || '') ||
-      (previous.endDate || '') !== (next.endDate || '')
+      (previous.endDate || '') !== (next.endDate || '') ||
+      (previous.memberEmail || '') !== (next.memberEmail || '')
     );
   }
 
@@ -1894,7 +2147,8 @@ export class App implements OnDestroy {
       (previous.date || '') !== (next.date || '') ||
       (previous.startDate || '') !== (next.startDate || '') ||
       (previous.endDate || '') !== (next.endDate || '') ||
-      (previous.notes || '') !== (next.notes || '')
+      (previous.notes || '') !== (next.notes || '') ||
+      (previous.memberEmail || '') !== (next.memberEmail || '')
     );
   }
 
@@ -1906,7 +2160,8 @@ export class App implements OnDestroy {
       previous.emi !== next.emi ||
       (previous.startDate || '') !== (next.startDate || '') ||
       (previous.endDate || '') !== (next.endDate || '') ||
-      (previous.notes || '') !== (next.notes || '')
+      (previous.notes || '') !== (next.notes || '') ||
+      (previous.memberEmail || '') !== (next.memberEmail || '')
     );
   }
 
@@ -1932,6 +2187,7 @@ export class App implements OnDestroy {
       month: income.month,
       startDate: income.startDate,
       endDate: income.endDate,
+      memberEmail: income.memberEmail,
     };
   }
 
@@ -1957,6 +2213,7 @@ export class App implements OnDestroy {
       startDate: investment.startDate,
       endDate: investment.endDate,
       notes: investment.notes,
+      memberEmail: investment.memberEmail,
     };
   }
 
@@ -1980,6 +2237,7 @@ export class App implements OnDestroy {
       startDate: loan.startDate,
       endDate: loan.endDate,
       notes: loan.notes,
+      memberEmail: loan.memberEmail,
     };
   }
 
@@ -1997,7 +2255,8 @@ export class App implements OnDestroy {
         audit.cadence === auditVersion.cadence &&
         (audit.categoryId || '') === (auditVersion.categoryId || '') &&
         (audit.startDate || '') === (auditVersion.startDate || '') &&
-        (audit.endDate || '') === (auditVersion.endDate || ''),
+        (audit.endDate || '') === (auditVersion.endDate || '') &&
+        (audit.memberEmail || '') === (auditVersion.memberEmail || ''),
     )
       ? (auditTrail ?? [])
       : [...(auditTrail ?? []), auditVersion];
@@ -2018,7 +2277,8 @@ export class App implements OnDestroy {
         audit.frequency === auditVersion.frequency &&
         (audit.date || '') === (auditVersion.date || '') &&
         (audit.startDate || '') === (auditVersion.startDate || '') &&
-        (audit.endDate || '') === (auditVersion.endDate || ''),
+        (audit.endDate || '') === (auditVersion.endDate || '') &&
+        (audit.memberEmail || '') === (auditVersion.memberEmail || ''),
     )
       ? (auditTrail ?? [])
       : [...(auditTrail ?? []), auditVersion];
@@ -2040,7 +2300,8 @@ export class App implements OnDestroy {
         audit.annualRate === auditVersion.annualRate &&
         audit.emi === auditVersion.emi &&
         (audit.startDate || '') === (auditVersion.startDate || '') &&
-        (audit.endDate || '') === (auditVersion.endDate || ''),
+        (audit.endDate || '') === (auditVersion.endDate || '') &&
+        (audit.memberEmail || '') === (auditVersion.memberEmail || ''),
     )
       ? (auditTrail ?? [])
       : [...(auditTrail ?? []), auditVersion];
@@ -2103,11 +2364,12 @@ export class App implements OnDestroy {
     this.stopFirestoreListeners();
     this.repository.set(null);
     const email = user?.email ?? null;
-    this.workspaceId.set(email);
+    this.workspaceId.set(null);
     this.userName.set(user?.displayName ?? null);
     this.userEmail.set(email);
 
     if (!user || !this.firebase.app || !email) {
+      this.workspaces.set([]);
       this.clearAppData();
       this.syncStatus.set(
         this.firebase.mode === 'firebase' ? 'Sign in with Google' : 'Firebase config needed',
@@ -2118,47 +2380,25 @@ export class App implements OnDestroy {
 
     this.isSyncing.set(true);
     this.syncError.set(null);
-    const repository = new BudgetFirestoreRepository(this.firebase.app, email);
-    this.repository.set(repository);
 
     try {
-      const subscriptions = await Promise.all([
-        repository.listen(
-          'categories',
-          (records) => {
-            this.categories.set(this.withDefaultCategories(records));
-            this.ensureDefaultCategoryRecord(records);
-          },
-          (message) => this.handleSyncError(message),
-        ),
-        repository.listen(
-          'incomes',
-          (records) => this.incomes.set(records),
-          (message) => this.handleSyncError(message),
-        ),
-        repository.listen(
-          'templates',
-          (records) => this.templates.set(records),
-          (message) => this.handleSyncError(message),
-        ),
-        repository.listen(
-          'expenses',
-          (records) => this.expenses.set(records),
-          (message) => this.handleSyncError(message),
-        ),
-        repository.listen(
-          'investments',
-          (records) => this.investments.set(records),
-          (message) => this.handleSyncError(message),
-        ),
-        repository.listen(
-          'loans',
-          (records) => this.loans.set(records),
-          (message) => this.handleSyncError(message),
-        ),
-      ]);
-
-      this.unsubscribes.update((unsubscribes) => [...unsubscribes, ...subscriptions]);
+      const legacyWorkspace = await BudgetFirestoreRepository.ensureLegacyWorkspace(
+        this.firebase.app,
+        email,
+        user.displayName ?? email,
+      );
+      const accessibleWorkspaces = await BudgetFirestoreRepository.listAccessibleWorkspaces(
+        this.firebase.app,
+        email,
+      );
+      const workspaceMap = new Map(
+        [legacyWorkspace, ...accessibleWorkspaces].map((workspace) => [workspace.id, workspace]),
+      );
+      const workspaces = [...workspaceMap.values()].sort((left, right) =>
+        left.name.localeCompare(right.name),
+      );
+      this.workspaces.set(workspaces);
+      await this.selectWorkspace(workspaces[0]?.id ?? legacyWorkspace.id);
       this.syncStatus.set('Synced with Firebase');
     } catch (error) {
       this.handleSyncError(
@@ -2178,6 +2418,75 @@ export class App implements OnDestroy {
     return this.runFirebaseWrite(async () => {
       await this.repository()?.upsertMany(collectionName, records);
     }, applyLocal);
+  }
+
+  private async saveWorkspace(workspace: Workspace, message: string): Promise<void> {
+    const repository = this.repository();
+    if (!repository) {
+      return;
+    }
+
+    this.isSyncing.set(true);
+    this.syncError.set(null);
+
+    try {
+      await repository.upsertWorkspace(workspace);
+      this.workspaces.update((workspaces) =>
+        workspaces
+          .map((item) => (item.id === workspace.id ? workspace : item))
+          .sort((left, right) => left.name.localeCompare(right.name)),
+      );
+      this.syncStatus.set(message);
+    } catch (error) {
+      this.handleSyncError(error instanceof Error ? error.message : 'Workspace update failed.');
+    } finally {
+      this.isSyncing.set(false);
+    }
+  }
+
+  private async listenToWorkspaceData(): Promise<void> {
+    const repository = this.repository();
+    if (!repository) {
+      return;
+    }
+
+    const subscriptions = await Promise.all([
+      repository.listen(
+        'categories',
+        (records) => {
+          this.categories.set(this.withDefaultCategories(records));
+          this.ensureDefaultCategoryRecord(records);
+        },
+        (message) => this.handleSyncError(message),
+      ),
+      repository.listen(
+        'incomes',
+        (records) => this.incomes.set(records),
+        (message) => this.handleSyncError(message),
+      ),
+      repository.listen(
+        'templates',
+        (records) => this.templates.set(records),
+        (message) => this.handleSyncError(message),
+      ),
+      repository.listen(
+        'expenses',
+        (records) => this.expenses.set(records),
+        (message) => this.handleSyncError(message),
+      ),
+      repository.listen(
+        'investments',
+        (records) => this.investments.set(records),
+        (message) => this.handleSyncError(message),
+      ),
+      repository.listen(
+        'loans',
+        (records) => this.loans.set(records),
+        (message) => this.handleSyncError(message),
+      ),
+    ]);
+
+    this.unsubscribes.update((unsubscribes) => [...unsubscribes, ...subscriptions]);
   }
 
   private async applyBulkChanges(result: BulkEditorResult): Promise<void> {
@@ -2207,6 +2516,7 @@ export class App implements OnDestroy {
     );
     const existingLoansById = new Map(this.loans().map((loan) => [loan.id, loan]));
     const returnedIncomeIds = new Set(result.incomes.map((income) => income.id));
+    const returnedTemplateIds = new Set(result.templates.map((template) => template.id));
     const returnedInvestmentIds = new Set(result.investments.map((investment) => investment.id));
     const returnedLoanIds = new Set(result.loans.map((loan) => loan.id));
     const incomes = [
@@ -2227,10 +2537,18 @@ export class App implements OnDestroy {
         .filter((income): income is IncomeSource => !!income)
         .map((income) => this.closeIncomeRecord(income, planOperationMonth)),
     ];
-    let templates = result.templates.filter(
-      (template) =>
-        !hardDeletedTemplateIds.has(template.id) && !deletedCategoryIds.has(template.categoryId),
-    );
+    let templates = [
+      ...this.templates().filter(
+        (template) =>
+          !returnedTemplateIds.has(template.id) &&
+          !hardDeletedTemplateIds.has(template.id) &&
+          !deletedCategoryIds.has(template.categoryId),
+      ),
+      ...result.templates.filter(
+        (template) =>
+          !hardDeletedTemplateIds.has(template.id) && !deletedCategoryIds.has(template.categoryId),
+      ),
+    ];
     const investments = [
       ...this.investments().filter(
         (investment) =>
@@ -2450,7 +2768,8 @@ export class App implements OnDestroy {
       };
 
       for (const expense of existingExpenses.filter(
-        (expense) => entryMonthKey(expense) !== selectedMonth,
+        (expense) =>
+          entryMonthKey(expense) !== selectedMonth || !this.matchesSelectedMember(expense),
       )) {
         addExpense(expense);
       }

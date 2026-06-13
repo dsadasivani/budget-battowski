@@ -26,6 +26,7 @@ import type {
   InvestmentFrequency,
   Loan,
   LoanAuditVersion,
+  WorkspaceMember,
 } from './budget.models';
 
 type DraftRow<T extends { id: string }> = T & { isNew?: boolean; pendingDelete?: boolean };
@@ -62,6 +63,8 @@ export interface BulkEditorData {
   scope: BulkEditorScope;
   initialTabIndex?: number;
   selectedMonth: string;
+  members?: WorkspaceMember[];
+  selectedMemberEmail?: string;
   categories: BudgetCategory[];
   incomes: IncomeSource[];
   templates: ExpenseTemplate[];
@@ -216,6 +219,7 @@ export class BulkEditorDialog {
   ];
   protected readonly recurringFrequencies: InvestmentFrequency[] = this.investmentFrequencies;
   protected readonly categoryTypes: CategoryType[] = ['Income', 'Investments', 'Expenses'];
+  protected readonly members = this.data.members ?? [];
 
   private readonly sourceTemplates = cloneRows(this.data.templates);
   private readonly originalIncomesById = new Map(
@@ -274,6 +278,7 @@ export class BulkEditorDialog {
   protected readonly showPlanningTables = computed(() => this.data.scope === 'planning');
   protected readonly showLoanTables = computed(() => this.data.scope === 'loans');
   protected readonly initialTabIndex = computed(() => this.data.initialTabIndex ?? 0);
+  protected readonly memberLocked = computed(() => this.isMemberLocked());
   protected readonly expandedTemplateIds = signal(new Set<string>());
   protected readonly expandedAuditIds = signal(new Set<string>());
   protected readonly validationError = signal('');
@@ -324,6 +329,7 @@ export class BulkEditorDialog {
         amount: undefined as unknown as number,
         type: 'one-time',
         note: '',
+        memberEmail: this.defaultMemberEmail(),
         isSuggested: true,
         suggestionMonth: expenseMonth,
       });
@@ -343,6 +349,7 @@ export class BulkEditorDialog {
         amount: undefined as unknown as number,
         type: 'one-time',
         note: '',
+        memberEmail: this.defaultMemberEmail(),
         isNew: true,
       },
       ...expenses,
@@ -362,6 +369,7 @@ export class BulkEditorDialog {
         startDate: currentMonthStartDate(),
         endDate: '',
         skippedMonths: [],
+        memberEmail: this.defaultMemberEmail(),
         isNew: true,
       },
       ...templates,
@@ -381,6 +389,7 @@ export class BulkEditorDialog {
         createdDate: todayDate(),
         startDate: '',
         endDate: '',
+        memberEmail: this.defaultMemberEmail(),
         isNew: true,
       },
       ...incomes,
@@ -414,6 +423,7 @@ export class BulkEditorDialog {
         startDate: '',
         endDate: '',
         notes: '',
+        memberEmail: this.defaultMemberEmail(),
         isNew: true,
       },
       ...loans,
@@ -433,6 +443,7 @@ export class BulkEditorDialog {
         endDate: '',
         notes: '',
         createdDate: todayDate(),
+        memberEmail: this.defaultMemberEmail(),
         isNew: true,
       },
       ...investments,
@@ -563,6 +574,26 @@ export class BulkEditorDialog {
     return this.categories().filter((category) => (category.type ?? 'Expenses') === type);
   }
 
+  protected memberName(email: string | undefined): string {
+    if (!email) {
+      return 'Unassigned';
+    }
+
+    return this.members.find((member) => member.email === email)?.displayName || email;
+  }
+
+  protected memberDisplayName(member: WorkspaceMember): string {
+    return member.displayName || member.email;
+  }
+
+  protected defaultMemberEmail(): string | undefined {
+    return this.isMemberLocked() ? this.data.selectedMemberEmail : undefined;
+  }
+
+  protected userFieldDisabled(row: { pendingDelete?: boolean }): boolean {
+    return !!row.pendingDelete || this.isMemberLocked();
+  }
+
   protected auditMonthLabel(date: string | undefined, fallback: string): string {
     const month = dateMonthKey(date);
     if (!month) {
@@ -607,6 +638,12 @@ export class BulkEditorDialog {
       return;
     }
 
+    const memberValidationError = this.memberValidationError();
+    if (memberValidationError) {
+      this.validationError.set(memberValidationError);
+      return;
+    }
+
     const createdDate = todayDate();
     const expenseRows = this.activeExpenseRows();
     const templates = this.templates()
@@ -630,6 +667,7 @@ export class BulkEditorDialog {
           endDate: optionalDate(template.endDate),
           skippedMonths: template.skippedMonths ?? [],
           archivedDate: template.archivedDate,
+          memberEmail: this.recordMemberEmail(template),
           auditTrail: template.auditTrail ?? [],
         };
       });
@@ -649,6 +687,7 @@ export class BulkEditorDialog {
               : ('one-time' as const),
           note: expense.note ?? '',
           templateId: expense.templateId || undefined,
+          memberEmail: this.recordMemberEmail(expense),
         }))
       : this.data.expenses;
 
@@ -679,6 +718,7 @@ export class BulkEditorDialog {
           startDate: optionalDate(income.startDate),
           endDate: optionalDate(income.endDate),
           auditTrail: income.auditTrail ?? [],
+          memberEmail: this.recordMemberEmail(income),
         })),
       templates,
       expenses,
@@ -704,6 +744,7 @@ export class BulkEditorDialog {
           skippedMonths: investment.skippedMonths ?? [],
           sourceInvestmentId: investment.sourceInvestmentId,
           auditTrail: investment.auditTrail ?? [],
+          memberEmail: this.recordMemberEmail(investment),
         })),
       loans: this.loans()
         .filter((loan) => !loan.pendingDelete)
@@ -722,6 +763,7 @@ export class BulkEditorDialog {
           startDate: requiredDate(loan.startDate),
           endDate: requiredDate(loan.endDate),
           notes: loan.notes ?? '',
+          memberEmail: this.recordMemberEmail(loan),
           auditTrail: loan.auditTrail ?? [],
         })),
       deleted: {
@@ -812,6 +854,35 @@ export class BulkEditorDialog {
     }
 
     return '';
+  }
+
+  private memberValidationError(): string {
+    if (this.isMemberLocked() || !this.members.length) {
+      return '';
+    }
+
+    const newFinancialRows = [
+      ...this.expenses().filter(
+        (row) =>
+          !row.pendingDelete && (row.isNew || row.isSuggested) && this.isSuggestedExpenseReady(row),
+      ),
+      ...this.templates().filter((row) => !row.pendingDelete && row.isNew),
+      ...this.incomes().filter((row) => !row.pendingDelete && row.isNew),
+      ...this.investments().filter((row) => !row.pendingDelete && row.isNew),
+      ...this.loans().filter((row) => !row.pendingDelete && row.isNew),
+    ];
+
+    return newFinancialRows.some((row) => !row.memberEmail)
+      ? 'Choose a user for every new financial row when viewing all members.'
+      : '';
+  }
+
+  private recordMemberEmail(record: { memberEmail?: string }): string | undefined {
+    return this.isMemberLocked() ? this.data.selectedMemberEmail! : record.memberEmail || undefined;
+  }
+
+  private isMemberLocked(): boolean {
+    return !!this.data.selectedMemberEmail && this.data.selectedMemberEmail !== 'ALL';
   }
 
   private isRecurringDraftChanged(template: DraftTemplate, original: ExpenseTemplate): boolean {

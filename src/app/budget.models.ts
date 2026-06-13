@@ -16,6 +16,25 @@ export type InvestmentFrequency =
   | 'annual'
   | 'one-time';
 export type CategoryType = 'Income' | 'Investments' | 'Expenses';
+export type WorkspaceRole = 'owner' | 'editor';
+
+export interface WorkspaceMember {
+  email: string;
+  displayName: string;
+  role: WorkspaceRole;
+  createdDate: string;
+  archivedDate?: string;
+}
+
+export interface Workspace {
+  id: string;
+  name: string;
+  ownerEmail: string;
+  members: WorkspaceMember[];
+  createdDate: string;
+  updatedDate: string;
+  archivedDate?: string;
+}
 
 export interface IncomeAuditVersion {
   id: string;
@@ -31,6 +50,7 @@ export interface IncomeAuditVersion {
   month?: string;
   startDate?: string;
   endDate?: string;
+  memberEmail?: string;
 }
 
 export interface IncomeSource {
@@ -44,6 +64,7 @@ export interface IncomeSource {
   createdDate?: string;
   startDate?: string;
   endDate?: string;
+  memberEmail?: string;
   auditTrail?: IncomeAuditVersion[];
 }
 
@@ -67,6 +88,7 @@ export interface ExpenseTemplateAuditVersion {
   frequency?: InvestmentFrequency;
   startDate?: string;
   endDate?: string;
+  memberEmail?: string;
 }
 
 export interface ExpenseTemplate {
@@ -81,6 +103,7 @@ export interface ExpenseTemplate {
   endDate?: string;
   skippedMonths?: string[];
   archivedDate?: string;
+  memberEmail?: string;
   auditTrail?: ExpenseTemplateAuditVersion[];
 }
 
@@ -94,6 +117,7 @@ export interface ExpenseEntry {
   type: ExpenseType;
   note: string;
   templateId?: string;
+  memberEmail?: string;
 }
 
 export interface InvestmentEntry {
@@ -109,6 +133,7 @@ export interface InvestmentEntry {
   createdDate?: string;
   skippedMonths?: string[];
   sourceInvestmentId?: string;
+  memberEmail?: string;
   auditTrail?: InvestmentAuditVersion[];
 }
 
@@ -126,6 +151,7 @@ export interface InvestmentAuditVersion {
   startDate?: string;
   endDate?: string;
   notes?: string;
+  memberEmail?: string;
 }
 
 export interface Loan {
@@ -139,6 +165,7 @@ export interface Loan {
   startDate: string;
   endDate: string;
   notes: string;
+  memberEmail?: string;
   auditTrail?: LoanAuditVersion[];
 }
 
@@ -157,6 +184,7 @@ export interface LoanAuditVersion {
   startDate: string;
   endDate: string;
   notes?: string;
+  memberEmail?: string;
 }
 
 export interface BudgetDataMap {

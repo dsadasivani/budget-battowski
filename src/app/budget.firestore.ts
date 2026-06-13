@@ -9,6 +9,7 @@ import type {
   ExpenseEntry,
   ExpenseTemplate,
   InvestmentEntry,
+  Workspace,
 } from './budget.models';
 
 const WORKSPACE_COLLECTION = 'budgetWorkspaces';
@@ -17,6 +18,15 @@ type FirestoreRecord<T extends BudgetRecord> = Omit<T, 'id'> & {
   createdAt?: unknown;
   updatedAt?: unknown;
 };
+
+function workspaceWithoutId(workspace: Workspace): Omit<Workspace, 'id'> {
+  const { id: _id, ...data } = workspace;
+  return data;
+}
+
+function activeMemberEmails(workspace: Workspace): string[] {
+  return workspace.members.filter((member) => !member.archivedDate).map((member) => member.email);
+}
 
 function stripUndefined<T>(value: T): T {
   if (Array.isArray(value)) {
@@ -70,6 +80,127 @@ export class BudgetFirestoreRepository {
     );
   }
 
+  static async listAccessibleWorkspaces(app: FirebaseApp, userEmail: string): Promise<Workspace[]> {
+    const { collection, getDocs, getFirestore, query, where } = await import('firebase/firestore');
+    const db = getFirestore(app);
+    const workspacesRef = collection(db, WORKSPACE_COLLECTION);
+    const snapshot = await getDocs(
+      query(workspacesRef, where('memberEmails', 'array-contains', userEmail)),
+    );
+
+    return snapshot.docs
+      .map((docSnapshot) => {
+        const data = docSnapshot.data() as Omit<Workspace, 'id'> & {
+          memberEmails?: string[];
+        };
+        return {
+          id: docSnapshot.id,
+          ...data,
+        } as Workspace;
+      })
+      .filter((workspace) => !workspace.archivedDate)
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  static async ensureLegacyWorkspace(
+    app: FirebaseApp,
+    userEmail: string,
+    displayName: string,
+  ): Promise<Workspace> {
+    const { doc, getDoc, getFirestore, serverTimestamp, setDoc } =
+      await import('firebase/firestore');
+    const db = getFirestore(app);
+    const workspaceRef = doc(db, WORKSPACE_COLLECTION, userEmail);
+    const snapshot = await getDoc(workspaceRef);
+
+    if (snapshot.exists()) {
+      const data = snapshot.data() as Omit<Workspace, 'id'>;
+      if (Array.isArray(data.members) && data.ownerEmail) {
+        return { id: snapshot.id, ...data } as Workspace;
+      }
+    }
+
+    const today = new Date().toISOString();
+    const workspace: Workspace = {
+      id: userEmail,
+      name: `${displayName || userEmail}'s workspace`,
+      ownerEmail: userEmail,
+      members: [
+        {
+          email: userEmail,
+          displayName: displayName || userEmail,
+          role: 'owner',
+          createdDate: today,
+        },
+      ],
+      createdDate: today,
+      updatedDate: today,
+    };
+
+    await setDoc(
+      workspaceRef,
+      {
+        ...stripUndefined(workspaceWithoutId(workspace)),
+        memberEmails: [userEmail],
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
+
+    return workspace;
+  }
+
+  static async createWorkspace(
+    app: FirebaseApp,
+    ownerEmail: string,
+    ownerDisplayName: string,
+    name: string,
+  ): Promise<Workspace> {
+    const { collection, doc, getFirestore, serverTimestamp, setDoc } =
+      await import('firebase/firestore');
+    const db = getFirestore(app);
+    const workspaceRef = doc(collection(db, WORKSPACE_COLLECTION));
+    const today = new Date().toISOString();
+    const workspace: Workspace = {
+      id: workspaceRef.id,
+      name: name.trim() || 'New workspace',
+      ownerEmail,
+      members: [
+        {
+          email: ownerEmail,
+          displayName: ownerDisplayName || ownerEmail,
+          role: 'owner',
+          createdDate: today,
+        },
+      ],
+      createdDate: today,
+      updatedDate: today,
+    };
+
+    await setDoc(workspaceRef, {
+      ...stripUndefined(workspaceWithoutId(workspace)),
+      memberEmails: [ownerEmail],
+      updatedAt: serverTimestamp(),
+    });
+
+    return workspace;
+  }
+
+  async upsertWorkspace(workspace: Workspace): Promise<void> {
+    const { doc, serverTimestamp, setDoc } = await import('firebase/firestore');
+    const db = await this.database();
+
+    await setDoc(
+      doc(db, WORKSPACE_COLLECTION, workspace.id),
+      {
+        ...stripUndefined(workspaceWithoutId(workspace)),
+        memberEmails: activeMemberEmails(workspace),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
+  }
+
   async upsert<TName extends BudgetCollectionName>(
     collectionName: TName,
     record: BudgetDataMap[TName],
@@ -78,13 +209,10 @@ export class BudgetFirestoreRepository {
     const db = await this.database();
     const { id, ...data } = record;
 
-    await setDoc(
-      doc(db, WORKSPACE_COLLECTION, this.workspaceId, collectionName, id),
-      {
-        ...stripUndefined(data),
-        updatedAt: serverTimestamp(),
-      },
-    );
+    await setDoc(doc(db, WORKSPACE_COLLECTION, this.workspaceId, collectionName, id), {
+      ...stripUndefined(data),
+      updatedAt: serverTimestamp(),
+    });
   }
 
   async upsertMany<TName extends BudgetCollectionName>(
@@ -102,13 +230,10 @@ export class BudgetFirestoreRepository {
 
     for (const record of records) {
       const { id, ...data } = record;
-      batch.set(
-        doc(db, WORKSPACE_COLLECTION, this.workspaceId, collectionName, id),
-        {
-          ...stripUndefined(data),
-          updatedAt: timestamp,
-        },
-      );
+      batch.set(doc(db, WORKSPACE_COLLECTION, this.workspaceId, collectionName, id), {
+        ...stripUndefined(data),
+        updatedAt: timestamp,
+      });
     }
 
     await batch.commit();
@@ -183,7 +308,9 @@ export class BudgetFirestoreRepository {
       }
 
       if (collectionName === 'loans') {
-        return (left as { loanType: string }).loanType.localeCompare((right as { loanType: string }).loanType);
+        return (left as { loanType: string }).loanType.localeCompare(
+          (right as { loanType: string }).loanType,
+        );
       }
 
       return (left as { id: string }).id.localeCompare((right as { id: string }).id);

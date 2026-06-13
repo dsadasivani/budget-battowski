@@ -48,6 +48,7 @@
                 <th>D</th>
                 <th>E</th>
                 <th>F</th>
+                <th>G</th>
                 <th></th>
               </tr>
               <tr>
@@ -58,6 +59,7 @@
                 <th>Amount</th>
                 <th>Type</th>
                 <th>Note</th>
+                <th>User</th>
                 <th aria-label="Actions"></th>
               </tr>
             </thead>
@@ -149,6 +151,22 @@
                       />
                     </mat-form-field>
                   </td>
+                  <td data-label="User">
+                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                      <mat-select
+                        placeholder="User"
+                        [(ngModel)]="expense.memberEmail"
+                        [disabled]="userFieldDisabled(expense)"
+                      >
+                        <mat-option [value]="undefined">Unassigned</mat-option>
+                        @for (member of members; track member.email) {
+                          <mat-option [value]="member.email">{{
+                            memberDisplayName(member)
+                          }}</mat-option>
+                        }
+                      </mat-select>
+                    </mat-form-field>
+                  </td>
                   <td data-label="Actions">
                     <button
                       mat-icon-button
@@ -199,6 +217,7 @@
                 <th>D</th>
                 <th>E</th>
                 <th>F</th>
+                <th>G</th>
                 <th></th>
               </tr>
               <tr>
@@ -209,6 +228,7 @@
                 <th>Frequency</th>
                 <th>Start</th>
                 <th>End optional</th>
+                <th>User</th>
                 <th aria-label="Actions"></th>
               </tr>
             </thead>
@@ -303,6 +323,22 @@
                       <mat-datepicker #templateEndPicker></mat-datepicker>
                     </mat-form-field>
                   </td>
+                  <td data-label="User">
+                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                      <mat-select
+                        placeholder="User"
+                        [(ngModel)]="template.memberEmail"
+                        [disabled]="userFieldDisabled(template)"
+                      >
+                        <mat-option [value]="undefined">Unassigned</mat-option>
+                        @for (member of members; track member.email) {
+                          <mat-option [value]="member.email">{{
+                            memberDisplayName(member)
+                          }}</mat-option>
+                        }
+                      </mat-select>
+                    </mat-form-field>
+                  </td>
                   <td data-label="Actions">
                     @if (recurringAuditRows(template).length) {
                       <button
@@ -348,7 +384,7 @@
                 </tr>
                 @if (isTemplateAuditExpanded(template.id) && recurringAuditRows(template).length) {
                   <tr class="audit-row">
-                    <td colspan="7">
+                    <td colspan="8">
                       <div class="audit-panel">
                         @for (audit of recurringAuditRows(template); track audit.id) {
                           <div class="audit-item">
@@ -398,6 +434,8 @@
                 <th>F</th>
                 <th>G</th>
                 <th>H</th>
+                <th>I</th>
+                <th>J</th>
                 <th></th>
               </tr>
               <tr>
@@ -408,6 +446,7 @@
                 <th>Cadence</th>
                 <th>Month</th>
                 <th>Notes</th>
+                <th>User</th>
                 <th aria-label="Actions"></th>
               </tr>
             </thead>
@@ -496,6 +535,22 @@
                       />
                     </mat-form-field>
                   </td>
+                  <td data-label="User">
+                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                      <mat-select
+                        placeholder="User"
+                        [(ngModel)]="income.memberEmail"
+                        [disabled]="userFieldDisabled(income)"
+                      >
+                        <mat-option [value]="undefined">Unassigned</mat-option>
+                        @for (member of members; track member.email) {
+                          <mat-option [value]="member.email">{{
+                            memberDisplayName(member)
+                          }}</mat-option>
+                        }
+                      </mat-select>
+                    </mat-form-field>
+                  </td>
                   <td data-label="Actions">
                     @if (incomeAuditRows(income).length) {
                       <button
@@ -537,7 +592,7 @@
                 </tr>
                 @if (isAuditExpanded(income.id) && incomeAuditRows(income).length) {
                   <tr class="audit-row">
-                    <td colspan="8">
+                    <td colspan="9">
                       <div class="audit-panel">
                         @for (audit of incomeAuditRows(income); track audit.id) {
                           <div class="audit-item">
@@ -715,6 +770,7 @@
                 <th>Start *</th>
                 <th>End *</th>
                 <th>Notes</th>
+                <th>User</th>
                 <th aria-label="Actions"></th>
               </tr>
             </thead>
@@ -840,6 +896,22 @@
                       />
                     </mat-form-field>
                   </td>
+                  <td data-label="User">
+                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                      <mat-select
+                        placeholder="User"
+                        [(ngModel)]="loan.memberEmail"
+                        [disabled]="userFieldDisabled(loan)"
+                      >
+                        <mat-option [value]="undefined">Unassigned</mat-option>
+                        @for (member of members; track member.email) {
+                          <mat-option [value]="member.email">{{
+                            memberDisplayName(member)
+                          }}</mat-option>
+                        }
+                      </mat-select>
+                    </mat-form-field>
+                  </td>
                   <td data-label="Actions">
                     @if (loanAuditRows(loan).length) {
                       <button
@@ -881,7 +953,7 @@
                 </tr>
                 @if (isAuditExpanded(loan.id) && loanAuditRows(loan).length) {
                   <tr class="audit-row">
-                    <td colspan="11">
+                    <td colspan="12">
                       <div class="audit-panel">
                         @for (audit of loanAuditRows(loan); track audit.id) {
                           <div class="audit-item">
@@ -928,6 +1000,7 @@
                 <th>E</th>
                 <th>F</th>
                 <th>G</th>
+                <th>H</th>
                 <th></th>
               </tr>
               <tr>
@@ -940,6 +1013,7 @@
                 <th>Start optional</th>
                 <th>End optional</th>
                 <th>Notes</th>
+                <th>User</th>
                 <th aria-label="Actions"></th>
               </tr>
             </thead>
@@ -1063,6 +1137,22 @@
                       />
                     </mat-form-field>
                   </td>
+                  <td data-label="User">
+                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                      <mat-select
+                        placeholder="User"
+                        [(ngModel)]="investment.memberEmail"
+                        [disabled]="userFieldDisabled(investment)"
+                      >
+                        <mat-option [value]="undefined">Unassigned</mat-option>
+                        @for (member of members; track member.email) {
+                          <mat-option [value]="member.email">{{
+                            memberDisplayName(member)
+                          }}</mat-option>
+                        }
+                      </mat-select>
+                    </mat-form-field>
+                  </td>
                   <td data-label="Actions">
                     @if (investmentAuditRows(investment).length) {
                       <button
@@ -1106,7 +1196,7 @@
                 </tr>
                 @if (isAuditExpanded(investment.id) && investmentAuditRows(investment).length) {
                   <tr class="audit-row">
-                    <td colspan="10">
+                    <td colspan="11">
                       <div class="audit-panel">
                         @for (audit of investmentAuditRows(investment); track audit.id) {
                           <div class="audit-item">

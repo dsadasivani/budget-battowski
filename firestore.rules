@@ -2,10 +2,51 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /budgetWorkspaces/{userEmail}/{document=**} {
-      allow read, write: if request.auth != null
-        && request.auth.token.email != null
-        && request.auth.token.email == userEmail;
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email != null;
+    }
+
+    function workspacePath(workspaceId) {
+      return /databases/$(database)/documents/budgetWorkspaces/$(workspaceId);
+    }
+
+    function workspaceExists(workspaceId) {
+      return exists(workspacePath(workspaceId));
+    }
+
+    function workspaceData(workspaceId) {
+      return get(workspacePath(workspaceId)).data;
+    }
+
+    function isLegacyOwner(workspaceId) {
+      return isSignedIn() && request.auth.token.email == workspaceId;
+    }
+
+    function isWorkspaceMemberData(data) {
+      return isSignedIn() && request.auth.token.email in data.memberEmails;
+    }
+
+    function isWorkspaceMember(workspaceId) {
+      return workspaceExists(workspaceId)
+        && isWorkspaceMemberData(workspaceData(workspaceId));
+    }
+
+    function isWorkspaceOwner(workspaceId) {
+      return workspaceExists(workspaceId)
+        && isSignedIn()
+        && workspaceData(workspaceId).ownerEmail == request.auth.token.email;
+    }
+
+    match /budgetWorkspaces/{workspaceId} {
+      allow create: if isSignedIn()
+        && request.resource.data.ownerEmail == request.auth.token.email
+        && request.auth.token.email in request.resource.data.memberEmails;
+      allow read: if isLegacyOwner(workspaceId) || isWorkspaceMemberData(resource.data);
+      allow update, delete: if isWorkspaceOwner(workspaceId);
+
+      match /{collectionName}/{recordId} {
+        allow read, write: if isLegacyOwner(workspaceId) || isWorkspaceMember(workspaceId);
+      }
     }
   }
 }
