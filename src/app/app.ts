@@ -68,6 +68,7 @@ import type {
   IncomeSource,
   InvestmentAuditVersion,
   InvestmentEntry,
+  InvestmentFrequency,
   Loan,
   LoanAuditVersion,
 } from './budget.models';
@@ -120,6 +121,18 @@ function laterDate(first: string, second: string): string {
 function dateInMonth(month: string, sourceDate?: string): string {
   const day = Math.max(1, Math.min(28, Number(sourceDate?.split('-')[2]) || 1));
   return `${month}-${String(day).padStart(2, '0')}`;
+}
+
+function dateFromIso(date: string): Date {
+  const [year, month, day] = date.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function daysBetween(startDate: string, endDate: string): number {
+  const millisecondsPerDay = 24 * 60 * 60 * 1000;
+  return Math.floor(
+    (dateFromIso(endDate).getTime() - dateFromIso(startDate).getTime()) / millisecondsPerDay,
+  );
 }
 
 function currentMonth(): string {
@@ -177,6 +190,146 @@ function normalizedExpenseType(entry: ExpenseEntry): ExpenseType | 'investment' 
 
 function activeStartDate(startDate?: string, createdDate?: string): string | undefined {
   return startDate || createdDate;
+}
+
+function isOneTimeInvestment(investment: Pick<InvestmentEntry, 'frequency'>): boolean {
+  return investment.frequency === 'one-time';
+}
+
+type ScheduledPlan = {
+  amount: number;
+  frequency?: InvestmentFrequency;
+  date?: string;
+  startDate?: string;
+  endDate?: string;
+  createdDate?: string;
+};
+
+function planFrequency(plan: ScheduledPlan): InvestmentFrequency {
+  return plan.frequency ?? 'monthly';
+}
+
+function monthsBetween(startMonth: string, endMonth: string): number {
+  const start = monthParts(startMonth);
+  const end = monthParts(endMonth);
+
+  return (end.year - start.year) * 12 + end.monthIndex - start.monthIndex;
+}
+
+function investmentIntervalMonths(frequency: InvestmentFrequency): number {
+  const intervals: Partial<Record<InvestmentFrequency, number>> = {
+    monthly: 1,
+    quarterly: 3,
+    'half-yearly': 6,
+    annual: 12,
+  };
+
+  return intervals[frequency] ?? 1;
+}
+
+function investmentScheduleForMonth(
+  investment: InvestmentEntry,
+  month: string,
+): { amount: number; date: string; occurrences: number } | null {
+  return planScheduleForMonth(investment, month);
+}
+
+function templateScheduleForMonth(
+  template: ExpenseTemplate,
+  month: string,
+): { amount: number; date: string; occurrences: number } | null {
+  return planScheduleForMonth(template, month);
+}
+
+function planScheduleForMonth(
+  plan: ScheduledPlan,
+  month: string,
+): { amount: number; date: string; occurrences: number } | null {
+  const anchorDate = activeStartDate(plan.startDate, plan.date || plan.createdDate);
+
+  if (!anchorDate) {
+    return null;
+  }
+
+  const frequency = planFrequency(plan);
+
+  if (frequency === 'one-time') {
+    const planMonth = dateMonthKey(plan.date || plan.startDate || plan.createdDate);
+    if (
+      planMonth !== month ||
+      !isMonthInRange(month, plan.date || plan.startDate || plan.createdDate, plan.endDate)
+    ) {
+      return null;
+    }
+
+    return {
+      amount: plan.amount,
+      date: plan.date || plan.startDate || plan.createdDate || monthStartDate(month),
+      occurrences: 1,
+    };
+  }
+
+  if (!isMonthInRange(month, anchorDate, plan.endDate)) {
+    return null;
+  }
+
+  const monthStart = monthStartDate(month);
+  const monthEnd = monthEndDate(month);
+  const effectiveStart = laterDate(anchorDate, monthStart);
+  const effectiveEnd = plan.endDate && plan.endDate < monthEnd ? plan.endDate : monthEnd;
+
+  if (effectiveStart > effectiveEnd) {
+    return null;
+  }
+
+  if (frequency === 'weekly') {
+    const daysFromAnchor = daysBetween(anchorDate, effectiveStart);
+    const firstOffset = (7 - (daysFromAnchor % 7)) % 7 || 0;
+    const firstOccurrence = dateFromIso(effectiveStart);
+    firstOccurrence.setDate(firstOccurrence.getDate() + firstOffset);
+
+    if (monthKey(firstOccurrence) !== month) {
+      return null;
+    }
+
+    const firstDate = `${firstOccurrence.getFullYear()}-${String(
+      firstOccurrence.getMonth() + 1,
+    ).padStart(2, '0')}-${String(firstOccurrence.getDate()).padStart(2, '0')}`;
+
+    if (firstDate > effectiveEnd) {
+      return null;
+    }
+
+    const occurrences = Math.floor(daysBetween(firstDate, effectiveEnd) / 7) + 1;
+
+    return {
+      amount: plan.amount * occurrences,
+      date: firstDate,
+      occurrences,
+    };
+  }
+
+  const anchorMonth = dateMonthKey(anchorDate);
+  if (!anchorMonth) {
+    return null;
+  }
+
+  const elapsedMonths = monthsBetween(anchorMonth, month);
+  const intervalMonths = investmentIntervalMonths(frequency);
+  if (elapsedMonths < 0 || elapsedMonths % intervalMonths !== 0) {
+    return null;
+  }
+
+  const occurrenceDate = dateInMonth(month, anchorDate);
+  if (occurrenceDate < effectiveStart || occurrenceDate > effectiveEnd) {
+    return null;
+  }
+
+  return {
+    amount: plan.amount,
+    date: occurrenceDate,
+    occurrences: 1,
+  };
 }
 
 function incomeMonthStartDate(month?: string): string | undefined {
@@ -391,27 +544,13 @@ export class App implements OnDestroy {
   );
   protected readonly selectedInvestments = computed(() =>
     this.investments().filter((investment) => {
-      if (investment.frequency === 'recurring') {
+      if (!isOneTimeInvestment(investment)) {
         if (this.selectedMonth() >= currentMonth()) {
           return false;
         }
-
-        return isMonthInRange(
-          this.selectedMonth(),
-          activeStartDate(investment.startDate, investment.date || investment.createdDate),
-          investment.endDate,
-        );
       }
 
-      return (
-        dateMonthKey(investment.date || investment.startDate || investment.createdDate) ===
-          this.selectedMonth() &&
-        isMonthInRange(
-          this.selectedMonth(),
-          investment.date || investment.startDate || investment.createdDate,
-          investment.endDate,
-        )
-      );
+      return !!investmentScheduleForMonth(investment, this.selectedMonth());
     }),
   );
   protected readonly legacyInvestmentEntries = computed(() =>
@@ -425,8 +564,11 @@ export class App implements OnDestroy {
   protected readonly oneTimeTotal = computed(() => this.totalByType('one-time'));
   protected readonly investmentTotal = computed(
     () =>
-      this.selectedInvestments().reduce((total, investment) => total + investment.amount, 0) +
-      this.legacyInvestmentEntries().reduce((total, expense) => total + expense.amount, 0),
+      this.selectedInvestments().reduce(
+        (total, investment) =>
+          total + (investmentScheduleForMonth(investment, this.selectedMonth())?.amount ?? 0),
+        0,
+      ) + this.legacyInvestmentEntries().reduce((total, expense) => total + expense.amount, 0),
   );
   protected readonly outflowTotal = computed(() =>
     this.selectedEntries().reduce((total, expense) => total + expense.amount, 0),
@@ -475,18 +617,12 @@ export class App implements OnDestroy {
       const outflow = entries.reduce((total, expense) => total + expense.amount, 0);
       const invested =
         this.investments()
-          .filter((investment) =>
-            investment.frequency === 'recurring'
-              ? month < currentMonth() &&
-                isMonthInRange(
-                  month,
-                  activeStartDate(investment.startDate, investment.date || investment.createdDate),
-                  investment.endDate,
-                )
-              : dateMonthKey(investment.date || investment.startDate || investment.createdDate) ===
-                month,
-          )
-          .reduce((total, investment) => total + investment.amount, 0) +
+          .filter((investment) => isOneTimeInvestment(investment) || month < currentMonth())
+          .reduce(
+            (total, investment) =>
+              total + (investmentScheduleForMonth(investment, month)?.amount ?? 0),
+            0,
+          ) +
         this.expenses()
           .filter(
             (expense) =>
@@ -880,15 +1016,18 @@ export class App implements OnDestroy {
       .filter((template) => !this.isTemplateMonthSkipped(template, month))
       .map((template) => this.templateVersionForMonth(template, month))
       .filter((template): template is ExpenseTemplate => !!template)
+      .filter((template) => !!templateScheduleForMonth(template, month))
       .filter((template) => !existingExpensesByTemplateId.has(template.id))
       .map<MonthlyReviewRow>((template) => {
+        const schedule = templateScheduleForMonth(template, month);
+
         return {
           id: `expense:${template.id}`,
           sourceId: template.id,
           sourceType: 'expense',
           label: template.name,
           categoryName: this.categoryName(template.categoryId),
-          amount: template.amount,
+          amount: schedule?.amount ?? template.amount,
         };
       });
 
@@ -896,7 +1035,7 @@ export class App implements OnDestroy {
       this.investments()
         .filter(
           (investment) =>
-            investment.frequency === 'one-time' &&
+            isOneTimeInvestment(investment) &&
             dateMonthKey(investment.date || investment.startDate || investment.createdDate) ===
               month &&
             investment.sourceInvestmentId,
@@ -906,19 +1045,17 @@ export class App implements OnDestroy {
     const investmentRows = this.investments()
       .filter(
         (investment) =>
-          investment.frequency === 'recurring' &&
+          !isOneTimeInvestment(investment) &&
           !existingInvestmentsByPlanId.has(investment.id) &&
           !this.investments().some(
             (record) => record.id === this.reviewedInvestmentId(investment.id, month),
           ) &&
           !this.isInvestmentMonthSkipped(investment, month) &&
-          isMonthInRange(
-            month,
-            activeStartDate(investment.startDate, investment.date || investment.createdDate),
-            investment.endDate,
-          ),
+          !!investmentScheduleForMonth(investment, month),
       )
       .map<MonthlyReviewRow>((investment) => {
+        const schedule = investmentScheduleForMonth(investment, month);
+
         return {
           id: `investment:${investment.id}`,
           sourceId: investment.id,
@@ -927,7 +1064,7 @@ export class App implements OnDestroy {
           categoryName: investment.categoryId
             ? this.categoryName(investment.categoryId)
             : 'Investments',
-          amount: investment.amount,
+          amount: schedule?.amount ?? investment.amount,
         };
       });
 
@@ -986,7 +1123,7 @@ export class App implements OnDestroy {
       }
 
       const plan = investmentsById.get(row.sourceId);
-      if (!plan || plan.frequency !== 'recurring') {
+      if (!plan || isOneTimeInvestment(plan)) {
         continue;
       }
 
@@ -1017,7 +1154,9 @@ export class App implements OnDestroy {
         amount: row.amount,
         categoryId: plan.categoryId,
         frequency: 'one-time',
-        date: dateInMonth(month, activeStartDate(plan.startDate, plan.date || plan.createdDate)),
+        date:
+          investmentScheduleForMonth(plan, month)?.date ??
+          dateInMonth(month, activeStartDate(plan.startDate, plan.date || plan.createdDate)),
         notes: plan.notes || 'Approved from recurring investment plan',
         createdDate: existing?.createdDate || new Date().toISOString(),
         sourceInvestmentId: plan.id,
@@ -1180,6 +1319,7 @@ export class App implements OnDestroy {
             )
             .map((template) => this.templateVersionForMonth(template, month))
             .filter((template): template is ExpenseTemplate => !!template)
+            .filter((template) => !!templateScheduleForMonth(template, month))
             .map<ExpenseEntry>((template) => this.expenseFromTemplate(template, month))
         : [];
 
@@ -1229,13 +1369,17 @@ export class App implements OnDestroy {
     return normalizedExpenseType(expense) === 'recurring' ? 'recurring' : 'one-time';
   }
 
+  protected investmentFrequencyLabel(investment: Pick<InvestmentEntry, 'frequency'>): string {
+    return investment.frequency;
+  }
+
   private monthlyIncomeAmount(income: IncomeSource): number {
     if (income.cadence === 'one-time') {
       const incomeMonth = income.month ?? dateMonthKey(income.startDate || income.createdDate);
       return incomeMonth === this.selectedMonth() ? income.amount : 0;
     }
 
-    const cadenceMultipliers: Record<Cadence, number> = {
+    const cadenceMultipliers: Record<string, number> = {
       daily: 365 / 12,
       weekly: 52 / 12,
       'bi-weekly': 26 / 12,
@@ -1244,10 +1388,9 @@ export class App implements OnDestroy {
       'half-yearly': 1 / 6,
       annual: 1 / 12,
       'one-time': 1,
-      variable: 1,
     };
 
-    return income.amount * cadenceMultipliers[income.cadence];
+    return income.amount * (cadenceMultipliers[income.cadence] ?? 1);
   }
 
   private loanEmiCategoryId(categories = this.categories()): string {
@@ -1311,10 +1454,11 @@ export class App implements OnDestroy {
     return {
       id: existing?.id ?? id('planned'),
       month,
-      date: dateInMonth(month, template.startDate),
+      date:
+        templateScheduleForMonth(template, month)?.date ?? dateInMonth(month, template.startDate),
       name: template.name,
       categoryId: template.categoryId,
-      amount: template.amount,
+      amount: templateScheduleForMonth(template, month)?.amount ?? template.amount,
       type: 'recurring',
       note: existing?.note || 'Prepopulated from recurring plan',
       templateId: template.id,
@@ -1349,6 +1493,7 @@ export class App implements OnDestroy {
         name: auditVersion.name,
         categoryId: auditVersion.categoryId,
         amount: auditVersion.amount,
+        frequency: auditVersion.frequency ?? template.frequency ?? 'monthly',
         startDate: auditVersion.effectiveStartDate || auditVersion.startDate,
         endDate: auditVersion.effectiveEndDate || auditVersion.endDate,
       };
@@ -1371,6 +1516,7 @@ export class App implements OnDestroy {
     return (
       !previous ||
       previous.amount !== next.amount ||
+      (previous.frequency ?? 'monthly') !== (next.frequency ?? 'monthly') ||
       (previous.startDate || '') !== (next.startDate || '') ||
       (previous.endDate || '') !== (next.endDate || '')
     );
@@ -1390,6 +1536,7 @@ export class App implements OnDestroy {
       name: template.name,
       categoryId: template.categoryId,
       amount: template.amount,
+      frequency: template.frequency ?? 'monthly',
       startDate: template.startDate,
       endDate: template.endDate,
     };
@@ -1407,6 +1554,7 @@ export class App implements OnDestroy {
         audit.name === auditVersion.name &&
         audit.categoryId === auditVersion.categoryId &&
         audit.amount === auditVersion.amount &&
+        (audit.frequency ?? 'monthly') === (auditVersion.frequency ?? 'monthly') &&
         (audit.startDate || '') === (auditVersion.startDate || '') &&
         (audit.endDate || '') === (auditVersion.endDate || ''),
     );
@@ -1421,6 +1569,7 @@ export class App implements OnDestroy {
       name: template.name,
       categoryId: template.categoryId,
       amount: template.amount,
+      frequency: template.frequency ?? 'monthly',
       startDate: template.startDate,
       endDate: template.endDate,
     };
@@ -1434,6 +1583,7 @@ export class App implements OnDestroy {
     if (!previous) {
       return {
         ...template,
+        frequency: template.frequency ?? 'monthly',
         startDate: template.startDate || monthStartDate(selectedMonth),
         auditTrail: template.auditTrail ?? [],
       };
@@ -1448,6 +1598,7 @@ export class App implements OnDestroy {
     if (!this.isTemplateChanged(previous, immutableTemplate)) {
       return {
         ...immutableTemplate,
+        frequency: immutableTemplate.frequency ?? 'monthly',
         createdDate: previous.createdDate || template.createdDate,
         auditTrail: previous.auditTrail ?? template.auditTrail ?? [],
       };
@@ -1466,6 +1617,7 @@ export class App implements OnDestroy {
 
     return {
       ...immutableTemplate,
+      frequency: immutableTemplate.frequency ?? 'monthly',
       createdDate: previous.createdDate || template.createdDate,
       startDate: effectiveStartDate,
       auditTrail,
@@ -1622,11 +1774,10 @@ export class App implements OnDestroy {
 
     return {
       ...immutableInvestment,
-      startDate: immutableInvestment.frequency === 'recurring' ? effectiveStartDate : undefined,
-      date:
-        immutableInvestment.frequency === 'one-time'
-          ? effectiveStartDate
-          : immutableInvestment.date,
+      startDate: !isOneTimeInvestment(immutableInvestment) ? effectiveStartDate : undefined,
+      date: isOneTimeInvestment(immutableInvestment)
+        ? effectiveStartDate
+        : immutableInvestment.date,
       auditTrail: this.appendInvestmentAudit(previous.auditTrail, auditVersion),
     };
   }
@@ -2254,6 +2405,12 @@ export class App implements OnDestroy {
             return;
           }
 
+          const effectiveTemplate = this.templateVersionForMonth(template, expenseMonth);
+          if (!effectiveTemplate || !templateScheduleForMonth(effectiveTemplate, expenseMonth)) {
+            extraDeletedExpenseIds.add(expense.id);
+            return;
+          }
+
           const occurrenceKey = `${templateId}:${expenseMonth}`;
           if (occurrenceKeys.has(occurrenceKey)) {
             extraDeletedExpenseIds.add(expense.id);
@@ -2269,18 +2426,7 @@ export class App implements OnDestroy {
               return;
             }
 
-            if (
-              !isMonthInRange(
-                expenseMonth,
-                activeStartDate(template.startDate, template.createdDate),
-                template.endDate,
-              )
-            ) {
-              extraDeletedExpenseIds.add(expense.id);
-              return;
-            }
-
-            expense = this.expenseFromTemplate(template, expenseMonth, expense);
+            expense = this.expenseFromTemplate(effectiveTemplate, expenseMonth, expense);
           }
         }
 
@@ -2305,7 +2451,7 @@ export class App implements OnDestroy {
         }
 
         const effectiveTemplate = this.templateVersionForMonth(template, selectedMonth);
-        if (!effectiveTemplate) {
+        if (!effectiveTemplate || !templateScheduleForMonth(effectiveTemplate, selectedMonth)) {
           continue;
         }
 

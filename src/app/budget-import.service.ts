@@ -92,11 +92,12 @@ const SHEETS: Record<ImportRecordType, SheetDefinition> = {
   },
   recurring_expense: {
     collectionName: 'templates',
-    headers: ['name', 'categoryName', 'amount', 'startDate', 'endDate'],
+    headers: ['name', 'categoryName', 'amount', 'frequency', 'startDate', 'endDate'],
     sample: {
       name: 'Rent',
       categoryName: 'Housing',
       amount: '45000',
+      frequency: 'monthly',
       startDate: '2026-06-01',
       endDate: '2027-05-31',
     },
@@ -117,7 +118,7 @@ const SHEETS: Record<ImportRecordType, SheetDefinition> = {
       name: 'Index SIP',
       amount: '20000',
       categoryName: 'Mutual Funds',
-      frequency: 'recurring',
+      frequency: 'monthly',
       date: '2026-06-01',
       startDate: '2026-06-01',
       notes: 'Monthly index fund',
@@ -160,10 +161,16 @@ const CADENCES = new Set([
   'half-yearly',
   'annual',
   'one-time',
-  'variable',
 ]);
 const CATEGORY_TYPES = new Set<CategoryType>(['Income', 'Investments', 'Expenses']);
-const FREQUENCIES = new Set(['recurring', 'one-time']);
+const INVESTMENT_FREQUENCIES = new Set([
+  'weekly',
+  'monthly',
+  'quarterly',
+  'half-yearly',
+  'annual',
+  'one-time',
+]);
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_PATTERN = /^\d{4}-\d{2}$/;
 const STATUS_HEADERS = ['status', 'comments'];
@@ -501,6 +508,9 @@ function validateExpense(row: BudgetImportRow, categoryNameToId: Map<string, str
 function validateTemplate(row: BudgetImportRow, categoryNameToId: Map<string, string>): void {
   const name = required(row, 'name');
   const amount = numberField(row, 'amount');
+  const frequency = optional(row, 'frequency')
+    ? enumField(row, 'frequency', INVESTMENT_FREQUENCIES)
+    : 'monthly';
   const startDate = optionalDate(row, 'startDate');
   const endDate = optionalDate(row, 'endDate');
   const categoryId = categoryIdField(row, categoryNameToId, 'Expenses');
@@ -520,6 +530,7 @@ function validateTemplate(row: BudgetImportRow, categoryNameToId: Map<string, st
     categoryId,
     amount,
     type: 'recurring',
+    frequency: frequency as ExpenseTemplate['frequency'],
     createdDate: todayDate(),
     startDate,
     endDate,
@@ -529,7 +540,7 @@ function validateTemplate(row: BudgetImportRow, categoryNameToId: Map<string, st
 function validateInvestment(row: BudgetImportRow, categoryNameToId: Map<string, string>): void {
   const name = required(row, 'name');
   const amount = numberField(row, 'amount');
-  const frequency = enumField(row, 'frequency', FREQUENCIES);
+  const frequency = enumField(row, 'frequency', INVESTMENT_FREQUENCIES);
   const date = optionalDate(row, 'date');
   const startDate = optionalDate(row, 'startDate');
   const endDate = optionalDate(row, 'endDate');

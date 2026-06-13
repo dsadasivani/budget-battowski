@@ -198,6 +198,7 @@
                 <th>C</th>
                 <th>D</th>
                 <th>E</th>
+                <th>F</th>
                 <th></th>
               </tr>
               <tr>
@@ -205,6 +206,7 @@
                 <th>Name</th>
                 <th>Category</th>
                 <th>Amount</th>
+                <th>Frequency</th>
                 <th>Start</th>
                 <th>End optional</th>
                 <th aria-label="Actions"></th>
@@ -254,6 +256,19 @@
                         [(ngModel)]="template.amount"
                         [disabled]="!!template.pendingDelete"
                       />
+                    </mat-form-field>
+                  </td>
+                  <td data-label="Frequency">
+                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                      <mat-select
+                        placeholder="Frequency"
+                        [(ngModel)]="template.frequency"
+                        [disabled]="!!template.pendingDelete"
+                      >
+                        @for (frequency of recurringFrequencies; track frequency) {
+                          <mat-option [value]="frequency">{{ frequency }}</mat-option>
+                        }
+                      </mat-select>
                     </mat-form-field>
                   </td>
                   <td data-label="Start">
@@ -492,7 +507,9 @@
                         [matTooltip]="isAuditExpanded(income.id) ? 'Hide audit' : 'Show audit'"
                         (click)="toggleAudit(income.id)"
                       >
-                        <mat-icon>{{ isAuditExpanded(income.id) ? 'expand_less' : 'expand_more' }}</mat-icon>
+                        <mat-icon>{{
+                          isAuditExpanded(income.id) ? 'expand_less' : 'expand_more'
+                        }}</mat-icon>
                       </button>
                     }
                     <button
@@ -526,7 +543,9 @@
                           <div class="audit-item">
                             <span class="audit-operation">{{ audit.operation }}</span>
                             <strong>{{ audit.name }}</strong>
-                            <span>{{ audit.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
+                            <span>{{
+                              audit.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                            }}</span>
                             <span>{{ auditMonthLabel(audit.startDate, 'Beginning') }}</span>
                             <span>{{ auditMonthLabel(audit.endDate, 'Future') }}</span>
                             <span>{{ auditDateTimeLabel(audit.recordedDate) }}</span>
@@ -826,11 +845,15 @@
                       <button
                         mat-icon-button
                         type="button"
-                        [attr.aria-label]="isAuditExpanded(loan.id) ? 'Hide loan audit' : 'Show loan audit'"
+                        [attr.aria-label]="
+                          isAuditExpanded(loan.id) ? 'Hide loan audit' : 'Show loan audit'
+                        "
                         [matTooltip]="isAuditExpanded(loan.id) ? 'Hide audit' : 'Show audit'"
                         (click)="toggleAudit(loan.id)"
                       >
-                        <mat-icon>{{ isAuditExpanded(loan.id) ? 'expand_less' : 'expand_more' }}</mat-icon>
+                        <mat-icon>{{
+                          isAuditExpanded(loan.id) ? 'expand_less' : 'expand_more'
+                        }}</mat-icon>
                       </button>
                     }
                     <button
@@ -864,7 +887,9 @@
                           <div class="audit-item">
                             <span class="audit-operation">{{ audit.operation }}</span>
                             <strong>{{ audit.name }}</strong>
-                            <span>{{ audit.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
+                            <span>{{
+                              audit.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                            }}</span>
                             <span>{{ auditMonthLabel(audit.startDate, 'Beginning') }}</span>
                             <span>{{ auditMonthLabel(audit.endDate, 'Future') }}</span>
                             <span>{{ auditDateTimeLabel(audit.recordedDate) }}</span>
@@ -1087,7 +1112,9 @@
                           <div class="audit-item">
                             <span class="audit-operation">{{ audit.operation }}</span>
                             <strong>{{ audit.name }}</strong>
-                            <span>{{ audit.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
+                            <span>{{
+                              audit.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                            }}</span>
                             <span>{{ auditMonthLabel(audit.startDate, 'Beginning') }}</span>
                             <span>{{ auditMonthLabel(audit.endDate, 'Future') }}</span>
                             <span>{{ auditDateTimeLabel(audit.recordedDate) }}</span>

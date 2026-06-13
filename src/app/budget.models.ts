@@ -7,9 +7,14 @@ export type Cadence =
   | 'quarterly'
   | 'half-yearly'
   | 'annual'
-  | 'one-time'
-  | 'variable';
-export type InvestmentFrequency = 'recurring' | 'one-time';
+  | 'one-time';
+export type InvestmentFrequency =
+  | 'weekly'
+  | 'monthly'
+  | 'quarterly'
+  | 'half-yearly'
+  | 'annual'
+  | 'one-time';
 export type CategoryType = 'Income' | 'Investments' | 'Expenses';
 
 export interface IncomeAuditVersion {
@@ -59,6 +64,7 @@ export interface ExpenseTemplateAuditVersion {
   name: string;
   categoryId: string;
   amount: number;
+  frequency?: InvestmentFrequency;
   startDate?: string;
   endDate?: string;
 }
@@ -69,6 +75,7 @@ export interface ExpenseTemplate {
   categoryId: string;
   amount: number;
   type: 'recurring';
+  frequency?: InvestmentFrequency;
   createdDate?: string;
   startDate?: string;
   endDate?: string;

@@ -751,7 +751,7 @@
                     <span>{{ item.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
                     <small>
                       {{ categoryName(item.categoryId || '') }} &middot;
-                      {{ item.frequency }} &middot; {{ item.notes }}
+                      {{ investmentFrequencyLabel(item) }} &middot; {{ item.notes }}
                     </small>
                   </article>
                 } @empty {

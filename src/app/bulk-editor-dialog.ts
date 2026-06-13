@@ -168,6 +168,10 @@ function isOneTimeExpense(expense: ExpenseEntry): boolean {
   return !expense.templateId && runtimeType !== 'recurring' && runtimeType !== 'investment';
 }
 
+function isOneTimeInvestment(investment: Pick<InvestmentEntry, 'frequency'>): boolean {
+  return investment.frequency === 'one-time';
+}
+
 @Component({
   selector: 'app-bulk-editor-dialog',
   imports: [
@@ -197,9 +201,16 @@ export class BulkEditorDialog {
     'half-yearly',
     'annual',
     'one-time',
-    'variable',
   ];
-  protected readonly investmentFrequencies: InvestmentFrequency[] = ['one-time', 'recurring'];
+  protected readonly investmentFrequencies: InvestmentFrequency[] = [
+    'weekly',
+    'monthly',
+    'quarterly',
+    'half-yearly',
+    'annual',
+    'one-time',
+  ];
+  protected readonly recurringFrequencies: InvestmentFrequency[] = this.investmentFrequencies;
   protected readonly categoryTypes: CategoryType[] = ['Income', 'Investments', 'Expenses'];
 
   protected readonly categories: Array<DraftRow<BudgetCategory>>;
@@ -242,6 +253,7 @@ export class BulkEditorDialog {
       .filter((template) => !template.archivedDate)
       .map((template) => ({
         ...template,
+        frequency: template.frequency || 'monthly',
         startDate: template.startDate || currentMonthStartDate(),
       }));
     const currentMonthExpenses = cloneRows(data.expenses)
@@ -338,6 +350,7 @@ export class BulkEditorDialog {
       categoryId: '',
       amount: undefined as unknown as number,
       type: 'recurring',
+      frequency: 'monthly',
       createdDate: todayDate(),
       startDate: currentMonthStartDate(),
       endDate: '',
@@ -580,6 +593,7 @@ export class BulkEditorDialog {
             : original?.categoryId || template.categoryId,
           amount: toNumber(template.amount),
           type: 'recurring' as const,
+          frequency: template.frequency || 'monthly',
           createdDate: template.createdDate || createdDate,
           startDate: optionalDate(template.startDate) || currentMonthStartDate(),
           endDate: optionalDate(template.endDate),
@@ -650,10 +664,9 @@ export class BulkEditorDialog {
           categoryId: investment.categoryId,
           frequency: investment.frequency || 'one-time',
           date: optionalDate(investment.date) || monthStartDate(this.data.selectedMonth),
-          startDate:
-            investment.frequency === 'recurring'
-              ? optionalDate(investment.startDate) || optionalDate(investment.date)
-              : optionalDate(investment.startDate),
+          startDate: !isOneTimeInvestment(investment)
+            ? optionalDate(investment.startDate) || optionalDate(investment.date)
+            : optionalDate(investment.startDate),
           endDate: optionalDate(investment.endDate),
           notes: investment.notes ?? '',
           createdDate: investment.createdDate || createdDate,
@@ -775,6 +788,7 @@ export class BulkEditorDialog {
 
     return (
       toNumber(template.amount) !== original.amount ||
+      (template.frequency || 'monthly') !== (original.frequency || 'monthly') ||
       (optionalDate(template.startDate) || currentStartDate) !==
         (optionalDate(original.startDate) || currentStartDate) ||
       (optionalDate(template.endDate) || '') !== (optionalDate(original.endDate) || '')

@@ -184,7 +184,7 @@ describe('App', () => {
         name: 'Index SIP',
         amount: 12000,
         categoryId: 'category-invest',
-        frequency: 'recurring',
+        frequency: 'monthly',
         startDate: '2026-01-01',
         notes: '',
       },
@@ -216,6 +216,156 @@ describe('App', () => {
     ]);
     expect(app.buildMonthlyReviewRows('2026-06')).not.toContainEqual(
       expect.objectContaining({ sourceId: 'sip-index', sourceType: 'investment' }),
+    );
+  });
+
+  it('should schedule quarterly investments only on due months', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 11));
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      buildMonthlyReviewRows: (
+        month: string,
+      ) => Array<{ amount: number; sourceId: string; sourceType: string }>;
+      firebase: { mode: string };
+      investments: { set: (records: unknown[]) => void };
+      selectedMonth: { set: (month: string) => void };
+    };
+
+    app.firebase.mode = 'local';
+    app.selectedMonth.set('2026-06');
+    app.investments.set([
+      {
+        id: 'quarterly-fund',
+        name: 'Quarterly Fund',
+        amount: 9000,
+        categoryId: 'category-invest',
+        frequency: 'quarterly',
+        startDate: '2026-01-15',
+        notes: '',
+      },
+    ]);
+
+    expect(app.buildMonthlyReviewRows('2026-06')).not.toContainEqual(
+      expect.objectContaining({ sourceId: 'quarterly-fund' }),
+    );
+    expect(app.buildMonthlyReviewRows('2026-07')).toContainEqual(
+      expect.objectContaining({
+        amount: 9000,
+        sourceId: 'quarterly-fund',
+        sourceType: 'investment',
+      }),
+    );
+  });
+
+  it('should total weekly investment occurrences in the review month', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 11));
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      buildMonthlyReviewRows: (
+        month: string,
+      ) => Array<{ amount: number; sourceId: string; sourceType: string }>;
+      firebase: { mode: string };
+      investments: { set: (records: unknown[]) => void };
+      selectedMonth: { set: (month: string) => void };
+    };
+
+    app.firebase.mode = 'local';
+    app.selectedMonth.set('2026-06');
+    app.investments.set([
+      {
+        id: 'weekly-fund',
+        name: 'Weekly Fund',
+        amount: 500,
+        categoryId: 'category-invest',
+        frequency: 'weekly',
+        startDate: '2026-06-03',
+        notes: '',
+      },
+    ]);
+
+    expect(app.buildMonthlyReviewRows('2026-06')).toContainEqual(
+      expect.objectContaining({
+        amount: 2000,
+        sourceId: 'weekly-fund',
+        sourceType: 'investment',
+      }),
+    );
+  });
+
+  it('should schedule quarterly recurring expenses only on due months', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 11));
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      buildMonthlyReviewRows: (
+        month: string,
+      ) => Array<{ amount: number; sourceId: string; sourceType: string }>;
+      firebase: { mode: string };
+      selectedMonth: { set: (month: string) => void };
+      templates: { set: (records: unknown[]) => void };
+    };
+
+    app.firebase.mode = 'local';
+    app.selectedMonth.set('2026-06');
+    app.templates.set([
+      {
+        id: 'insurance',
+        name: 'Insurance',
+        categoryId: 'category-home',
+        amount: 9000,
+        type: 'recurring',
+        frequency: 'quarterly',
+        startDate: '2026-01-15',
+      },
+    ]);
+
+    expect(app.buildMonthlyReviewRows('2026-06')).not.toContainEqual(
+      expect.objectContaining({ sourceId: 'insurance' }),
+    );
+    expect(app.buildMonthlyReviewRows('2026-07')).toContainEqual(
+      expect.objectContaining({
+        amount: 9000,
+        sourceId: 'insurance',
+        sourceType: 'expense',
+      }),
+    );
+  });
+
+  it('should total weekly recurring expense occurrences in the review month', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 11));
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      buildMonthlyReviewRows: (
+        month: string,
+      ) => Array<{ amount: number; sourceId: string; sourceType: string }>;
+      firebase: { mode: string };
+      selectedMonth: { set: (month: string) => void };
+      templates: { set: (records: unknown[]) => void };
+    };
+
+    app.firebase.mode = 'local';
+    app.selectedMonth.set('2026-06');
+    app.templates.set([
+      {
+        id: 'cleaning',
+        name: 'Cleaning',
+        categoryId: 'category-home',
+        amount: 500,
+        type: 'recurring',
+        frequency: 'weekly',
+        startDate: '2026-06-03',
+      },
+    ]);
+
+    expect(app.buildMonthlyReviewRows('2026-06')).toContainEqual(
+      expect.objectContaining({
+        amount: 2000,
+        sourceId: 'cleaning',
+        sourceType: 'expense',
+      }),
     );
   });
 
@@ -736,7 +886,7 @@ describe('BulkEditorDialog', () => {
         id: 'investment-sip',
         name: 'Index SIP',
         amount: 15000,
-        frequency: 'recurring',
+        frequency: 'monthly',
         date: '2026-05-01',
         startDate: '2026-05-01',
         notes: '',
@@ -1351,6 +1501,25 @@ describe('budget import helpers', () => {
     expect(parsed.rows[2].status).toBe('error');
     expect(parsed.rows[2].comments.join(' ')).toContain('amount must be a number');
     expect(parsed.rows[2].comments.join(' ')).toContain('categoryName "Unknown" was not found');
+  });
+
+  it('should reject unsupported investment import frequencies', () => {
+    const csv = [
+      'recordType,name,type,categoryName,monthlyBudget,color,amount,frequency,date,startDate',
+      'category,Mutual Funds,Investments,,0,#047857,,,,',
+      'investment,Legacy SIP,,Mutual Funds,,,12000,recurring,2026-06-01,2026-06-01',
+      'investment,Odd SIP,,Mutual Funds,,,8000,fortnightly,2026-06-01,2026-06-01',
+      'investment,Bonus,,Mutual Funds,,,5000,one-time,2026-06-10,',
+    ].join('\n');
+
+    const parsed = parseBudgetImportCsv(csv, []);
+    const comments = parsed.rows.flatMap((row) => row.comments).join(' ');
+
+    expect(parsed.rows.filter((row) => row.recordType === 'investment' && row.record)).toHaveLength(
+      1,
+    );
+    expect(comments).toContain('frequency must be one of');
+    expect(comments).toContain('weekly, monthly, quarterly, half-yearly, annual, one-time');
   });
 
   it('should skip rows already marked successful in processed imports', () => {
