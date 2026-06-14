@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
@@ -193,6 +193,7 @@ function isOneTimeInvestment(investment: Pick<InvestmentEntry, 'frequency'>): bo
   providers: [provideNativeDateAdapter()],
   templateUrl: './bulk-editor-dialog.html',
   styleUrl: './bulk-editor-dialog.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class BulkEditorDialog {
   private readonly dialogRef =

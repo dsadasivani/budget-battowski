@@ -1,7 +1,10 @@
 import { TestBed } from '@angular/core/testing';
 import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
+import { provideRouter, Router } from '@angular/router';
+import axe from 'axe-core';
 import { vi } from 'vitest';
 import { App } from './app';
+import { routes } from './app.routes';
 import { BulkEditorDialog, type BulkEditorData } from './bulk-editor-dialog';
 import {
   buildProcessedImportCsv,
@@ -11,10 +14,33 @@ import {
   parseBudgetImportFile,
 } from './budget-import.service';
 
+function runAxe(element: Element): Promise<axe.AxeResults> {
+  return new Promise((resolve, reject) => {
+    axe.run(
+      element,
+      {
+        resultTypes: ['violations'],
+        rules: {
+          'color-contrast': { enabled: false },
+        },
+      },
+      (error, results) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve(results);
+      },
+    );
+  });
+}
+
 describe('App', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [App],
+      providers: [provideRouter(routes)],
     }).compileComponents();
   });
 
@@ -33,7 +59,7 @@ describe('App', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('mat-toolbar')?.textContent).toContain('Budget Battowski');
+    expect(compiled.textContent).toContain('Budget Battowski');
   });
 
   it("should default the month picker to today's month", () => {
@@ -50,6 +76,20 @@ describe('App', () => {
 
     expect(app.selectedMonth()).toBe('2026-06');
     expect(app.pickerYear()).toBe(2026);
+  });
+
+  it('should jump directly to a selected month and ignore invalid month input', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      selectedMonth: () => string;
+      setSelectedMonth: (month: string) => void;
+    };
+
+    app.setSelectedMonth('2027-11');
+    expect(app.selectedMonth()).toBe('2027-11');
+
+    app.setSelectedMonth('2027-13');
+    expect(app.selectedMonth()).toBe('2027-11');
   });
 
   it('should carry the latest monthly income into future months', () => {
@@ -1535,6 +1575,69 @@ describe('BulkEditorDialog', () => {
     expect(compiled.textContent).not.toContain('Recurring Plans');
     expect(compiled.textContent).not.toContain('Loans');
   });
+
+});
+
+describe('App accessibility', () => {
+  beforeEach(async () => {
+    vi.useRealTimers();
+    await TestBed.configureTestingModule({
+      imports: [App],
+      providers: [provideRouter(routes)],
+    }).compileComponents();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('should pass axe checks on the login screen', async () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      firebase: { mode: string };
+      isSessionChecking: { set: (checking: boolean) => void };
+      workspaceId: { set: (workspaceId: string | null) => void };
+    };
+
+    app.firebase.mode = 'firebase';
+    app.isSessionChecking.set(false);
+    app.workspaceId.set(null);
+    fixture.detectChanges();
+    await Promise.resolve();
+
+    const results = await runAxe(fixture.nativeElement);
+
+    expect(results.violations).toEqual([]);
+  }, 12000);
+
+  it.each([
+    '/dashboard',
+    '/expenses',
+    '/planning',
+    '/investments',
+    '/loans',
+    '/categories',
+    '/import-export',
+    '/workspace',
+    '/settings',
+  ])('should pass axe checks for %s', async (path) => {
+    const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const app = fixture.componentInstance as unknown as {
+      firebase: { mode: string };
+      isSessionChecking: { set: (checking: boolean) => void };
+    };
+
+    app.firebase.mode = 'local';
+    app.isSessionChecking.set(false);
+    await router.navigateByUrl(path);
+    fixture.detectChanges();
+    await Promise.resolve();
+
+    const results = await runAxe(fixture.nativeElement);
+
+    expect(results.violations).toEqual([]);
+  }, 12000);
 });
 
 describe('budget import helpers', () => {
