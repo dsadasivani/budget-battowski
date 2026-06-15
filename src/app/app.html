@@ -31,10 +31,6 @@
           </span>
           <strong>Budget Battowski</strong>
         </a>
-        <span class="login-secure-badge">
-          <mat-icon aria-hidden="true">lock</mat-icon>
-          Private finance workspace
-        </span>
       </header>
 
       <div class="login-showcase-grid">
@@ -76,32 +72,38 @@
             >
               <div class="feature-visual" role="img" [attr.aria-label]="feature.imageLabel">
                 <div class="visual-window">
-                  <div class="visual-toolbar" aria-hidden="true">
-                    <span></span>
-                    <span></span>
-                    <span></span>
+                  <div class="visual-topbar" aria-hidden="true">
+                    <span class="visual-page-title">{{ feature.eyebrow }}</span>
+                    <span class="visual-month">
+                      <mat-icon>calendar_month</mat-icon>
+                      Jun 2026
+                    </span>
                   </div>
                   <div class="visual-card-grid">
                     @for (metric of feature.metrics; track metric.label) {
                       <span class="visual-card {{ metric.tone }}">
+                        <mat-icon aria-hidden="true">{{ feature.icon }}</mat-icon>
                         <small>{{ metric.label }}</small>
                         <strong>{{ metric.value }}</strong>
                       </span>
                     }
                   </div>
-                  <div class="visual-chart" aria-hidden="true">
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                  </div>
-                  <div class="visual-row-list" aria-hidden="true">
-                    <span></span>
-                    <span></span>
-                    <span></span>
+                  <div class="visual-dashboard-grid" aria-hidden="true">
+                    <div class="visual-table">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </div>
+                    <div class="visual-panel">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </div>
                   </div>
                 </div>
                 <div class="visual-phone" aria-hidden="true">
+                  <strong>{{ feature.metrics[0].value }}</strong>
                   <span></span>
                   <span></span>
                   <span></span>
@@ -152,6 +154,9 @@
     </section>
 
     <section class="login-auth-dock" aria-labelledby="login-title">
+      <span class="auth-mark" aria-hidden="true">
+        <mat-icon>lock</mat-icon>
+      </span>
       <div>
         <h2 id="login-title">Open your budget workspace</h2>
         <p aria-live="polite">
