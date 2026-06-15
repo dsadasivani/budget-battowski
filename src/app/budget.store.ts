@@ -8,6 +8,8 @@ import {
   inject,
   signal,
 } from '@angular/core';
+import { BreakpointObserver } from '@angular/cdk/layout';
+import { MatBottomSheet } from '@angular/material/bottom-sheet';
 import { MatDialog } from '@angular/material/dialog';
 import { MatMenuTrigger } from '@angular/material/menu';
 import type { User } from 'firebase/auth';
@@ -361,6 +363,8 @@ const WORKSPACE_DATA_COLLECTIONS: BudgetCollectionName[] = [
 
 @Injectable()
 export class BudgetStore implements OnDestroy {
+  private readonly bottomSheet = inject(MatBottomSheet);
+  private readonly breakpointObserver = inject(BreakpointObserver);
   private readonly dialog = inject(MatDialog);
   private readonly storagePrefix = 'budget-battowski';
   private readonly workspaceTabCount = 5;
@@ -1412,21 +1416,44 @@ export class BudgetStore implements OnDestroy {
   }
 
   openBulkEditor(scope: BulkEditorScope, initialTabIndex = 0): void {
+    const data = {
+      scope,
+      initialTabIndex,
+      selectedMonth: this.selectedMonth(),
+      members: this.activeMembers(),
+      selectedMemberEmail: this.selectedMemberEmail(),
+      categories: this.categories(),
+      incomes: this.filteredIncomes(),
+      templates: this.filteredTemplates(),
+      expenses: this.filteredExpenses(),
+      investments: this.investmentPlans(),
+      loans: this.filteredLoans(),
+    };
+
+    if (this.breakpointObserver.isMatched('(max-width: 760px)')) {
+      const bottomSheetRef = this.bottomSheet.open<BulkEditorDialog, typeof data, BulkEditorResult>(
+        BulkEditorDialog,
+        {
+          ariaLabel: 'Bulk editor',
+          autoFocus: false,
+          data,
+          maxHeight: 'calc(100dvh - 80px)',
+          panelClass: 'bulk-editor-sheet-panel',
+          restoreFocus: true,
+        },
+      );
+
+      bottomSheetRef.afterDismissed().subscribe((result) => {
+        if (result) {
+          void this.applyBulkChanges(result);
+        }
+      });
+      return;
+    }
+
     const dialogRef = this.dialog.open(BulkEditorDialog, {
       autoFocus: false,
-      data: {
-        scope,
-        initialTabIndex,
-        selectedMonth: this.selectedMonth(),
-        members: this.activeMembers(),
-        selectedMemberEmail: this.selectedMemberEmail(),
-        categories: this.categories(),
-        incomes: this.filteredIncomes(),
-        templates: this.filteredTemplates(),
-        expenses: this.filteredExpenses(),
-        investments: this.investmentPlans(),
-        loans: this.filteredLoans(),
-      },
+      data,
       maxHeight: '100dvh',
       maxWidth: '98vw',
       panelClass: 'bulk-editor-panel',

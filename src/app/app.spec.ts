@@ -1,7 +1,10 @@
 import { TestBed } from '@angular/core/testing';
-import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
+import { BreakpointObserver } from '@angular/cdk/layout';
+import { MatBottomSheet } from '@angular/material/bottom-sheet';
+import { MAT_DIALOG_DATA, MatDialog, MatDialogRef } from '@angular/material/dialog';
 import { provideRouter, Router } from '@angular/router';
 import axe from 'axe-core';
+import { of } from 'rxjs';
 import { vi } from 'vitest';
 import { App } from './app';
 import { routes } from './app.routes';
@@ -1193,6 +1196,68 @@ describe('BulkEditorDialog', () => {
     expect(compiled.textContent).not.toContain('Loans');
   });
 
+  it('should expose the redesigned bulk editor shell controls', async () => {
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    expect(compiled.textContent).toContain('Bulk edit monthly expenses and entries');
+    expect(compiled.textContent).toContain('Visible rows:');
+    expect(compiled.textContent).toContain('Active rows:');
+    expect(compiled.textContent).toContain('Marked delete:');
+    expect(compiled.textContent).toContain('Add Row');
+    expect(compiled.textContent).toContain('Apply Changes');
+    expect(compiled.querySelector('button[aria-label="Close bulk editor"]')).toBeTruthy();
+    expect(compiled.querySelector('button[aria-label="Edit expense row"]')).toBeTruthy();
+  });
+
+  it('should keep existing desktop rows read-only until the edit action is clicked', async () => {
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const getExpenseNameInput = () =>
+      compiled.querySelector<HTMLInputElement>('input[aria-label="Expense name"]');
+
+    expect(getExpenseNameInput()).toBeNull();
+    expect(compiled.querySelector('.cell-value')?.textContent).toContain('Rent');
+
+    compiled.querySelector<HTMLButtonElement>('button[aria-label="Edit expense row"]')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getExpenseNameInput()?.disabled).toBe(false);
+  });
+
+  it('should render mobile cards as read-only display content before editing', async () => {
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const mobileCard = compiled.querySelector('.mobile-row-card');
+
+    expect(mobileCard?.querySelector('.mobile-row-title')?.textContent).toContain('Rent');
+    expect(mobileCard?.querySelector('.mobile-card-money-row')?.textContent).toContain('Home');
+    expect(mobileCard?.querySelector('.mobile-card-money-row')?.textContent).toContain('₹25,000');
+    expect(mobileCard?.querySelector('.mobile-card-note')?.textContent).toContain(
+      'Prepopulated from recurring plan',
+    );
+    expect(mobileCard?.querySelector('input[aria-label="Expense name"]')).toBeNull();
+  });
+
+  it('should pass axe checks for the bulk editor dialog', async () => {
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const results = await runAxe(fixture.nativeElement);
+
+    expect(results.violations).toEqual([]);
+  }, 12000);
+
   it('should suggest previous one-time expenses that are not already in the selected month', () => {
     TestBed.overrideProvider(MAT_DIALOG_DATA, {
       useValue: {
@@ -1677,6 +1742,33 @@ describe('BulkEditorDialog', () => {
     expect(compiled.textContent).not.toContain('Loans');
   });
 
+});
+
+describe('BudgetStore bulk editor launcher', () => {
+  it('should open the bulk editor as a Material bottom sheet on mobile', async () => {
+    const bottomSheetOpen = vi.fn(() => ({ afterDismissed: () => of(undefined) }));
+    const dialogOpen = vi.fn(() => ({ afterClosed: () => of(undefined) }));
+    const breakpointObserver = {
+      isMatched: vi.fn(() => true),
+      observe: vi.fn(() => of({ matches: true, breakpoints: {} })),
+    };
+
+    await TestBed.configureTestingModule({
+      imports: [App],
+      providers: [provideRouter(routes)],
+    })
+      .overrideProvider(BreakpointObserver, { useValue: breakpointObserver })
+      .overrideProvider(MatBottomSheet, { useValue: { open: bottomSheetOpen } })
+      .overrideProvider(MatDialog, { useValue: { open: dialogOpen } })
+      .compileComponents();
+
+    const fixture = TestBed.createComponent(App);
+
+    fixture.componentInstance.openBulkEditor('monthly');
+
+    expect(bottomSheetOpen).toHaveBeenCalled();
+    expect(dialogOpen).not.toHaveBeenCalled();
+  });
 });
 
 describe('App accessibility', () => {

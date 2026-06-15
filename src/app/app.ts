@@ -7,6 +7,7 @@ import {
   signal,
 } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
+import { MatBottomSheetModule } from '@angular/material/bottom-sheet';
 import { MatIconModule } from '@angular/material/icon';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
@@ -29,6 +30,7 @@ type NavItem = {
     RouterLink,
     RouterLinkActive,
     RouterOutlet,
+    MatBottomSheetModule,
     MatButtonModule,
     MatIconModule,
     MatMenuModule,

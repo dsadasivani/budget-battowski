@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { MAT_BOTTOM_SHEET_DATA, MatBottomSheetRef } from '@angular/material/bottom-sheet';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -30,6 +31,7 @@ import type {
 } from './budget.models';
 
 type DraftRow<T extends { id: string }> = T & { isNew?: boolean; pendingDelete?: boolean };
+type EditableDraftRow = { id: string; isNew?: boolean; isSuggested?: boolean; pendingDelete?: boolean };
 type DraftExpense = DraftRow<ExpenseEntry> & {
   endDate?: string;
   isSuggested?: boolean;
@@ -197,8 +199,16 @@ function isOneTimeInvestment(investment: Pick<InvestmentEntry, 'frequency'>): bo
 })
 export class BulkEditorDialog {
   private readonly dialogRef =
-    inject<MatDialogRef<BulkEditorDialog, BulkEditorResult>>(MatDialogRef);
-  protected readonly data = inject<BulkEditorData>(MAT_DIALOG_DATA);
+    inject<MatDialogRef<BulkEditorDialog, BulkEditorResult>>(MatDialogRef, { optional: true });
+  private readonly bottomSheetRef =
+    inject<MatBottomSheetRef<BulkEditorDialog, BulkEditorResult>>(MatBottomSheetRef, {
+      optional: true,
+    });
+  private readonly dialogData = inject<BulkEditorData>(MAT_DIALOG_DATA, { optional: true });
+  private readonly bottomSheetData = inject<BulkEditorData>(MAT_BOTTOM_SHEET_DATA, {
+    optional: true,
+  });
+  protected readonly data = this.resolveData();
 
   protected readonly incomeCadences: Cadence[] = [
     'daily',
@@ -268,12 +278,30 @@ export class BulkEditorDialog {
     })),
   );
   protected readonly loans = signal<Array<DraftRow<Loan>>>(cloneRows(this.data.loans));
+  protected readonly editingRowIds = signal(this.initialEditingRowIds());
   protected readonly title = computed(() =>
     this.data.scope === 'monthly'
       ? 'Monthly Entry Editor'
       : this.data.scope === 'planning'
         ? 'Income & Budget Editor'
         : 'Loans & EMI Editor',
+  );
+  protected readonly subtitle = computed(() =>
+    this.data.scope === 'monthly'
+      ? 'Bulk edit monthly expenses and entries'
+      : this.data.scope === 'planning'
+        ? 'Planning scope · bulk edit spreadsheet'
+        : 'Bulk edit loan accounts and repayment schedules',
+  );
+  protected readonly scopeIcon = computed(() =>
+    this.data.scope === 'loans'
+      ? 'account_balance'
+      : this.data.scope === 'planning'
+        ? 'grid_view'
+        : 'dashboard',
+  );
+  protected readonly selectedMonthLabel = computed(() =>
+    this.auditMonthLabel(monthStartDate(this.data.selectedMonth), this.data.selectedMonth),
   );
   protected readonly showMonthlyTables = computed(() => this.data.scope === 'monthly');
   protected readonly showPlanningTables = computed(() => this.data.scope === 'planning');
@@ -469,7 +497,74 @@ export class BulkEditorDialog {
 
   protected toggleDelete(row: DraftRow<{ id: string }>): void {
     row.pendingDelete = !row.pendingDelete;
+    if (row.pendingDelete) {
+      this.editingRowIds.update((ids) => {
+        const next = new Set(ids);
+        next.delete(row.id);
+        return next;
+      });
+    }
     this.refreshRows();
+  }
+
+  protected isRowEditing(row: EditableDraftRow): boolean {
+    return !row.pendingDelete && !!(row.isNew || row.isSuggested || this.editingRowIds().has(row.id));
+  }
+
+  protected toggleRowEditing(row: EditableDraftRow, event: Event): void {
+    if (row.pendingDelete) {
+      return;
+    }
+
+    if (row.isNew || row.isSuggested) {
+      this.focusEditableRow(event);
+      return;
+    }
+
+    let shouldFocus = false;
+    this.editingRowIds.update((ids) => {
+      const next = new Set(ids);
+      if (next.has(row.id)) {
+        next.delete(row.id);
+      } else {
+        next.add(row.id);
+        shouldFocus = true;
+      }
+      return next;
+    });
+
+    if (shouldFocus) {
+      this.focusEditableRow(event);
+    }
+  }
+
+  protected toggleRowEditingFromEvent(event: Event): void {
+    const trigger = event.currentTarget;
+    if (!(trigger instanceof HTMLElement)) {
+      return;
+    }
+
+    const container = trigger.closest<HTMLElement>('[data-row-id]');
+    const rowId = container?.dataset['rowId'];
+    if (!container || !rowId || container.classList.contains('marked-delete')) {
+      return;
+    }
+
+    const isExplicitlyEditing = this.editingRowIds().has(rowId);
+    if (container.classList.contains('row-editing') && !isExplicitlyEditing) {
+      this.focusEditableRow(event);
+      return;
+    }
+
+    this.editingRowIds.update((ids) => {
+      const next = new Set(ids);
+      next.has(rowId) ? next.delete(rowId) : next.add(rowId);
+      return next;
+    });
+
+    if (!isExplicitlyEditing) {
+      this.focusEditableRow(event);
+    }
   }
 
   private refreshRows(): void {
@@ -565,7 +660,7 @@ export class BulkEditorDialog {
       .sort((a, b) => (b.startDate ?? '').localeCompare(a.startDate ?? ''));
   }
 
-  protected categoryName(categoryId: string): string {
+  protected categoryName(categoryId: string | undefined): string {
     return (
       this.categories().find((category) => category.id === categoryId)?.name ?? 'Uncategorized'
     );
@@ -585,6 +680,97 @@ export class BulkEditorDialog {
 
   protected memberDisplayName(member: WorkspaceMember): string {
     return member.displayName || member.email;
+  }
+
+  protected amountLabel(value: unknown): string {
+    return new Intl.NumberFormat('en-IN', {
+      maximumFractionDigits: 0,
+      style: 'currency',
+      currency: 'INR',
+    }).format(toNumber(value));
+  }
+
+  protected dateLabel(value: unknown, fallback = '-'): string {
+    const date = dateValue(value);
+    if (!date) {
+      return fallback;
+    }
+
+    const [year, month, day] = date.split('-').map(Number);
+    if (!year || !month || !day) {
+      return fallback;
+    }
+
+    return new Intl.DateTimeFormat('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    }).format(new Date(year, month - 1, day));
+  }
+
+  protected monthLabel(value: unknown, fallback = '-'): string {
+    const month = dateMonthKey(dateValue(value) ?? (typeof value === 'string' ? value : undefined));
+    if (!month) {
+      return fallback;
+    }
+
+    return this.auditMonthLabel(`${month}-01`, fallback);
+  }
+
+  protected typeLabel(value: string | undefined, fallback = 'one-time'): string {
+    return value || fallback;
+  }
+
+  protected noteLabel(value: string | undefined, fallback = 'No note'): string {
+    return value?.trim() || fallback;
+  }
+
+  protected colorLabel(value: string | undefined): string {
+    return value || '#1f7a8c';
+  }
+
+  protected focusEditableRow(event: Event): void {
+    const trigger = event.currentTarget;
+    if (!(trigger instanceof HTMLElement)) {
+      return;
+    }
+
+    const container = trigger.closest('.mobile-row-card, tr');
+    setTimeout(() => {
+      const target = container?.querySelector<HTMLElement>(
+        'input:not([disabled]), textarea:not([disabled]), .mat-mdc-select:not(.mat-mdc-select-disabled)',
+      );
+
+      target?.focus();
+    });
+  }
+
+  protected loanDateInvalid(value: unknown): boolean {
+    return this.validationError().includes('loan') && !dateValue(value);
+  }
+
+  protected expenseRowLabel(expense: DraftExpense, rowIndex: number): string {
+    return this.rowLabel('Expense', expense.name, rowIndex, expense);
+  }
+
+  protected templateRowLabel(template: DraftTemplate, rowIndex: number): string {
+    return this.rowLabel('Recurring expense', template.name, rowIndex, template);
+  }
+
+  protected incomeRowLabel(income: DraftRow<IncomeSource>, rowIndex: number): string {
+    return this.rowLabel('Income', income.source, rowIndex, income);
+  }
+
+  protected categoryRowLabel(category: DraftRow<BudgetCategory>, rowIndex: number): string {
+    return this.rowLabel('Category', category.name, rowIndex, category);
+  }
+
+  protected loanRowLabel(loan: DraftRow<Loan>, rowIndex: number): string {
+    return this.rowLabel('Loan', `${loan.lender} ${loan.loanType}`.trim(), rowIndex, loan);
+  }
+
+  protected investmentRowLabel(investment: DraftRow<InvestmentEntry>, rowIndex: number): string {
+    return this.rowLabel('Investment', investment.name, rowIndex, investment);
   }
 
   protected defaultMemberEmail(): string | undefined {
@@ -692,7 +878,7 @@ export class BulkEditorDialog {
         }))
       : this.data.expenses;
 
-    this.dialogRef.close({
+    this.close({
       scope: this.data.scope,
       categories: this.activeRows(this.categories()).map((category) => ({
         id: category.id,
@@ -784,6 +970,43 @@ export class BulkEditorDialog {
     );
   }
 
+  protected cancel(): void {
+    this.close();
+  }
+
+  private close(result?: BulkEditorResult): void {
+    if (this.bottomSheetRef) {
+      this.bottomSheetRef.dismiss(result);
+      return;
+    }
+
+    this.dialogRef?.close(result);
+  }
+
+  private resolveData(): BulkEditorData {
+    const data = this.dialogData ?? this.bottomSheetData;
+    if (!data) {
+      throw new Error('Bulk editor dialog data is required.');
+    }
+
+    return data;
+  }
+
+  private initialEditingRowIds(): Set<string> {
+    return new Set(
+      [
+        ...this.expenses(),
+        ...this.templates(),
+        ...this.incomes(),
+        ...this.categories(),
+        ...this.loans(),
+        ...this.investments(),
+      ]
+        .filter((row) => row.isNew || ('isSuggested' in row && row.isSuggested))
+        .map((row) => row.id),
+    );
+  }
+
   private visibleRows(): Array<DraftRow<{ id: string }>> {
     if (this.showMonthlyTables()) {
       return [...this.expenses(), ...this.templates()];
@@ -794,6 +1017,32 @@ export class BulkEditorDialog {
     }
 
     return this.loans();
+  }
+
+  private rowLabel(
+    label: string,
+    name: string | undefined,
+    rowIndex: number,
+    row: { isNew?: boolean; isSuggested?: boolean; pendingDelete?: boolean },
+  ): string {
+    const parts = [`${label} row ${rowIndex + 1}`];
+    const trimmedName = name?.trim();
+
+    if (trimmedName) {
+      parts.push(trimmedName);
+    }
+
+    if (row.isNew) {
+      parts.push('new row');
+    } else if (row.isSuggested) {
+      parts.push('suggested row');
+    }
+
+    if (row.pendingDelete) {
+      parts.push('marked for deletion');
+    }
+
+    return parts.join(', ');
   }
 
   private activeRows<T extends { id: string }>(rows: Array<DraftRow<T>>): T[] {
