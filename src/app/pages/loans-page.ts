@@ -6,13 +6,44 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { BudgetStore } from '../budget.store';
+import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 
 @Component({
   selector: 'app-loans-page',
-  imports: [CommonModule, MatButtonModule, MatIconModule, MatProgressBarModule, MatTooltipModule],
+  imports: [
+    CommonModule,
+    MatButtonModule,
+    MatIconModule,
+    MatProgressBarModule,
+    MatTooltipModule,
+    AppPageSkeletonComponent,
+  ],
   template: `
-    <section class="page">
-      <header class="page-header">
+    @if (store.showPageSkeleton()) {
+      <app-page-skeleton variant="loans" />
+    } @else {
+    <section class="page mobile-loans-page">
+      <header class="mobile-page-hero compact-hero">
+        <div class="mobile-title-row">
+          <div class="mobile-title-with-icon">
+            <span class="mobile-page-mark" aria-hidden="true">
+              <mat-icon>account_balance</mat-icon>
+            </span>
+            <h1>Loans</h1>
+          </div>
+          <button
+            mat-flat-button
+            type="button"
+            (click)="store.openBulkEditor('loans')"
+            [disabled]="!store.canWrite()"
+          >
+            <mat-icon aria-hidden="true">add</mat-icon>
+            Add Loan
+          </button>
+        </div>
+      </header>
+
+      <header class="page-header desktop-page-header">
         <div>
           <h1>Loans</h1>
           <p>Manage EMIs, outstanding balances, and repayment progress.</p>
@@ -61,8 +92,8 @@ import { BudgetStore } from '../budget.store';
             @for (loan of store.loanRepaymentRows(); track loan.id) {
               <article class="loan-account">
                 <div>
-                  <strong>{{ loan.loanType }}</strong>
-                  <span class="badge neutral">{{ loan.lender }}</span>
+                  <strong>{{ loan.lender }}</strong>
+                  <span class="badge neutral">{{ loan.loanType }}</span>
                 </div>
                 <div>
                   <small>Principal</small>
@@ -81,7 +112,7 @@ import { BudgetStore } from '../budget.store';
                   <mat-progress-bar
                     mode="determinate"
                     [value]="store.clampPercent(loan.paidRatio)"
-                    [attr.aria-label]="loan.loanType + ' paid percentage'"
+                    [attr.aria-label]="loan.lender + ' paid percentage'"
                   ></mat-progress-bar>
                 </div>
                 <button
@@ -102,7 +133,7 @@ import { BudgetStore } from '../budget.store';
         </article>
 
         <div class="panel-stack">
-          <article class="panel-card">
+          <article class="panel-card mobile-hidden">
             <header class="panel-heading">
               <h2>EMI Calendar</h2>
               <p>{{ store.monthLabel() }} due dates and payment reminders</p>
@@ -122,7 +153,7 @@ import { BudgetStore } from '../budget.store';
             </div>
             <div class="calendar-legend">
               @for (loan of store.loanRepaymentRows(); track loan.id) {
-                <span><i [style.background]="loan.color"></i> {{ loan.loanType }} {{ loan.emi | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
+                <span><i [style.background]="loan.color"></i> {{ loan.lender }} {{ loan.emi | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
               }
             </div>
           </article>
@@ -145,7 +176,7 @@ import { BudgetStore } from '../budget.store';
             <div class="summary-list">
               @for (loan of store.loanRepaymentRows(); track loan.id) {
                 <div>
-                  <span><i [style.background]="loan.color"></i>{{ loan.loanType }}</span>
+                  <span><i [style.background]="loan.color"></i>{{ loan.lender }}</span>
                   <b>{{ loan.emi | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</b>
                 </div>
               }
@@ -154,6 +185,7 @@ import { BudgetStore } from '../budget.store';
         </div>
       </section>
     </section>
+    }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

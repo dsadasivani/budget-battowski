@@ -350,6 +350,14 @@ const DEFAULT_LOAN_EMI_CATEGORY: BudgetCategory = {
   color: '#4b5563',
   type: 'Expenses',
 };
+const WORKSPACE_DATA_COLLECTIONS: BudgetCollectionName[] = [
+  'categories',
+  'incomes',
+  'templates',
+  'expenses',
+  'investments',
+  'loans',
+];
 
 @Injectable()
 export class BudgetStore implements OnDestroy {
@@ -367,6 +375,9 @@ export class BudgetStore implements OnDestroy {
   private readonly repository = signal<BudgetFirestoreRepository | null>(null);
   readonly isSessionChecking = signal(this.firebase.mode === 'firebase');
   readonly isSyncing = signal(false);
+  readonly loginLoaderActive = signal(false);
+  readonly isWorkspaceDataLoading = signal(false);
+  private readonly loadedWorkspaceCollections = signal(new Set<BudgetCollectionName>());
   readonly syncStatus = signal(
     this.firebase.mode === 'firebase' ? 'Sign in with Google' : 'Firebase config needed',
   );
@@ -378,6 +389,7 @@ export class BudgetStore implements OnDestroy {
   );
   readonly userName = signal<string | null>(null);
   readonly userEmail = signal<string | null>(null);
+  readonly userPhoto = signal<string | null>(null);
   readonly selectedMemberEmail = signal('ALL');
   readonly selectedMonth = signal(currentMonth());
   readonly monthPickerOpen = signal(false);
@@ -447,11 +459,15 @@ export class BudgetStore implements OnDestroy {
   readonly filteredLoans = computed(() =>
     this.loans().filter((record) => this.matchesSelectedMember(record)),
   );
-  readonly showDashboardSkeleton = computed(
-    () => this.isSyncing() && !this.hasBudgetData(),
+  readonly showPageSkeleton = computed(
+    () =>
+      this.firebase.mode === 'firebase' &&
+      !this.loginLoaderActive() &&
+      (this.isSessionChecking() || this.isWorkspaceDataLoading()),
   );
+  readonly showDashboardSkeleton = computed(() => this.showPageSkeleton());
   readonly showGlobalLoader = computed(
-    () => this.firebase.mode === 'firebase' && this.isSessionChecking(),
+    () => this.firebase.mode === 'firebase' && this.loginLoaderActive(),
   );
   readonly canWrite = computed(
     () => this.firebase.mode !== 'firebase' || (!!this.workspaceId() && !this.isSyncing()),
@@ -1015,6 +1031,7 @@ export class BudgetStore implements OnDestroy {
       return;
     }
 
+    this.loginLoaderActive.set(true);
     this.isSyncing.set(true);
     this.syncError.set(null);
 
@@ -1023,6 +1040,7 @@ export class BudgetStore implements OnDestroy {
       this.syncStatus.set('Signing in');
     } catch (error) {
       this.handleSyncError(error instanceof Error ? error.message : 'Google sign-in failed.');
+      this.loginLoaderActive.set(false);
     } finally {
       this.isSyncing.set(false);
     }
@@ -1033,6 +1051,8 @@ export class BudgetStore implements OnDestroy {
       return;
     }
 
+    this.loginLoaderActive.set(false);
+    this.isWorkspaceDataLoading.set(false);
     this.isSyncing.set(true);
     this.syncError.set(null);
 
@@ -1114,6 +1134,8 @@ export class BudgetStore implements OnDestroy {
 
     this.stopFirestoreListeners();
     this.clearAppData();
+    this.loadedWorkspaceCollections.set(new Set());
+    this.isWorkspaceDataLoading.set(true);
     this.workspaceId.set(workspaceId);
     this.selectedMemberEmail.set('ALL');
     this.repository.set(new BudgetFirestoreRepository(this.firebase.app, workspaceId));
@@ -2715,6 +2737,7 @@ export class BudgetStore implements OnDestroy {
     if (!this.firebase.app) {
       this.categories.set(this.withDefaultCategories([]));
       this.isSessionChecking.set(false);
+      this.isWorkspaceDataLoading.set(false);
       return;
     }
 
@@ -2734,6 +2757,7 @@ export class BudgetStore implements OnDestroy {
         error instanceof Error ? error.message : 'Unable to initialize Firebase login.',
       );
       this.isSessionChecking.set(false);
+      this.loginLoaderActive.set(false);
     } finally {
       this.isSyncing.set(false);
     }
@@ -2746,6 +2770,7 @@ export class BudgetStore implements OnDestroy {
     this.workspaceId.set(null);
     this.userName.set(user?.displayName ?? null);
     this.userEmail.set(email);
+    this.userPhoto.set(user?.photoURL ?? null);
 
     if (!user || !this.firebase.app || !email) {
       this.workspaces.set([]);
@@ -2753,7 +2778,9 @@ export class BudgetStore implements OnDestroy {
       this.syncStatus.set(
         this.firebase.mode === 'firebase' ? 'Sign in with Google' : 'Firebase config needed',
       );
+      this.isWorkspaceDataLoading.set(false);
       this.isSessionChecking.set(false);
+      this.loginLoaderActive.set(false);
       return;
     }
 
@@ -2786,6 +2813,7 @@ export class BudgetStore implements OnDestroy {
     } finally {
       this.isSyncing.set(false);
       this.isSessionChecking.set(false);
+      this.loginLoaderActive.set(false);
     }
   }
 
@@ -2826,46 +2854,85 @@ export class BudgetStore implements OnDestroy {
   private async listenToWorkspaceData(): Promise<void> {
     const repository = this.repository();
     if (!repository) {
+      this.isWorkspaceDataLoading.set(false);
+      return;
+    }
+    const workspaceId = this.workspaceId();
+
+    try {
+      const subscriptions = await Promise.all([
+        repository.listen(
+          'categories',
+          (records) => {
+            this.categories.set(this.withDefaultCategories(records));
+            this.ensureDefaultCategoryRecord(records);
+            this.markWorkspaceCollectionLoaded('categories', workspaceId);
+          },
+          (message) => this.handleSyncError(message),
+        ),
+        repository.listen(
+          'incomes',
+          (records) => {
+            this.incomes.set(records);
+            this.markWorkspaceCollectionLoaded('incomes', workspaceId);
+          },
+          (message) => this.handleSyncError(message),
+        ),
+        repository.listen(
+          'templates',
+          (records) => {
+            this.templates.set(records);
+            this.markWorkspaceCollectionLoaded('templates', workspaceId);
+          },
+          (message) => this.handleSyncError(message),
+        ),
+        repository.listen(
+          'expenses',
+          (records) => {
+            this.expenses.set(records);
+            this.markWorkspaceCollectionLoaded('expenses', workspaceId);
+          },
+          (message) => this.handleSyncError(message),
+        ),
+        repository.listen(
+          'investments',
+          (records) => {
+            this.investments.set(records);
+            this.markWorkspaceCollectionLoaded('investments', workspaceId);
+          },
+          (message) => this.handleSyncError(message),
+        ),
+        repository.listen(
+          'loans',
+          (records) => {
+            this.loans.set(records);
+            this.markWorkspaceCollectionLoaded('loans', workspaceId);
+          },
+          (message) => this.handleSyncError(message),
+        ),
+      ]);
+
+      this.unsubscribes.update((unsubscribes) => [...unsubscribes, ...subscriptions]);
+    } catch (error) {
+      this.isWorkspaceDataLoading.set(false);
+      throw error;
+    }
+  }
+
+  private markWorkspaceCollectionLoaded(
+    collectionName: BudgetCollectionName,
+    workspaceId: string | null,
+  ): void {
+    if (this.workspaceId() !== workspaceId) {
       return;
     }
 
-    const subscriptions = await Promise.all([
-      repository.listen(
-        'categories',
-        (records) => {
-          this.categories.set(this.withDefaultCategories(records));
-          this.ensureDefaultCategoryRecord(records);
-        },
-        (message) => this.handleSyncError(message),
-      ),
-      repository.listen(
-        'incomes',
-        (records) => this.incomes.set(records),
-        (message) => this.handleSyncError(message),
-      ),
-      repository.listen(
-        'templates',
-        (records) => this.templates.set(records),
-        (message) => this.handleSyncError(message),
-      ),
-      repository.listen(
-        'expenses',
-        (records) => this.expenses.set(records),
-        (message) => this.handleSyncError(message),
-      ),
-      repository.listen(
-        'investments',
-        (records) => this.investments.set(records),
-        (message) => this.handleSyncError(message),
-      ),
-      repository.listen(
-        'loans',
-        (records) => this.loans.set(records),
-        (message) => this.handleSyncError(message),
-      ),
-    ]);
-
-    this.unsubscribes.update((unsubscribes) => [...unsubscribes, ...subscriptions]);
+    const loadedCollections = new Set(this.loadedWorkspaceCollections());
+    loadedCollections.add(collectionName);
+    this.loadedWorkspaceCollections.set(loadedCollections);
+    this.isWorkspaceDataLoading.set(
+      !WORKSPACE_DATA_COLLECTIONS.every((name) => loadedCollections.has(name)),
+    );
   }
 
   private async applyBulkChanges(result: BulkEditorResult): Promise<void> {
@@ -3267,6 +3334,8 @@ export class BudgetStore implements OnDestroy {
     this.syncStatus.set('Firebase sync failed');
     this.isSyncing.set(false);
     this.isSessionChecking.set(false);
+    this.loginLoaderActive.set(false);
+    this.isWorkspaceDataLoading.set(false);
   }
 
   private totalByType(type: ExpenseType): number {

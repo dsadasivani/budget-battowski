@@ -92,6 +92,107 @@ describe('App', () => {
     expect(app.selectedMonth()).toBe('2027-11');
   });
 
+  it('should expose exactly five primary mobile navigation items', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+
+    expect(app.primaryMobileNavItems.map((item) => item.shortLabel || item.label)).toEqual([
+      'Dashboard',
+      'Expenses',
+      'Planning',
+      'Investments',
+      'Loans',
+    ]);
+  });
+
+  it('should render exactly five primary labels in the mobile bottom nav', async () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      firebase: { mode: string };
+      isSessionChecking: { set: (checking: boolean) => void };
+    };
+
+    app.firebase.mode = 'local';
+    app.isSessionChecking.set(false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const labels = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('.mobile-bottom-nav a span'),
+    ).map((item) => item.textContent?.trim());
+
+    expect(labels).toEqual(['Dashboard', 'Expenses', 'Planning', 'Investments', 'Loans']);
+  });
+
+  it('should keep secondary mobile destinations in the utility menu model', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+
+    expect(app.utilityMobileNavItems.map((item) => item.label)).toEqual([
+      'Categories',
+      'Import/Export',
+      'Workspace',
+      'Settings',
+    ]);
+  });
+
+  it('should keep the branded loader for explicit login transitions only', async () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      firebase: { mode: string };
+      isSessionChecking: { set: (checking: boolean) => void };
+      loginLoaderActive: { set: (active: boolean) => void };
+      showGlobalLoader: () => boolean;
+      showPageSkeleton: () => boolean;
+      workspaceId: { set: (workspaceId: string | null) => void };
+    };
+
+    app.firebase.mode = 'firebase';
+    app.workspaceId.set(null);
+    app.isSessionChecking.set(true);
+    app.loginLoaderActive.set(false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(app.showGlobalLoader()).toBe(false);
+    expect(app.showPageSkeleton()).toBe(true);
+    expect((fixture.nativeElement as HTMLElement).querySelector('.global-loader-shell')).toBeNull();
+
+    app.loginLoaderActive.set(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const loader = (fixture.nativeElement as HTMLElement).querySelector('.global-loader-shell');
+    expect(app.showGlobalLoader()).toBe(true);
+    expect(loader).not.toBeNull();
+    expect(loader?.textContent).toContain('Preparing your private budget workspace.');
+    expect(loader?.querySelector('.loader-skeleton-card')).toBeNull();
+  });
+
+  it('should stop showing page skeletons after workspace data loading completes', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      firebase: { mode: string };
+      isSessionChecking: { set: (checking: boolean) => void };
+      isWorkspaceDataLoading: { set: (loading: boolean) => void };
+      loginLoaderActive: { set: (active: boolean) => void };
+      showPageSkeleton: () => boolean;
+      workspaceId: { set: (workspaceId: string | null) => void };
+    };
+
+    app.firebase.mode = 'firebase';
+    app.workspaceId.set('workspace-1');
+    app.isSessionChecking.set(false);
+    app.loginLoaderActive.set(false);
+    app.isWorkspaceDataLoading.set(true);
+
+    expect(app.showPageSkeleton()).toBe(true);
+
+    app.isWorkspaceDataLoading.set(false);
+
+    expect(app.showPageSkeleton()).toBe(false);
+  });
+
   it('should carry the latest monthly income into future months', () => {
     const fixture = TestBed.createComponent(App);
     const app = fixture.componentInstance as unknown as {

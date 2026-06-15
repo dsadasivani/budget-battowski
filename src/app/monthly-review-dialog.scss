@@ -16,8 +16,8 @@
 
   span {
     color: #101827;
-    font-size: 1.1rem;
-    font-weight: 800;
+    font-size: 1rem;
+    font-weight: 700;
   }
 
   small {
@@ -56,14 +56,14 @@
   th {
     background: #f8fafc;
     color: #475569;
-    font-size: 0.78rem;
-    font-weight: 800;
+    font-size: 0.72rem;
+    font-weight: 700;
     text-transform: uppercase;
   }
 
   td {
     color: #0f172a;
-    font-weight: 650;
+    font-weight: 500;
   }
 
   tbody tr:last-child td {
@@ -106,7 +106,7 @@
   place-items: center;
   gap: 8px;
   color: #64748b;
-  font-weight: 750;
+  font-weight: 500;
 
   mat-icon {
     color: #155e75;

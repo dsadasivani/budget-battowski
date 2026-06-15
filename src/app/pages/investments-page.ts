@@ -7,6 +7,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { BudgetStore } from '../budget.store';
 import { MonthMemberControls } from '../shared/month-member-controls';
+import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 
 @Component({
   selector: 'app-investments-page',
@@ -17,10 +18,36 @@ import { MonthMemberControls } from '../shared/month-member-controls';
     MatProgressBarModule,
     MatTooltipModule,
     MonthMemberControls,
+    AppPageSkeletonComponent,
   ],
   template: `
-    <section class="page">
-      <header class="page-header">
+    @if (store.showPageSkeleton()) {
+      <app-page-skeleton variant="investments" />
+    } @else {
+    <section class="page mobile-investments-page">
+      <header class="mobile-page-hero investments-hero">
+        <div class="mobile-title-row">
+          <div>
+            <h1>Investments</h1>
+            <p>Track SIPs, mutual funds, and long-term wealth</p>
+          </div>
+          <button
+            mat-flat-button
+            type="button"
+            (click)="store.openBulkEditor('planning', 2)"
+            [disabled]="!store.canWrite()"
+          >
+            <mat-icon aria-hidden="true">add</mat-icon>
+            Add Investment
+          </button>
+        </div>
+      </header>
+
+      <div class="mobile-member-tabs">
+        <app-month-member-controls />
+      </div>
+
+      <header class="page-header desktop-page-header">
         <div>
           <h1>Investments</h1>
           <p>Track SIPs, mutual funds, and long-term wealth.</p>
@@ -52,7 +79,7 @@ import { MonthMemberControls } from '../shared/month-member-controls';
       </section>
 
       <section class="content-grid two-one">
-        <article class="panel-card">
+        <article class="panel-card mobile-portfolio-panel">
           <header class="panel-heading split">
             <div>
               <h2>Investment Portfolio</h2>
@@ -130,7 +157,7 @@ import { MonthMemberControls } from '../shared/month-member-controls';
         </article>
 
         <div class="panel-stack">
-          <article class="panel-card">
+          <article class="panel-card mobile-hidden">
             <header class="panel-heading split">
               <div>
                 <h2>Returns Overview</h2>
@@ -149,7 +176,7 @@ import { MonthMemberControls } from '../shared/month-member-controls';
             </div>
           </article>
 
-          <article class="panel-card">
+          <article class="panel-card mobile-member-allocation-panel">
             <header class="panel-heading split">
               <div>
                 <h2>Member Allocation</h2>
@@ -179,6 +206,7 @@ import { MonthMemberControls } from '../shared/month-member-controls';
         </div>
       </section>
     </section>
+    }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

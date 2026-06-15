@@ -6,13 +6,39 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { BudgetStore } from '../budget.store';
+import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 
 @Component({
   selector: 'app-categories-page',
-  imports: [CommonModule, MatButtonModule, MatIconModule, MatProgressBarModule, MatTooltipModule],
+  imports: [
+    CommonModule,
+    MatButtonModule,
+    MatIconModule,
+    MatProgressBarModule,
+    MatTooltipModule,
+    AppPageSkeletonComponent,
+  ],
   template: `
-    <section class="page">
-      <header class="page-header">
+    @if (store.showPageSkeleton()) {
+      <app-page-skeleton variant="categories" />
+    } @else {
+    <section class="page mobile-categories-page">
+      <header class="mobile-page-hero compact-hero">
+        <div class="mobile-title-row">
+          <h1>Categories</h1>
+          <button
+            mat-flat-button
+            type="button"
+            (click)="store.openBulkEditor('planning', 1)"
+            [disabled]="!store.canWrite()"
+          >
+            <mat-icon aria-hidden="true">add</mat-icon>
+            Add Category
+          </button>
+        </div>
+      </header>
+
+      <header class="page-header desktop-page-header">
         <div>
           <h1>Categories</h1>
           <p>Organize and budget your spending categories.</p>
@@ -98,6 +124,7 @@ import { BudgetStore } from '../budget.store';
         }
       </section>
     </section>
+    }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

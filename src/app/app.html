@@ -1,16 +1,79 @@
 @if (showGlobalLoader()) {
   <main class="global-loader-shell" id="main-content" aria-live="polite" aria-busy="true">
-    <section class="global-loader-panel" aria-label="Loading Budget Battowski">
+    <section class="global-loader-panel" aria-labelledby="global-loader-title">
       <div class="loader-mark" aria-hidden="true">
+        <mat-icon>verified_user</mat-icon>
+      </div>
+      <div class="loader-badge">
+        <mat-icon aria-hidden="true">lock</mat-icon>
+        <span>Budget Battowski</span>
+      </div>
+      <h1 id="global-loader-title">Budget Battowski</h1>
+      <p class="loader-copy">
+        Preparing your private budget workspace.
+      </p>
+      <div class="loader-progress" role="progressbar" aria-label="Loading your workspace">
         <span></span>
       </div>
-      <p class="eyebrow">Budget Battowski</p>
-      <h1>Checking your session</h1>
-      <p>Loading your private workspace.</p>
+      <p class="loader-status">
+        <span class="loader-spinner" aria-hidden="true"></span>
+        Loading your workspace...
+      </p>
     </section>
   </main>
-} @else if (firebase.mode === 'firebase' && !workspaceId()) {
+} @else if (firebase.mode === 'firebase' && !workspaceId() && !isSessionChecking()) {
   <main class="login-shell" id="main-content">
+    <section class="mobile-login-card" aria-labelledby="mobile-login-title">
+      <div class="mobile-login-mark" aria-hidden="true">
+        <mat-icon>verified_user</mat-icon>
+      </div>
+      <div class="mobile-secure-badge">
+        <mat-icon aria-hidden="true">lock</mat-icon>
+        Secure sign in
+      </div>
+      <h1 id="mobile-login-title">Budget Battowski</h1>
+      <p class="mobile-login-copy">
+        Private finance planning for households that want clear budgets, shared visibility, and
+        calm monthly decisions.
+      </p>
+
+      <div class="mobile-login-features" aria-label="Budget Battowski highlights">
+        <article>
+          <span aria-hidden="true"><mat-icon>radio_button_checked</mat-icon></span>
+          <div>
+            <h2>Plan every month with confidence</h2>
+            <p>Track recurring expenses, one-time spending, investments, and loans in one private workspace.</p>
+          </div>
+        </article>
+        <article>
+          <span aria-hidden="true"><mat-icon>groups</mat-icon></span>
+          <div>
+            <h2>Built for shared households</h2>
+            <p>Keep members aligned with simple budgeting views and clear financial ownership.</p>
+          </div>
+        </article>
+      </div>
+
+      <button
+        class="google-login mobile-google-login"
+        mat-flat-button
+        type="button"
+        (click)="loginWithGoogle()"
+        [disabled]="isSyncing()"
+        aria-label="Continue with Google to open Budget Battowski"
+      >
+        Continue with Google
+      </button>
+
+      <p class="mobile-protected-line" aria-live="polite">
+        @if (syncError()) {
+          {{ syncError() }}
+        } @else {
+          Protected by secure authentication
+        }
+      </p>
+    </section>
+
     <section class="login-brand" aria-labelledby="login-brand-title">
       <a class="login-logo" href="/" aria-label="Budget Battowski home">
         <span class="app-mark" aria-hidden="true">
@@ -135,7 +198,13 @@
       </nav>
 
       <div class="sidebar-account">
-        <span class="avatar" aria-hidden="true">{{ memberInitial(userEmail() || undefined) }}</span>
+        <span class="avatar profile-avatar" aria-hidden="true">
+          @if (userPhoto(); as photo) {
+            <img [src]="photo" alt="" referrerpolicy="no-referrer" />
+          } @else {
+            {{ memberInitial(userEmail() || undefined) }}
+          }
+        </span>
         <span>
           <strong>{{ accountLabel() }}</strong>
           <small>{{ userEmail() ? 'Signed in' : 'Local mode' }}</small>
@@ -163,5 +232,18 @@
     <main class="content-shell" id="main-content">
       <router-outlet></router-outlet>
     </main>
+
+    <nav class="mobile-bottom-nav" aria-label="Mobile primary navigation">
+      @for (item of primaryMobileNavItems; track item.path) {
+        <a
+          [routerLink]="item.path"
+          routerLinkActive="active"
+          [routerLinkActiveOptions]="{ exact: true }"
+        >
+          <mat-icon aria-hidden="true">{{ item.icon }}</mat-icon>
+          <span>{{ item.shortLabel || item.label }}</span>
+        </a>
+      }
+    </nav>
   </div>
 }

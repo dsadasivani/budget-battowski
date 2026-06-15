@@ -7,6 +7,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { BudgetStore } from '../budget.store';
 import { MonthMemberControls } from '../shared/month-member-controls';
+import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 
 @Component({
   selector: 'app-planning-page',
@@ -17,10 +18,33 @@ import { MonthMemberControls } from '../shared/month-member-controls';
     MatProgressBarModule,
     MatTooltipModule,
     MonthMemberControls,
+    AppPageSkeletonComponent,
   ],
   template: `
-    <section class="page">
-      <header class="page-header">
+    @if (store.showPageSkeleton()) {
+      <app-page-skeleton variant="planning" />
+    } @else {
+    <section class="page mobile-planning-page">
+      <header class="mobile-page-hero compact-hero">
+        <div class="mobile-title-row">
+          <h1>Planning</h1>
+          <button
+            mat-flat-button
+            type="button"
+            (click)="store.openBulkEditor('monthly', 1)"
+            [disabled]="!store.canWrite()"
+          >
+            <mat-icon aria-hidden="true">add</mat-icon>
+            Add Plan
+          </button>
+        </div>
+      </header>
+
+      <div class="mobile-centered-controls">
+        <app-month-member-controls />
+      </div>
+
+      <header class="page-header desktop-page-header">
         <div>
           <h1>Planning</h1>
           <p>Monthly plan overview and recurring commitments.</p>
@@ -59,7 +83,7 @@ import { MonthMemberControls } from '../shared/month-member-controls';
 
       <section class="content-grid two-one">
         <div class="panel-stack">
-          <article class="panel-card">
+          <article class="panel-card mobile-recurring-plans">
             <header class="panel-heading split">
               <div>
                 <h2>Recurring Plans</h2>
@@ -86,7 +110,7 @@ import { MonthMemberControls } from '../shared/month-member-controls';
             </div>
           </article>
 
-          <article class="panel-card">
+          <article class="panel-card mobile-one-time-plans">
             <header class="panel-heading split">
               <div>
                 <h2>One-time Planned Expenses</h2>
@@ -94,6 +118,24 @@ import { MonthMemberControls } from '../shared/month-member-controls';
               </div>
               <span class="badge neutral">{{ store.oneTimePlannedRows().length }} items</span>
             </header>
+            <div class="mobile-plan-list">
+              @for (expense of store.oneTimePlannedRows(); track expense.id) {
+                <article class="mobile-plan-card">
+                  <span class="avatar mini">{{ store.memberInitial(expense.memberEmail) }}</span>
+                  <div>
+                    <small>{{ store.shortDateLabel(store.recordDate(expense)) }}</small>
+                    <strong>{{ expense.name }}</strong>
+                    <small>{{ expense.memberName }}</small>
+                  </div>
+                  <span class="badge neutral">{{ expense.categoryName }}</span>
+                  <b>{{ expense.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</b>
+                  <span class="badge success">{{ expense.status }}</span>
+                </article>
+              } @empty {
+                <div class="empty-state">No one-time planned expenses</div>
+              }
+            </div>
+
             <div class="data-table-wrap compact">
               <table class="data-table">
                 <thead>
@@ -127,7 +169,7 @@ import { MonthMemberControls } from '../shared/month-member-controls';
           </article>
         </div>
 
-        <div class="panel-stack">
+        <div class="panel-stack mobile-hidden">
           <article class="panel-card">
             <header class="panel-heading">
               <h2>Monthly Budget Allocation</h2>
@@ -174,6 +216,7 @@ import { MonthMemberControls } from '../shared/month-member-controls';
         </div>
       </section>
     </section>
+    }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

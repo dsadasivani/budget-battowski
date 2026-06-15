@@ -5,13 +5,40 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { BudgetStore } from '../budget.store';
+import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 
 @Component({
   selector: 'app-workspace-page',
-  imports: [CommonModule, MatButtonModule, MatIconModule, MatTooltipModule],
+  imports: [CommonModule, MatButtonModule, MatIconModule, MatTooltipModule, AppPageSkeletonComponent],
   template: `
-    <section class="page narrow">
-      <header class="page-header">
+    @if (store.showPageSkeleton()) {
+      <app-page-skeleton variant="utility" />
+    } @else {
+    <section class="page narrow mobile-workspace-page">
+      <header class="mobile-page-hero compact-hero workspace-hero">
+        <div class="mobile-title-row">
+          <div class="mobile-title-with-icon">
+            <span class="mobile-page-mark" aria-hidden="true">
+              <mat-icon>group</mat-icon>
+            </span>
+            <div>
+              <h1>Workspace</h1>
+              <p>Members and shared budget spaces</p>
+            </div>
+          </div>
+          <button
+            mat-flat-button
+            type="button"
+            (click)="store.createWorkspace()"
+            [disabled]="!store.userEmail() || store.isSyncing()"
+          >
+            <mat-icon aria-hidden="true">add_business</mat-icon>
+            Create
+          </button>
+        </div>
+      </header>
+
+      <header class="page-header desktop-page-header">
         <div>
           <h1>Workspace</h1>
           <p>Manage shared access and workspace-level actions.</p>
@@ -119,6 +146,7 @@ import { BudgetStore } from '../budget.store';
         </button>
       </article>
     </section>
+    }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

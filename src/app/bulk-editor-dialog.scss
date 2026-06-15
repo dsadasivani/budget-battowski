@@ -60,7 +60,7 @@
 
   .mat-mdc-tab .mdc-tab__text-label {
     color: var(--editor-muted);
-    font-weight: 800;
+    font-weight: 600;
     letter-spacing: 0;
   }
 
@@ -178,7 +178,7 @@
 
   h2 {
     font-size: 1.14rem;
-    font-weight: 850;
+    font-weight: 700;
     letter-spacing: 0;
     line-height: 1.15;
   }
@@ -236,14 +236,14 @@
   span {
     color: var(--editor-muted);
     font-size: 0.68rem;
-    font-weight: 850;
+    font-weight: 600;
     text-transform: uppercase;
   }
 
   strong {
     color: var(--editor-blue-dark);
     font-size: 1.04rem;
-    font-weight: 900;
+    font-weight: 700;
     line-height: 1;
   }
 }
@@ -265,7 +265,7 @@
     gap: 10px;
     color: var(--editor-navy);
     font-size: 1rem;
-    font-weight: 900;
+    font-weight: 700;
   }
 
   strong::before {
@@ -285,7 +285,7 @@
     min-height: 38px;
     padding-inline: 16px 18px;
     border-radius: 999px;
-    font-weight: 800;
+    font-weight: 600;
   }
 
   button mat-icon {
@@ -332,7 +332,7 @@
     background: var(--editor-panel-soft);
     color: #53657c;
     font-size: 0.72rem;
-    font-weight: 900;
+    font-weight: 700;
     text-align: left;
     text-transform: uppercase;
     white-space: nowrap;
@@ -446,7 +446,7 @@
   background: #f1f6fc;
   color: #65758d;
   font-size: 0.78rem;
-  font-weight: 900;
+  font-weight: 600;
   user-select: none;
 }
 
@@ -469,7 +469,7 @@
   background: rgba(47, 128, 237, 0.12);
   color: var(--editor-blue-dark);
   font-size: 0.62rem;
-  font-weight: 900;
+  font-weight: 600;
   text-transform: uppercase;
 }
 
@@ -492,7 +492,7 @@
   padding: 3px 8px 4px;
   color: var(--editor-muted);
   font-size: 0.7rem;
-  font-weight: 750;
+  font-weight: 500;
 }
 
 .corner-cell,
@@ -526,7 +526,7 @@
   background: #f3f6fb;
   color: #53657c;
   font-size: 0.7rem;
-  font-weight: 900;
+  font-weight: 600;
   text-transform: uppercase;
 }
 
@@ -572,17 +572,17 @@
   background: #fff;
   color: var(--editor-ink);
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 500;
 
   strong {
     font-size: 0.82rem;
-    font-weight: 900;
+    font-weight: 700;
   }
 
   small {
     color: var(--editor-muted);
     font-size: 0.72rem;
-    font-weight: 800;
+    font-weight: 500;
   }
 }
 
@@ -594,7 +594,7 @@
   background: var(--editor-blue-soft);
   color: var(--editor-blue-dark);
   font-size: 0.68rem;
-  font-weight: 900;
+  font-weight: 600;
   text-transform: uppercase;
 }
 
@@ -622,7 +622,7 @@
   button {
     min-height: 38px;
     border-radius: 999px;
-    font-weight: 800;
+    font-weight: 600;
   }
 
   button mat-icon {
@@ -637,7 +637,7 @@
   margin-right: auto;
   color: var(--editor-danger);
   font-size: 0.82rem;
-  font-weight: 850;
+  font-weight: 600;
 }
 
 @media (max-width: 900px) {
@@ -826,7 +826,7 @@
         content: attr(data-label);
         color: var(--editor-muted);
         font-size: 0.58rem;
-        font-weight: 900;
+        font-weight: 600;
         letter-spacing: 0;
         text-transform: uppercase;
       }

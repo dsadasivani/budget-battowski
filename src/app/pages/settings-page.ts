@@ -4,11 +4,15 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 
 import { BudgetStore } from '../budget.store';
+import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 
 @Component({
   selector: 'app-settings-page',
-  imports: [CommonModule, MatButtonModule, MatIconModule],
+  imports: [CommonModule, MatButtonModule, MatIconModule, AppPageSkeletonComponent],
   template: `
+    @if (store.showPageSkeleton()) {
+      <app-page-skeleton variant="utility" />
+    } @else {
     <section class="page narrow">
       <header class="page-header">
         <div>
@@ -57,6 +61,7 @@ import { BudgetStore } from '../budget.store';
         </article>
       </section>
     </section>
+    }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

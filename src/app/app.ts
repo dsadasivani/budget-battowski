@@ -19,6 +19,7 @@ type NavItem = {
   label: string;
   icon: string;
   path: string;
+  shortLabel?: string;
 };
 
 @Component({
@@ -43,7 +44,7 @@ export class App extends BudgetStore {
   readonly navOpen = signal(false);
   readonly navItems: NavItem[] = [
     { label: 'Dashboard', icon: 'dashboard', path: '/dashboard' },
-    { label: 'Monthly Expenses', icon: 'credit_card', path: '/expenses' },
+    { label: 'Monthly Expenses', icon: 'credit_card', path: '/expenses', shortLabel: 'Expenses' },
     { label: 'Planning', icon: 'calendar_month', path: '/planning' },
     { label: 'Investments', icon: 'trending_up', path: '/investments' },
     { label: 'Loans', icon: 'account_balance', path: '/loans' },
@@ -52,6 +53,8 @@ export class App extends BudgetStore {
     { label: 'Workspace', icon: 'group', path: '/workspace' },
     { label: 'Settings', icon: 'settings', path: '/settings' },
   ];
+  readonly primaryMobileNavItems = this.navItems.slice(0, 5);
+  readonly utilityMobileNavItems = this.navItems.slice(5);
   readonly accountLabel = computed(() => this.userName() || this.userEmail() || 'Signed in');
 
   toggleNav(): void {

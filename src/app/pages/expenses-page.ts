@@ -1,5 +1,13 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  computed,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
@@ -7,6 +15,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { BudgetStore } from '../budget.store';
 import { MonthMemberControls } from '../shared/month-member-controls';
+import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 
 @Component({
   selector: 'app-expenses-page',
@@ -17,10 +26,33 @@ import { MonthMemberControls } from '../shared/month-member-controls';
     MatProgressBarModule,
     MatTooltipModule,
     MonthMemberControls,
+    AppPageSkeletonComponent,
   ],
   template: `
-    <section class="page">
-      <header class="page-header">
+    @if (store.showPageSkeleton()) {
+      <app-page-skeleton variant="expenses" />
+    } @else {
+    <section class="page mobile-expenses-page">
+      <header class="mobile-page-hero expenses-hero">
+        <div class="mobile-title-row">
+          <span class="mobile-page-mark" aria-hidden="true">
+            <mat-icon>credit_card</mat-icon>
+          </span>
+          <h1>Monthly Expenses</h1>
+          <button
+            class="mobile-filter-button"
+            mat-icon-button
+            type="button"
+            aria-label="Focus expense search"
+            (click)="focusSearch()"
+          >
+            <mat-icon aria-hidden="true">tune</mat-icon>
+          </button>
+        </div>
+        <app-month-member-controls />
+      </header>
+
+      <header class="page-header desktop-page-header">
         <div>
           <h1>Monthly Expenses</h1>
           <p>Track recurring and one-time spending across members.</p>
@@ -60,6 +92,7 @@ import { MonthMemberControls } from '../shared/month-member-controls';
                 <mat-icon aria-hidden="true">search</mat-icon>
                 <span class="sr-only">Search expenses</span>
                 <input
+                  #expenseSearchInput
                   type="search"
                   placeholder="Search expenses"
                   [value]="query()"
@@ -77,6 +110,31 @@ import { MonthMemberControls } from '../shared/month-member-controls';
               </button>
             </div>
           </header>
+
+          <div class="mobile-expense-list">
+            @for (expense of visibleRows(); track expense.id) {
+              <article class="mobile-expense-row">
+                <span>{{ expense.dayLabel }}</span>
+                <strong>{{ expense.name }}</strong>
+                <span class="badge" [style.color]="expense.categoryColor">
+                  {{ expense.categoryName }}
+                </span>
+                <span class="avatar mini">{{ expense.memberInitial }}</span>
+                <b>{{ expense.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</b>
+                <span class="badge neutral">
+                  {{ expense.typeLabel === 'recurring' ? 'Recur' : '1x' }}
+                </span>
+              </article>
+            } @empty {
+              <div class="empty-state">No expenses match this view</div>
+            }
+            @if (filteredRows().length > 6) {
+              <button class="mobile-view-all" type="button" (click)="toggleExpenseRows()">
+                {{ showAllRows() ? 'Show fewer expenses' : 'View all expenses' }}
+                <mat-icon aria-hidden="true">{{ showAllRows() ? 'expand_less' : 'expand_more' }}</mat-icon>
+              </button>
+            }
+          </div>
 
           <div class="data-table-wrap">
             <table class="data-table">
@@ -187,12 +245,15 @@ import { MonthMemberControls } from '../shared/month-member-controls';
         </div>
       </section>
     </section>
+    }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ExpensesPage {
   readonly store = inject(BudgetStore);
+  readonly expenseSearchInput = viewChild<ElementRef<HTMLInputElement>>('expenseSearchInput');
   readonly query = signal('');
+  readonly showAllRows = signal(false);
   readonly filteredRows = computed(() => {
     const query = this.query().trim().toLowerCase();
     if (!query) {
@@ -206,8 +267,19 @@ export class ExpensesPage {
         .includes(query),
     );
   });
+  readonly visibleRows = computed(() =>
+    this.showAllRows() ? this.filteredRows() : this.filteredRows().slice(0, 6),
+  );
 
   setQuery(event: Event): void {
     this.query.set((event.target as HTMLInputElement).value);
+  }
+
+  focusSearch(): void {
+    this.expenseSearchInput()?.nativeElement.focus();
+  }
+
+  toggleExpenseRows(): void {
+    this.showAllRows.update((show) => !show);
   }
 }

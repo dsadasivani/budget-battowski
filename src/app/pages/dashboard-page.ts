@@ -2,11 +2,13 @@ import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
+import { MatMenuModule } from '@angular/material/menu';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { RouterLink } from '@angular/router';
 
 import { BudgetStore } from '../budget.store';
 import { MonthMemberControls } from '../shared/month-member-controls';
+import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 
 @Component({
   selector: 'app-dashboard-page',
@@ -15,12 +17,82 @@ import { MonthMemberControls } from '../shared/month-member-controls';
     RouterLink,
     MatButtonModule,
     MatIconModule,
+    MatMenuModule,
     MatProgressBarModule,
     MonthMemberControls,
+    AppPageSkeletonComponent,
   ],
   template: `
-    <section class="page">
-      <header class="page-header">
+    @if (store.showPageSkeleton()) {
+      <app-page-skeleton variant="dashboard" />
+    } @else {
+    <section class="page mobile-dashboard-page">
+      <header class="mobile-home-header">
+        <div class="mobile-brand-row">
+          <span class="mobile-page-mark" aria-hidden="true">
+            <mat-icon>dashboard</mat-icon>
+          </span>
+          <strong>Budget Battowski</strong>
+        </div>
+        <button
+          class="mobile-utility-trigger"
+          type="button"
+          aria-label="Open utility menu"
+          [matMenuTriggerFor]="mobileUtilityMenu"
+        >
+          @if (store.userPhoto(); as photo) {
+            <img [src]="photo" alt="" referrerpolicy="no-referrer" />
+          } @else {
+            {{ store.memberInitial(store.userEmail() || undefined) }}
+          }
+        </button>
+
+        <mat-menu #mobileUtilityMenu="matMenu" class="mobile-utility-menu">
+          @for (item of utilityMobileNavItems; track item.path) {
+            <a mat-menu-item [routerLink]="item.path">
+              <mat-icon aria-hidden="true">{{ item.icon }}</mat-icon>
+              <span>{{ item.label }}</span>
+            </a>
+          }
+          <button
+            mat-menu-item
+            type="button"
+            (click)="store.logout()"
+            [disabled]="store.firebase.mode !== 'firebase' || store.isSyncing()"
+          >
+            <mat-icon aria-hidden="true">logout</mat-icon>
+            <span>Sign out</span>
+          </button>
+        </mat-menu>
+      </header>
+
+      <button
+        class="mobile-workspace-card"
+        type="button"
+        aria-label="Change workspace"
+        [matMenuTriggerFor]="mobileWorkspaceMenu"
+      >
+        <span class="sync-dot" aria-hidden="true"></span>
+        <strong>{{ store.activeWorkspace()?.name || 'Battowski Home' }}</strong>
+        <mat-icon aria-hidden="true">expand_more</mat-icon>
+      </button>
+
+      <mat-menu #mobileWorkspaceMenu="matMenu" class="workspace-menu">
+        @for (workspace of store.workspaces(); track workspace.id) {
+          <button mat-menu-item type="button" (click)="store.selectWorkspace(workspace.id)">
+            <mat-icon aria-hidden="true">home_work</mat-icon>
+            <span>{{ workspace.name }}</span>
+          </button>
+        }
+        @if (store.canManageWorkspace()) {
+          <button mat-menu-item type="button" (click)="store.createWorkspace()">
+            <mat-icon aria-hidden="true">add_business</mat-icon>
+            <span>Create workspace</span>
+          </button>
+        }
+      </mat-menu>
+
+      <header class="page-header desktop-page-header">
         <div>
           <h1>Dashboard</h1>
           <p>Month-first overview of spending, savings, and runway.</p>
@@ -33,6 +105,14 @@ import { MonthMemberControls } from '../shared/month-member-controls';
           </span>
         </div>
       </header>
+
+      <div class="mobile-dashboard-filters">
+        <app-month-member-controls />
+        <span class="runway-badge" [class.warning]="store.remainingFunds() < 0">
+          <mat-icon aria-hidden="true">shield</mat-icon>
+          {{ store.runwayLabel() }}
+        </span>
+      </div>
 
       <section class="stat-grid five" aria-label="Monthly financial summary">
         <article class="stat-card">
@@ -64,7 +144,7 @@ import { MonthMemberControls } from '../shared/month-member-controls';
 
       <section class="dashboard-layout">
         <div class="panel-stack">
-          <article class="panel-card">
+          <article class="panel-card mobile-recurring-panel">
             <header class="panel-heading">
               <div>
                 <h2><mat-icon aria-hidden="true">sync_alt</mat-icon> Recurring Expenses</h2>
@@ -87,7 +167,7 @@ import { MonthMemberControls } from '../shared/month-member-controls';
             </div>
           </article>
 
-          <article class="panel-card">
+          <article class="panel-card mobile-hidden">
             <header class="panel-heading">
               <div>
                 <h2><mat-icon aria-hidden="true">receipt_long</mat-icon> One-time Expenses</h2>
@@ -112,7 +192,7 @@ import { MonthMemberControls } from '../shared/month-member-controls';
         </div>
 
         <div class="panel-stack">
-          <article class="panel-card">
+          <article class="panel-card mobile-investments-panel">
             <header class="panel-heading">
               <div>
                 <h2><mat-icon aria-hidden="true">trending_up</mat-icon> Investments</h2>
@@ -135,7 +215,7 @@ import { MonthMemberControls } from '../shared/month-member-controls';
             </div>
           </article>
 
-          <article class="panel-card tall">
+          <article class="panel-card tall mobile-hidden">
             <header class="panel-heading">
               <div>
                 <h2><mat-icon aria-hidden="true">bar_chart</mat-icon> Category Budget Progress</h2>
@@ -164,9 +244,16 @@ import { MonthMemberControls } from '../shared/month-member-controls';
         </div>
       </section>
     </section>
+    }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class DashboardPage {
   readonly store = inject(BudgetStore);
+  readonly utilityMobileNavItems = [
+    { label: 'Categories', icon: 'sell', path: '/categories' },
+    { label: 'Import/Export', icon: 'upload_file', path: '/import-export' },
+    { label: 'Workspace', icon: 'group', path: '/workspace' },
+    { label: 'Settings', icon: 'settings', path: '/settings' },
+  ];
 }
