@@ -22,120 +22,158 @@
     </section>
   </main>
 } @else if (firebase.mode === 'firebase' && !workspaceId() && !isSessionChecking()) {
-  <main class="login-shell" id="main-content">
-    <section class="mobile-login-card" aria-labelledby="mobile-login-title">
-      <div class="mobile-login-mark" aria-hidden="true">
-        <mat-icon>verified_user</mat-icon>
-      </div>
-      <div class="mobile-secure-badge">
-        <mat-icon aria-hidden="true">lock</mat-icon>
-        Secure sign in
-      </div>
-      <h1 id="mobile-login-title">Budget Battowski</h1>
-      <p class="mobile-login-copy">
-        Private finance planning for households that want clear budgets, shared visibility, and
-        calm monthly decisions.
-      </p>
+  <main class="login-shell login-showcase-shell" id="main-content">
+    <section class="login-showcase" aria-labelledby="login-showcase-title">
+      <header class="login-showcase-top">
+        <a class="login-logo" href="/" aria-label="Budget Battowski home">
+          <span class="app-mark" aria-hidden="true">
+            <mat-icon>account_balance_wallet</mat-icon>
+          </span>
+          <strong>Budget Battowski</strong>
+        </a>
+        <span class="login-secure-badge">
+          <mat-icon aria-hidden="true">lock</mat-icon>
+          Private finance workspace
+        </span>
+      </header>
 
-      <div class="mobile-login-features" aria-label="Budget Battowski highlights">
-        <article>
-          <span aria-hidden="true"><mat-icon>radio_button_checked</mat-icon></span>
-          <div>
-            <h2>Plan every month with confidence</h2>
-            <p>Track recurring expenses, one-time spending, investments, and loans in one private workspace.</p>
-          </div>
-        </article>
-        <article>
-          <span aria-hidden="true"><mat-icon>groups</mat-icon></span>
-          <div>
-            <h2>Built for shared households</h2>
-            <p>Keep members aligned with simple budgeting views and clear financial ownership.</p>
-          </div>
-        </article>
+      <div class="login-showcase-grid">
+        <section
+          class="login-carousel-copy"
+          aria-roledescription="carousel"
+          aria-label="Budget Battowski feature tour"
+          aria-live="polite"
+        >
+          @for (feature of loginFeatures; track feature.title; let index = $index) {
+            <article
+              class="login-copy-slide"
+              [class.active]="index === loginCarouselIndex()"
+              [attr.aria-hidden]="index === loginCarouselIndex() ? null : 'true'"
+            >
+              <span class="feature-eyebrow">
+                <mat-icon aria-hidden="true">{{ feature.icon }}</mat-icon>
+                {{ feature.eyebrow }}
+              </span>
+              <h1 [attr.id]="index === loginCarouselIndex() ? 'login-showcase-title' : null">
+                {{ feature.title }}
+              </h1>
+              <p>{{ feature.description }}</p>
+              <div class="feature-highlights" aria-label="Feature highlights">
+                @for (highlight of feature.highlights; track highlight) {
+                  <span>{{ highlight }}</span>
+                }
+              </div>
+            </article>
+          }
+        </section>
+
+        <section class="login-feature-stage" aria-label="Feature preview images">
+          @for (feature of loginFeatures; track feature.title; let index = $index) {
+            <article
+              class="login-feature-slide {{ feature.visualClass }}"
+              [class.active]="index === loginCarouselIndex()"
+              [attr.aria-hidden]="index === loginCarouselIndex() ? null : 'true'"
+            >
+              <div class="feature-visual" role="img" [attr.aria-label]="feature.imageLabel">
+                <div class="visual-window">
+                  <div class="visual-toolbar" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </div>
+                  <div class="visual-card-grid">
+                    @for (metric of feature.metrics; track metric.label) {
+                      <span class="visual-card {{ metric.tone }}">
+                        <small>{{ metric.label }}</small>
+                        <strong>{{ metric.value }}</strong>
+                      </span>
+                    }
+                  </div>
+                  <div class="visual-chart" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </div>
+                  <div class="visual-row-list" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </div>
+                </div>
+                <div class="visual-phone" aria-hidden="true">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+              </div>
+            </article>
+          }
+        </section>
+      </div>
+
+      <div class="login-carousel-controls" aria-label="Feature carousel controls">
+        <button
+          mat-icon-button
+          type="button"
+          aria-label="Show previous feature"
+          (click)="previousLoginFeature()"
+        >
+          <mat-icon aria-hidden="true">chevron_left</mat-icon>
+        </button>
+        <div class="login-carousel-dots" aria-label="Select feature">
+          @for (feature of loginFeatures; track feature.title; let index = $index) {
+            <button
+              type="button"
+              [class.active]="index === loginCarouselIndex()"
+              [attr.aria-label]="'Show feature: ' + feature.eyebrow"
+              [attr.aria-current]="index === loginCarouselIndex() ? 'true' : null"
+              (click)="selectLoginFeature(index)"
+            ></button>
+          }
+        </div>
+        <button
+          mat-icon-button
+          type="button"
+          aria-label="Show next feature"
+          (click)="nextLoginFeature()"
+        >
+          <mat-icon aria-hidden="true">chevron_right</mat-icon>
+        </button>
+        <button
+          mat-icon-button
+          type="button"
+          [attr.aria-label]="loginCarouselPaused() ? 'Play feature carousel' : 'Pause feature carousel'"
+          (click)="toggleLoginCarousel()"
+        >
+          <mat-icon aria-hidden="true">{{ loginCarouselPaused() ? 'play_arrow' : 'pause' }}</mat-icon>
+        </button>
+      </div>
+    </section>
+
+    <section class="login-auth-dock" aria-labelledby="login-title">
+      <div>
+        <h2 id="login-title">Open your budget workspace</h2>
+        <p aria-live="polite">
+          @if (syncError()) {
+            {{ syncError() }}
+          } @else {
+            Secure Google sign in keeps household finance data private.
+          }
+        </p>
       </div>
 
       <button
-        class="google-login mobile-google-login"
+        class="google-login"
         mat-flat-button
         type="button"
         (click)="loginWithGoogle()"
         [disabled]="isSyncing()"
         aria-label="Continue with Google to open Budget Battowski"
       >
+        <span class="google-mark" aria-hidden="true">G</span>
         Continue with Google
       </button>
-
-      <p class="mobile-protected-line" aria-live="polite">
-        @if (syncError()) {
-          {{ syncError() }}
-        } @else {
-          Protected by secure authentication
-        }
-      </p>
-    </section>
-
-    <section class="login-brand" aria-labelledby="login-brand-title">
-      <a class="login-logo" href="/" aria-label="Budget Battowski home">
-        <span class="app-mark" aria-hidden="true">
-          <mat-icon>account_balance_wallet</mat-icon>
-        </span>
-        <strong>Budget Battowski</strong>
-      </a>
-
-      <div class="login-hero">
-        <h1 id="login-brand-title">Budget Battowski</h1>
-        <p>Private finance command center</p>
-      </div>
-
-      <ul class="login-benefits" aria-label="Budget Battowski highlights">
-        <li><mat-icon aria-hidden="true">check</mat-icon> Month-first planning</li>
-        <li><mat-icon aria-hidden="true">check</mat-icon> Recurring plans</li>
-        <li><mat-icon aria-hidden="true">check</mat-icon> Private synced workspace</li>
-        <li><mat-icon aria-hidden="true">check</mat-icon> Shared household/workspace budgeting</li>
-      </ul>
-
-      <p class="privacy-line">
-        <mat-icon aria-hidden="true">shield</mat-icon>
-        Your data is private, encrypted, and never sold.
-      </p>
-    </section>
-
-    <section class="login-form-wrap" aria-labelledby="login-title">
-      <div class="login-card">
-        <div class="login-card-brand">
-          <span class="app-mark small" aria-hidden="true">
-            <mat-icon>account_balance_wallet</mat-icon>
-          </span>
-          <strong>Budget Battowski</strong>
-        </div>
-        <h2 id="login-title">Welcome back</h2>
-        <p>Sign in to continue</p>
-
-        <button
-          class="google-login"
-          mat-stroked-button
-          type="button"
-          (click)="loginWithGoogle()"
-          [disabled]="isSyncing()"
-          aria-label="Continue with Google to open Budget Battowski"
-        >
-          <span class="google-mark" aria-hidden="true">G</span>
-          Continue with Google
-        </button>
-
-        <p class="login-note" aria-live="polite">
-          @if (syncError()) {
-            {{ syncError() }}
-          } @else {
-            By continuing, you agree to our terms and privacy policy.
-          }
-        </p>
-
-        <div class="secure-note">
-          <mat-icon aria-hidden="true">lock</mat-icon>
-          Secured with end-to-end encryption
-        </div>
-      </div>
     </section>
   </main>
 } @else {

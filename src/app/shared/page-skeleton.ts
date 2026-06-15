@@ -419,27 +419,27 @@ function range(length: number): number[] {
 
         .mobile-skeleton {
           display: grid;
-          gap: 12px;
+          gap: 8px;
           width: 100%;
           overflow: hidden;
-          padding: 0 12px 14px;
+          padding: 0 8px 10px;
         }
 
         .mobile-sk-hero {
           display: flex;
           align-items: center;
           justify-content: flex-start;
-          gap: 12px;
-          min-height: 74px;
-          margin: 0 -12px;
+          gap: 8px;
+          min-height: 58px;
+          margin: 0 -8px;
           overflow: hidden;
-          padding: 20px 16px;
+          padding: 14px;
           background: #10213f;
         }
 
         .mobile-title {
-          width: 58vw;
-          height: 28px;
+          width: 52vw;
+          height: 22px;
           flex: 0 0 auto;
           border-radius: 999px;
           background: linear-gradient(100deg, #1e3357 8%, #2a426a 20%, #1e3357 36%);
@@ -447,8 +447,8 @@ function range(length: number): number[] {
         }
 
         .mobile-action {
-          width: 34vw;
-          height: 40px;
+          width: 30vw;
+          height: 34px;
           flex: 0 0 auto;
           border-radius: 999px;
           background: linear-gradient(100deg, #1e3357 8%, #2a426a 20%, #1e3357 36%);
@@ -457,20 +457,20 @@ function range(length: number): number[] {
 
         .mobile-control {
           display: block;
-          width: min(240px, 66vw);
-          height: 36px;
-          margin-top: 8px;
+          width: min(210px, 62vw);
+          height: 32px;
+          margin-top: 4px;
           border-radius: 999px;
         }
 
         .mobile-sk-stats {
           display: grid;
-          grid-auto-columns: minmax(142px, calc((100vw - 34px) / 2));
+          grid-auto-columns: minmax(132px, calc((100vw - 26px) / 2));
           grid-auto-flow: column;
-          gap: 10px;
+          gap: 8px;
           overflow-x: auto;
-          margin-right: -12px;
-          padding-right: 12px;
+          margin-right: -8px;
+          padding-right: 8px;
           scrollbar-width: none;
         }
 
@@ -480,67 +480,67 @@ function range(length: number): number[] {
 
         .mobile-sk-stat {
           display: grid;
-          min-height: 94px;
+          min-height: 78px;
           align-content: start;
-          gap: 8px;
-          padding: 14px;
+          gap: 6px;
+          padding: 10px;
         }
 
         .mobile-sk-panels {
           display: grid;
-          gap: 12px;
+          gap: 8px;
           margin-top: 0;
         }
 
         .mobile-sk-panel {
           display: grid;
-          min-height: clamp(300px, 42vh, 420px);
+          min-height: clamp(240px, 36vh, 340px);
           align-content: start;
-          gap: 12px;
+          gap: 8px;
           overflow: hidden;
-          padding: 18px;
+          padding: 12px;
         }
 
         .sk-box.sk-icon {
-          width: 30px;
-          height: 30px;
+          width: 27px;
+          height: 27px;
           border-radius: 8px;
         }
 
         .short {
-          width: min(92px, 68%);
-          height: 12px;
+          width: min(82px, 66%);
+          height: 10px;
         }
 
         .value {
-          width: min(118px, 82%);
-          height: 22px;
+          width: min(104px, 80%);
+          height: 18px;
         }
 
         .title-line {
           width: 75%;
-          height: 20px;
+          height: 16px;
         }
 
         .paragraph {
           width: 88%;
-          height: 14px;
+          height: 11px;
         }
 
         .mobile-panel-title {
-          width: min(240px, 74%);
-          height: 18px;
+          width: min(210px, 72%);
+          height: 15px;
         }
 
         .mobile-panel-subtitle {
-          width: min(320px, 88%);
-          height: 14px;
+          width: min(280px, 86%);
+          height: 11px;
         }
 
         .mobile-sk-block {
           display: block;
           position: relative;
-          min-height: clamp(210px, 30vh, 310px);
+          min-height: clamp(170px, 26vh, 250px);
           overflow: hidden;
           border-radius: 8px;
           background: linear-gradient(100deg, #e7edf5 8%, #f8fbff 20%, #e7edf5 36%);
@@ -554,9 +554,9 @@ function range(length: number): number[] {
           background: repeating-linear-gradient(
             to bottom,
             transparent 0,
-            transparent 68px,
-            rgba(203, 213, 225, 0.42) 69px,
-            transparent 70px
+            transparent 54px,
+            rgba(203, 213, 225, 0.42) 55px,
+            transparent 56px
           );
           content: '';
         }

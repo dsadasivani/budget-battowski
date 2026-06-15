@@ -481,6 +481,15 @@ export class BudgetStore implements OnDestroy {
     this.canReviewMonth() ? this.buildMonthlyReviewRows(this.selectedMonth()) : [],
   );
   readonly hasMonthlyReviewRows = computed(() => this.monthlyReviewRows().length > 0);
+  readonly monthlyReviewStatusLabel = computed(() => {
+    const count = this.monthlyReviewRows().length;
+
+    if (!this.canReviewMonth()) {
+      return 'Past month';
+    }
+
+    return count ? `${count} pending` : 'All reviewed';
+  });
   readonly expenseCategories = computed(() =>
     this.categories().filter((category) => this.categoryType(category) === 'Expenses'),
   );
@@ -1437,7 +1446,7 @@ export class BudgetStore implements OnDestroy {
           ariaLabel: 'Bulk editor',
           autoFocus: false,
           data,
-          maxHeight: 'calc(100dvh - 80px)',
+          maxHeight: 'calc(100dvh - 44px)',
           panelClass: 'bulk-editor-sheet-panel',
           restoreFocus: true,
         },

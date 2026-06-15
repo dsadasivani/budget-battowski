@@ -1192,37 +1192,408 @@
     margin: 0;
     font-size: 1rem;
   }
+
+  /* Final mobile bulk-editor density pass */
+  :host {
+    font-family:
+      'Source Sans 3',
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      BlinkMacSystemFont,
+      'Segoe UI',
+      sans-serif;
+    font-size: 0.86rem;
+  }
+
+  :host ::ng-deep {
+    .mat-mdc-dialog-surface {
+      max-height: calc(100dvh - 44px);
+      border-radius: 14px 14px 0 0;
+    }
+
+    .mat-mdc-tab-labels {
+      gap: 14px;
+      padding-inline: 16px;
+    }
+
+    .mat-mdc-tab {
+      height: 38px;
+    }
+
+    .mat-mdc-tab .mdc-tab__text-label {
+      font-size: 0.78rem;
+      font-weight: 500;
+    }
+
+    .mat-mdc-tab-group.mat-primary .mat-mdc-tab-header .mdc-tab-indicator__content--underline {
+      border-width: 2px;
+    }
+
+    .mat-mdc-form-field {
+      --mat-form-field-container-height: 36px;
+      --mat-form-field-container-vertical-padding: 5px;
+      --mat-form-field-outlined-container-shape: 7px;
+    }
+
+    .mat-mdc-form-field-flex {
+      min-height: 36px;
+    }
+
+    .mat-mdc-input-element,
+    .mat-mdc-select-value {
+      font-size: 0.78rem;
+      font-weight: 400;
+    }
+
+    .mobile-row-heading .mat-mdc-form-field {
+      --mat-form-field-container-height: 38px;
+      --mat-form-field-container-vertical-padding: 5px;
+    }
+
+    .mobile-row-heading .mat-mdc-input-element {
+      font-size: 0.88rem;
+      font-weight: 600;
+    }
+
+    .mat-mdc-icon-button {
+      --mdc-icon-button-state-layer-size: 34px;
+      --mdc-icon-button-icon-size: 18px;
+      width: 34px;
+      height: 34px;
+      padding: 6px;
+    }
+
+    .mat-datepicker-toggle .mat-mdc-icon-button {
+      --mdc-icon-button-state-layer-size: 32px;
+      --mdc-icon-button-icon-size: 17px;
+      width: 32px;
+      height: 32px;
+      padding: 7px;
+    }
+  }
+
+  .dialog-title {
+    grid-template-columns: 36px minmax(0, 1fr) 34px;
+    gap: 7px;
+    padding: 24px 14px 10px;
+    border-radius: 14px 14px 0 0;
+
+    h2 {
+      font-size: 0.96rem;
+      font-weight: 600;
+      line-height: 1.08;
+    }
+
+    p {
+      margin-top: 3px;
+      font-size: 0.68rem;
+      font-weight: 400;
+      line-height: 1.18;
+    }
+  }
+
+  .mobile-drag-handle {
+    top: 8px;
+    width: 46px;
+    height: 4px;
+  }
+
+  .title-mark {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+
+    mat-icon {
+      width: 20px;
+      height: 20px;
+      font-size: 20px;
+    }
+  }
+
+  .sheet-summary {
+    gap: 8px;
+    padding: 8px 16px;
+  }
+
+  .summary-card {
+    min-height: 30px;
+    gap: 6px;
+    padding-inline: 10px;
+    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.07);
+
+    mat-icon {
+      width: 17px;
+      height: 17px;
+      font-size: 17px;
+    }
+
+    span {
+      font-size: 0.74rem;
+      font-weight: 500;
+    }
+  }
+
+  .bulk-toolbar {
+    gap: 7px;
+    padding: 9px 14px 8px;
+
+    strong {
+      font-size: 0.82rem;
+      font-weight: 600;
+      line-height: 1.12;
+    }
+
+    button {
+      min-height: 36px;
+      padding-inline: 9px 10px;
+      border-radius: 7px;
+      font-size: 0.74rem;
+      font-weight: 600;
+    }
+
+    button mat-icon {
+      width: 18px;
+      height: 18px;
+      margin-right: 5px;
+      font-size: 18px;
+    }
+  }
+
+  .mobile-card-list {
+    gap: 6px;
+    padding: 0 14px 10px;
+  }
+
+  .mobile-row-card {
+    grid-template-columns: 26px minmax(0, 1fr) auto;
+    gap: 5px;
+    padding: 8px 9px;
+    border-radius: 7px;
+  }
+
+  .mobile-row-heading {
+    display: contents;
+  }
+
+  .mobile-row-number {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 26px;
+    min-height: 26px;
+    font-size: 0.64rem;
+    font-weight: 600;
+  }
+
+  .mobile-row-title {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+    font-size: 0.8rem;
+    font-weight: 600;
+    line-height: 1.12;
+  }
+
+  .row-actions {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    align-self: start;
+    justify-self: end;
+    gap: 0;
+  }
+
+  .mobile-card-money-row {
+    grid-column: 2 / -1;
+    grid-row: 2;
+    gap: 6px;
+  }
+
+  .mobile-card-meta-row,
+  .mobile-card-metrics-row {
+    grid-column: 2 / -1;
+    gap: 5px;
+    font-size: 0.68rem;
+    font-weight: 400;
+  }
+
+  .mobile-card-meta-row {
+    grid-row: 3;
+  }
+
+  .mobile-card-metrics-row {
+    grid-row: 4;
+  }
+
+  .mobile-card-amount {
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+
+  .mobile-card-note {
+    grid-column: 2 / -1;
+    overflow: hidden;
+    font-size: 0.66rem;
+    font-weight: 400;
+    line-height: 1.18;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cell-pill,
+  .category-pill,
+  .income-pill,
+  .investment-pill,
+  .type-pill,
+  .mobile-suggestion-pill,
+  .audit-operation {
+    min-height: 24px;
+    gap: 5px;
+    padding-inline: 8px;
+    font-size: 0.62rem;
+    font-weight: 500;
+  }
+
+  .mobile-suggestion-pill {
+    grid-column: 1 / -1;
+    min-height: 26px;
+  }
+
+  .mobile-row-card > mat-form-field {
+    grid-column: 1 / -1;
+  }
+
+  .mobile-field-grid {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .suggestion-hint {
+    grid-column: 1 / -1;
+    margin-top: 2px;
+    font-size: 0.66rem;
+    font-weight: 400;
+  }
+
+  .color-control {
+    gap: 6px;
+
+    input[type='color'] {
+      width: 34px;
+      height: 32px;
+      padding: 2px;
+      border-radius: 7px;
+    }
+
+    span {
+      min-height: 30px;
+      gap: 6px;
+      padding-inline: 8px;
+      font-size: 0.72rem;
+      font-weight: 500;
+    }
+  }
+
+  .mobile-audit-panel {
+    grid-column: 1 / -1;
+    gap: 8px;
+
+    header {
+      gap: 2px;
+      padding: 10px 12px;
+    }
+
+    header strong {
+      font-size: 0.84rem;
+      font-weight: 600;
+    }
+
+    header span {
+      font-size: 0.7rem;
+      font-weight: 400;
+    }
+  }
+
+  .mobile-audit-item {
+    gap: 5px 8px;
+    padding: 8px 10px;
+    font-size: 0.72rem;
+
+    strong {
+      font-weight: 600;
+    }
+  }
+
+  .mobile-row-card.row-editing {
+    box-shadow:
+      inset 3px 0 0 var(--editor-blue),
+      0 8px 18px rgba(47, 128, 255, 0.1);
+  }
+
+  .new-row,
+  .mobile-row-card.new-row {
+    box-shadow: inset 3px 0 0 var(--editor-new);
+  }
+
+  .sheet-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+    padding: 8px 14px 10px;
+
+    button {
+      min-width: 0;
+      min-height: 38px;
+      border-radius: 7px;
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+  }
+
+  .dialog-error {
+    grid-column: 1 / -1;
+    gap: 6px;
+    font-size: 0.76rem;
+    font-weight: 500;
+    line-height: 1.2;
+
+    mat-icon {
+      width: 18px;
+      height: 18px;
+      flex-basis: 18px;
+      font-size: 18px;
+    }
+  }
 }
 
 @media (max-width: 480px) {
   :host ::ng-deep {
     .mat-mdc-tab-labels {
-      padding-inline: 20px;
+      padding-inline: 14px;
     }
   }
 
   .dialog-title {
-    grid-template-columns: 46px minmax(0, 1fr) 44px;
-    padding: 38px 20px 18px;
+    grid-template-columns: 34px minmax(0, 1fr) 34px;
+    padding: 22px 12px 9px;
 
     h2 {
-      font-size: 1.28rem;
+      font-size: 0.92rem;
     }
 
     p {
-      font-size: 0.94rem;
+      font-size: 0.7rem;
     }
   }
 
   .title-mark {
-    width: 46px;
-    height: 46px;
-    border-radius: 16px;
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
 
     mat-icon {
-      width: 27px;
-      height: 27px;
-      font-size: 27px;
+      width: 22px;
+      height: 22px;
+      font-size: 22px;
     }
   }
 
@@ -1230,50 +1601,59 @@
   .bulk-toolbar,
   .mobile-card-list,
   .sheet-actions {
-    padding-inline: 20px;
+    padding-inline: 12px;
   }
 
   .bulk-toolbar {
-    gap: 12px;
+    gap: 7px;
 
     strong {
-      font-size: 1.04rem;
+      font-size: 0.86rem;
     }
 
     button {
       min-width: 0;
-      min-height: 44px;
-      padding-inline: 14px;
+      min-height: 40px;
+      padding-inline: 9px;
     }
   }
 
   .summary-card {
-    min-height: 46px;
+    min-height: 30px;
+    padding-inline: 9px;
 
     span {
-      font-size: 0.92rem;
+      font-size: 0.7rem;
     }
   }
 
   .mobile-card-list {
-    gap: 14px;
+    gap: 8px;
   }
 
   .mobile-row-card {
-    padding: 16px 14px 18px;
+    padding: 8px;
   }
 
   .mobile-row-heading {
-    grid-template-columns: auto minmax(0, 1fr);
-
     .row-actions {
-      grid-column: 2;
+      grid-column: 3;
       justify-self: end;
     }
   }
 
   .mobile-field-grid {
-    grid-template-columns: 1fr;
-    gap: 10px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .sheet-actions {
+    gap: 7px;
+    padding-bottom: 10px;
+
+    button {
+      min-height: 40px;
+      font-size: 0.74rem;
+    }
   }
 }

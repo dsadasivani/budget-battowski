@@ -108,10 +108,6 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 
       <div class="mobile-dashboard-filters">
         <app-month-member-controls />
-        <span class="runway-badge" [class.warning]="store.remainingFunds() < 0">
-          <mat-icon aria-hidden="true">shield</mat-icon>
-          {{ store.runwayLabel() }}
-        </span>
       </div>
 
       <section class="stat-grid five" aria-label="Monthly financial summary">

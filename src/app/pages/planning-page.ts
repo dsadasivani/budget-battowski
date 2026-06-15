@@ -63,7 +63,24 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
         </div>
       </header>
 
-      <section class="stat-grid three">
+      <section class="stat-grid" [class.three]="!store.hasMonthlyReviewRows()">
+        @if (store.hasMonthlyReviewRows()) {
+          <article class="stat-card">
+            <span class="icon-chip purple"><mat-icon aria-hidden="true">fact_check</mat-icon></span>
+            <p>Pending Review</p>
+            <strong>{{ store.monthlyReviewRows().length }}</strong>
+            <small>{{ store.monthlyReviewStatusLabel() }}</small>
+            <button
+              mat-stroked-button
+              type="button"
+              (click)="store.openMonthlyReview()"
+              [disabled]="!store.canWrite()"
+              aria-label="Review expected expenses and investments"
+            >
+              Review
+            </button>
+          </article>
+        }
         <article class="stat-card">
           <span class="icon-chip blue"><mat-icon aria-hidden="true">target</mat-icon></span>
           <p>Monthly Budget</p>

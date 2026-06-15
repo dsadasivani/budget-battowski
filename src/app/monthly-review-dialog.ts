@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
@@ -51,6 +51,12 @@ export class MonthlyReviewDialog {
     inject<MatDialogRef<MonthlyReviewDialog, MonthlyReviewResult>>(MatDialogRef);
   protected readonly data = inject<MonthlyReviewData>(MAT_DIALOG_DATA);
   protected readonly rows = signal<MonthlyReviewRow[]>(this.data.rows.map((row) => ({ ...row })));
+  protected readonly expenseCount = computed(
+    () => this.rows().filter((row) => row.sourceType === 'expense').length,
+  );
+  protected readonly investmentCount = computed(
+    () => this.rows().filter((row) => row.sourceType === 'investment').length,
+  );
   protected readonly validationError = signal('');
 
   protected sourceLabel(row: MonthlyReviewRow): string {
@@ -62,11 +68,25 @@ export class MonthlyReviewDialog {
     this.rows.update((rows) => [...rows]);
   }
 
+  protected approveRow(row: MonthlyReviewRow): void {
+    if (!this.isValidAmount(row)) {
+      this.validationError.set(`Amount must be zero or more for ${row.label}.`);
+      return;
+    }
+
+    this.dialogRef.close({
+      rows: [
+        {
+          ...row,
+          amount: Number(row.amount) || 0,
+          pendingDelete: false,
+        },
+      ],
+    });
+  }
+
   protected approve(): void {
-    const invalidRow = this.rows().find(
-      (row) =>
-        !row.pendingDelete && (!Number.isFinite(Number(row.amount)) || Number(row.amount) < 0),
-    );
+    const invalidRow = this.rows().find((row) => !this.isValidAmount(row));
 
     if (invalidRow) {
       this.validationError.set('Amount must be zero or more for every approved row.');
@@ -79,5 +99,9 @@ export class MonthlyReviewDialog {
         amount: Number(row.amount) || 0,
       })),
     });
+  }
+
+  private isValidAmount(row: MonthlyReviewRow): boolean {
+    return row.pendingDelete || (Number.isFinite(Number(row.amount)) && Number(row.amount) >= 0);
   }
 }

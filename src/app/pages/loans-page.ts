@@ -133,7 +133,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
         </article>
 
         <div class="panel-stack">
-          <article class="panel-card mobile-hidden">
+          <article class="panel-card loan-calendar-panel">
             <header class="panel-heading">
               <h2>EMI Calendar</h2>
               <p>{{ store.monthLabel() }} due dates and payment reminders</p>
