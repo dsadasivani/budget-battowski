@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+import { CommonModule, NgOptimizedImage } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -12,6 +12,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
   selector: 'app-loans-page',
   imports: [
     CommonModule,
+    NgOptimizedImage,
     MatButtonModule,
     MatIconModule,
     MatProgressBarModule,
@@ -106,6 +107,12 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                 <div>
                   <small>EMI</small>
                   <b>{{ loan.emi | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}/mo</b>
+                  @if (loan.paymentModeMeta; as paymentMode) {
+                    <span class="payment-mode-badge {{ paymentMode.tone }}">
+                      <img [ngSrc]="paymentMode.iconSrc" width="18" height="18" alt="" />
+                      {{ paymentMode.label }}
+                    </span>
+                  }
                 </div>
                 <div>
                   <small>{{ loan.monthsLeft }} months left</small>

@@ -329,6 +329,89 @@ a {
   }
 }
 
+.payment-mode-badge {
+  display: inline-flex;
+  min-height: 30px;
+  max-width: 100%;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: 1px solid #d9e3f0;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #34445b;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  img {
+    display: block;
+    width: 18px;
+    height: 18px;
+    margin-right: 7px;
+    border-radius: 4px;
+  }
+
+  &.phonepe {
+    border-color: #ddd0ff;
+    background: #f0eaff;
+    color: #5f259f;
+  }
+
+  &.applepay {
+    border-color: #d7dde7;
+    background: #f1f5f9;
+    color: #111827;
+  }
+
+  &.gpay {
+    border-color: #cfe5ff;
+    background: #eaf4ff;
+    color: #1a73e8;
+  }
+
+  &.googlepay {
+    border-color: #cfe5ff;
+    background: #eaf4ff;
+    color: #1a73e8;
+  }
+
+  &.paytm {
+    border-color: #beeefa;
+    background: #e7fbff;
+    color: #0a6ea8;
+  }
+
+  &.bhim {
+    border-color: #b9ead8;
+    background: #e9fbf4;
+    color: #0f6b4f;
+  }
+
+  &.samsungpay {
+    border-color: #d7dcff;
+    background: #eef0ff;
+    color: #1428a0;
+  }
+
+  &.cash {
+    border-color: #bbf7d0;
+    background: #e6fbf2;
+    color: #047857;
+  }
+
+  &.card,
+  &.credit-card,
+  &.debit-card {
+    border-color: #fed7aa;
+    background: #fff5e8;
+    color: #c2410c;
+  }
+}
+
 .stat-grid,
 .content-grid,
 .dashboard-layout,
@@ -2496,7 +2579,8 @@ a {
     grid-template-columns: 52px minmax(0, 1fr) 32px auto;
     grid-template-areas:
       'date name avatar amount'
-      'date category type type';
+      'date category type type'
+      'date payment payment payment';
     min-height: 70px;
     gap: 4px 8px;
     padding: 10px 18px;
@@ -2541,6 +2625,21 @@ a {
       justify-self: end;
       max-width: 58px;
       min-height: 26px;
+    }
+
+    .mobile-payment-mode-tag {
+      grid-area: payment;
+      justify-self: start;
+      max-width: min(180px, 100%);
+      min-height: 24px;
+      padding-inline: 8px;
+      font-size: 0.68rem;
+
+      img {
+        width: 16px;
+        height: 16px;
+        margin-right: 5px;
+      }
     }
   }
 
@@ -3012,7 +3111,7 @@ a {
 
   .mobile-expense-row {
     grid-template-columns: 42px minmax(0, 1fr) 28px auto;
-    min-height: 58px;
+    min-height: 68px;
     gap: 2px 7px;
     padding: 8px 14px;
 
@@ -3039,6 +3138,19 @@ a {
     .badge.neutral {
       max-width: 54px;
       min-height: 24px;
+    }
+
+    .mobile-payment-mode-tag {
+      max-width: 154px;
+      min-height: 22px;
+      padding-inline: 7px;
+      font-size: 0.62rem;
+
+      img {
+        width: 14px;
+        height: 14px;
+        margin-right: 4px;
+      }
     }
   }
 
@@ -3765,7 +3877,7 @@ a {
 
   .mobile-expense-row {
     grid-template-columns: 36px minmax(0, 1fr) 24px auto;
-    min-height: 44px;
+    min-height: 60px;
     gap: 0 5px;
     padding: 5px 9px;
 
@@ -3788,6 +3900,19 @@ a {
     .badge.neutral {
       max-width: 44px;
       min-height: 20px;
+    }
+
+    .mobile-payment-mode-tag {
+      max-width: 132px;
+      min-height: 19px;
+      padding-inline: 6px;
+      font-size: 0.58rem;
+
+      img {
+        width: 12px;
+        height: 12px;
+        margin-right: 3px;
+      }
     }
   }
 

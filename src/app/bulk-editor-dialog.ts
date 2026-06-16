@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+import { CommonModule, NgOptimizedImage } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MAT_BOTTOM_SHEET_DATA, MatBottomSheetRef } from '@angular/material/bottom-sheet';
@@ -27,11 +27,17 @@ import type {
   InvestmentFrequency,
   Loan,
   LoanAuditVersion,
+  PaymentMode,
   WorkspaceMember,
 } from './budget.models';
 
 type DraftRow<T extends { id: string }> = T & { isNew?: boolean; pendingDelete?: boolean };
-type EditableDraftRow = { id: string; isNew?: boolean; isSuggested?: boolean; pendingDelete?: boolean };
+type EditableDraftRow = {
+  id: string;
+  isNew?: boolean;
+  isSuggested?: boolean;
+  pendingDelete?: boolean;
+};
 type DraftExpense = DraftRow<ExpenseEntry> & {
   endDate?: string;
   isSuggested?: boolean;
@@ -59,6 +65,10 @@ type AuditDisplayRow = {
   recordedDate?: string;
   startDate?: string;
 };
+type PaymentModeMeta = {
+  iconSrc: string;
+  label: string;
+};
 export type BulkEditorScope = 'monthly' | 'planning' | 'loans';
 
 export interface BulkEditorData {
@@ -67,6 +77,7 @@ export interface BulkEditorData {
   selectedMonth: string;
   members?: WorkspaceMember[];
   selectedMemberEmail?: string;
+  paymentModes?: PaymentMode[];
   categories: BudgetCategory[];
   incomes: IncomeSource[];
   templates: ExpenseTemplate[];
@@ -177,11 +188,32 @@ function isOneTimeInvestment(investment: Pick<InvestmentEntry, 'frequency'>): bo
   return investment.frequency === 'one-time';
 }
 
+const PAYMENT_PROVIDER_ICONS: Record<string, string> = {
+  PhonePe: '/payment-icons/phonepe.svg',
+  'Apple Pay': '/payment-icons/apple-pay.svg',
+  'Samsung Pay': '/payment-icons/samsung-pay.svg',
+  SamsungPay: '/payment-icons/samsung-pay.svg',
+  'Google Pay': '/payment-icons/google-pay.svg',
+  GPay: '/payment-icons/google-pay.svg',
+  Paytm: '/payment-icons/paytm.svg',
+  BHIM: '/payment-icons/bhim.svg',
+};
+const PAYMENT_CARD_ICONS: Record<string, string> = {
+  rupay: '/payment-icons/cards_rupay.svg',
+  maestro: '/payment-icons/cards_maestro.svg',
+  'diners-club': '/payment-icons/cards_diners-club.svg',
+  'master-card': '/payment-icons/cards_master-card.svg',
+  'american-express': '/payment-icons/cards_american-express.svg',
+  visa: '/payment-icons/cards_visa.svg',
+};
+const DEFAULT_CARD_ICON = '/payment-icons/cards_default.svg';
+
 @Component({
   selector: 'app-bulk-editor-dialog',
   imports: [
     CommonModule,
     FormsModule,
+    NgOptimizedImage,
     MatButtonModule,
     MatDatepickerModule,
     MatDialogModule,
@@ -198,12 +230,16 @@ function isOneTimeInvestment(investment: Pick<InvestmentEntry, 'frequency'>): bo
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class BulkEditorDialog {
-  private readonly dialogRef =
-    inject<MatDialogRef<BulkEditorDialog, BulkEditorResult>>(MatDialogRef, { optional: true });
-  private readonly bottomSheetRef =
-    inject<MatBottomSheetRef<BulkEditorDialog, BulkEditorResult>>(MatBottomSheetRef, {
+  private readonly dialogRef = inject<MatDialogRef<BulkEditorDialog, BulkEditorResult>>(
+    MatDialogRef,
+    { optional: true },
+  );
+  private readonly bottomSheetRef = inject<MatBottomSheetRef<BulkEditorDialog, BulkEditorResult>>(
+    MatBottomSheetRef,
+    {
       optional: true,
-    });
+    },
+  );
   private readonly dialogData = inject<BulkEditorData>(MAT_DIALOG_DATA, { optional: true });
   private readonly bottomSheetData = inject<BulkEditorData>(MAT_BOTTOM_SHEET_DATA, {
     optional: true,
@@ -231,6 +267,10 @@ export class BulkEditorDialog {
   protected readonly recurringFrequencies: InvestmentFrequency[] = this.investmentFrequencies;
   protected readonly categoryTypes: CategoryType[] = ['Income', 'Investments', 'Expenses'];
   protected readonly members = this.data.members ?? [];
+  protected readonly paymentModes = this.data.paymentModes ?? [];
+  protected readonly activePaymentModes = this.paymentModes.filter(
+    (paymentMode) => !paymentMode.archivedDate,
+  );
 
   private readonly sourceTemplates = cloneRows(this.data.templates);
   private readonly originalIncomesById = new Map(
@@ -359,6 +399,7 @@ export class BulkEditorDialog {
         type: 'one-time',
         note: '',
         memberEmail: this.defaultMemberEmail(),
+        paymentModeId: '',
         isSuggested: true,
         suggestionMonth: expenseMonth,
       });
@@ -379,6 +420,7 @@ export class BulkEditorDialog {
         type: 'one-time',
         note: '',
         memberEmail: this.defaultMemberEmail(),
+        paymentModeId: '',
         isNew: true,
       },
       ...expenses,
@@ -399,6 +441,7 @@ export class BulkEditorDialog {
         endDate: '',
         skippedMonths: [],
         memberEmail: this.defaultMemberEmail(),
+        paymentModeId: '',
         isNew: true,
       },
       ...templates,
@@ -453,6 +496,7 @@ export class BulkEditorDialog {
         endDate: '',
         notes: '',
         memberEmail: this.defaultMemberEmail(),
+        paymentModeId: '',
         isNew: true,
       },
       ...loans,
@@ -473,6 +517,7 @@ export class BulkEditorDialog {
         notes: '',
         createdDate: todayDate(),
         memberEmail: this.defaultMemberEmail(),
+        paymentModeId: '',
         isNew: true,
       },
       ...investments,
@@ -508,7 +553,9 @@ export class BulkEditorDialog {
   }
 
   protected isRowEditing(row: EditableDraftRow): boolean {
-    return !row.pendingDelete && !!(row.isNew || row.isSuggested || this.editingRowIds().has(row.id));
+    return (
+      !row.pendingDelete && !!(row.isNew || row.isSuggested || this.editingRowIds().has(row.id))
+    );
   }
 
   protected toggleRowEditing(row: EditableDraftRow, event: Event): void {
@@ -676,6 +723,54 @@ export class BulkEditorDialog {
     }
 
     return this.members.find((member) => member.email === email)?.displayName || email;
+  }
+
+  protected paymentModeName(paymentModeId: string | undefined): string {
+    if (!paymentModeId) {
+      return 'Not set';
+    }
+
+    return (
+      this.paymentModes.find((paymentMode) => paymentMode.id === paymentModeId)?.name ??
+      'Saved payment mode'
+    );
+  }
+
+  protected paymentModeIconSrc(paymentMode: PaymentMode): string {
+    if (paymentMode.type === 'cash') {
+      return '/payment-icons/cash.svg';
+    }
+
+    if (paymentMode.provider) {
+      return PAYMENT_PROVIDER_ICONS[paymentMode.provider] ?? '/payment-icons/cash.svg';
+    }
+
+    if (paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card') {
+      return paymentMode.cardType
+        ? (PAYMENT_CARD_ICONS[paymentMode.cardType] ?? DEFAULT_CARD_ICON)
+        : DEFAULT_CARD_ICON;
+    }
+
+    return DEFAULT_CARD_ICON;
+  }
+
+  protected paymentModeMeta(paymentModeId: string | undefined): PaymentModeMeta | null {
+    if (!paymentModeId) {
+      return null;
+    }
+
+    const paymentMode = this.paymentModes.find((mode) => mode.id === paymentModeId);
+    if (!paymentMode) {
+      return {
+        iconSrc: DEFAULT_CARD_ICON,
+        label: 'Saved payment mode',
+      };
+    }
+
+    return {
+      iconSrc: this.paymentModeIconSrc(paymentMode),
+      label: paymentMode.name,
+    };
   }
 
   protected memberDisplayName(member: WorkspaceMember): string {
@@ -855,6 +950,7 @@ export class BulkEditorDialog {
           skippedMonths: template.skippedMonths ?? [],
           archivedDate: template.archivedDate,
           memberEmail: this.recordMemberEmail(template),
+          paymentModeId: template.paymentModeId || undefined,
           auditTrail: template.auditTrail ?? [],
         };
       });
@@ -875,6 +971,7 @@ export class BulkEditorDialog {
           note: expense.note ?? '',
           templateId: expense.templateId || undefined,
           memberEmail: this.recordMemberEmail(expense),
+          paymentModeId: expense.paymentModeId || undefined,
         }))
       : this.data.expenses;
 
@@ -932,6 +1029,7 @@ export class BulkEditorDialog {
           sourceInvestmentId: investment.sourceInvestmentId,
           auditTrail: investment.auditTrail ?? [],
           memberEmail: this.recordMemberEmail(investment),
+          paymentModeId: investment.paymentModeId || undefined,
         })),
       loans: this.loans()
         .filter((loan) => !loan.pendingDelete)
@@ -951,6 +1049,7 @@ export class BulkEditorDialog {
           endDate: requiredDate(loan.endDate),
           notes: loan.notes ?? '',
           memberEmail: this.recordMemberEmail(loan),
+          paymentModeId: loan.paymentModeId || undefined,
           auditTrail: loan.auditTrail ?? [],
         })),
       deleted: {
@@ -1143,7 +1242,8 @@ export class BulkEditorDialog {
       (template.frequency || 'monthly') !== (original.frequency || 'monthly') ||
       (optionalDate(template.startDate) || currentStartDate) !==
         (optionalDate(original.startDate) || currentStartDate) ||
-      (optionalDate(template.endDate) || '') !== (optionalDate(original.endDate) || '')
+      (optionalDate(template.endDate) || '') !== (optionalDate(original.endDate) || '') ||
+      (template.paymentModeId || '') !== (original.paymentModeId || '')
     );
   }
 

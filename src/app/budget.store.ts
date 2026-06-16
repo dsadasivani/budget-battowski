@@ -1,13 +1,6 @@
 ﻿import { registerLocaleData } from '@angular/common';
 import localeEnIn from '@angular/common/locales/en-IN';
-import {
-  Injectable,
-  OnDestroy,
-  computed,
-  effect,
-  inject,
-  signal,
-} from '@angular/core';
+import { Injectable, OnDestroy, computed, effect, inject, signal } from '@angular/core';
 import { BreakpointObserver } from '@angular/cdk/layout';
 import { MatBottomSheet } from '@angular/material/bottom-sheet';
 import { MatDialog } from '@angular/material/dialog';
@@ -55,6 +48,10 @@ import type {
   InvestmentFrequency,
   Loan,
   LoanAuditVersion,
+  PaymentCardType,
+  PaymentMode,
+  PaymentModeProvider,
+  PaymentModeType,
   Workspace,
   WorkspaceMember,
 } from './budget.models';
@@ -180,6 +177,15 @@ function activeStartDate(startDate?: string, createdDate?: string): string | und
 
 function isOneTimeInvestment(investment: Pick<InvestmentEntry, 'frequency'>): boolean {
   return investment.frequency === 'one-time';
+}
+
+function comparePaymentModes(left: PaymentMode, right: PaymentMode): number {
+  const archivedRank = Number(!!left.archivedDate) - Number(!!right.archivedDate);
+  if (archivedRank) {
+    return archivedRank;
+  }
+
+  return left.type.localeCompare(right.type) || left.name.localeCompare(right.name);
 }
 
 type ScheduledPlan = {
@@ -352,7 +358,50 @@ const DEFAULT_LOAN_EMI_CATEGORY: BudgetCategory = {
   color: '#4b5563',
   type: 'Expenses',
 };
+const DEFAULT_CASH_PAYMENT_MODE: PaymentMode = {
+  id: 'payment-mode-cash',
+  type: 'cash',
+  name: 'Cash',
+};
+const PAYMENT_PROVIDER_ICONS: Record<string, string> = {
+  PhonePe: '/payment-icons/phonepe.svg',
+  'Apple Pay': '/payment-icons/apple-pay.svg',
+  'Samsung Pay': '/payment-icons/samsung-pay.svg',
+  SamsungPay: '/payment-icons/samsung-pay.svg',
+  'Google Pay': '/payment-icons/google-pay.svg',
+  GPay: '/payment-icons/google-pay.svg',
+  Paytm: '/payment-icons/paytm.svg',
+  BHIM: '/payment-icons/bhim.svg',
+};
+const PAYMENT_PROVIDER_TONES: Record<string, string> = {
+  PhonePe: 'phonepe',
+  'Apple Pay': 'applepay',
+  'Samsung Pay': 'samsungpay',
+  SamsungPay: 'samsungpay',
+  'Google Pay': 'googlepay',
+  GPay: 'googlepay',
+  Paytm: 'paytm',
+  BHIM: 'bhim',
+};
+const PAYMENT_CARD_ICONS: Record<PaymentCardType, string> = {
+  rupay: '/payment-icons/cards_rupay.svg',
+  maestro: '/payment-icons/cards_maestro.svg',
+  'diners-club': '/payment-icons/cards_diners-club.svg',
+  'master-card': '/payment-icons/cards_master-card.svg',
+  'american-express': '/payment-icons/cards_american-express.svg',
+  visa: '/payment-icons/cards_visa.svg',
+};
+const PAYMENT_CARD_LABELS: Record<PaymentCardType, string> = {
+  rupay: 'Rupay',
+  maestro: 'Maestro',
+  'diners-club': 'Diners Club',
+  'master-card': 'Master Card',
+  'american-express': 'American Express',
+  visa: 'VISA',
+};
+const DEFAULT_CARD_ICON = '/payment-icons/cards_default.svg';
 const WORKSPACE_DATA_COLLECTIONS: BudgetCollectionName[] = [
+  'paymentModes',
   'categories',
   'incomes',
   'templates',
@@ -374,6 +423,7 @@ export class BudgetStore implements OnDestroy {
   private readonly prefillAttemptedSignatures = signal(new Set<string>());
   private readonly prefillInFlightSignatures = signal(new Set<string>());
   private readonly loanEmiCategoryUpsertInFlight = signal(false);
+  private readonly cashPaymentModeUpsertInFlight = signal(false);
 
   readonly firebase = initializeBudgetFirebase();
   private readonly repository = signal<BudgetFirestoreRepository | null>(null);
@@ -401,6 +451,7 @@ export class BudgetStore implements OnDestroy {
   readonly pickerYear = signal(monthParts(this.selectedMonth()).year);
   readonly pickerYearPageStart = signal(yearPageStart(this.pickerYear()));
   readonly activeTabIndex = signal(0);
+  readonly paymentModes = signal<PaymentMode[]>([]);
   readonly categories = signal<BudgetCategory[]>([]);
   readonly incomes = signal<IncomeSource[]>([]);
   readonly templates = signal<ExpenseTemplate[]>([]);
@@ -441,12 +492,46 @@ export class BudgetStore implements OnDestroy {
   readonly hasBudgetData = computed(
     () =>
       this.categories().length +
+        this.paymentModes().length +
         this.incomes().length +
         this.templates().length +
         this.expenses().length +
         this.investments().length +
         this.loans().length >
       0,
+  );
+  readonly activePaymentModes = computed(() =>
+    this.withDefaultPaymentModes(this.paymentModes())
+      .filter((paymentMode) => !paymentMode.archivedDate)
+      .sort(comparePaymentModes),
+  );
+  readonly upiWalletPaymentModeCount = computed(
+    () =>
+      this.activePaymentModes().filter(
+        (paymentMode) => paymentMode.type === 'upi' || paymentMode.type === 'wallet',
+      ).length,
+  );
+  readonly cardPaymentModeCount = computed(
+    () =>
+      this.activePaymentModes().filter(
+        (paymentMode) => paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card',
+      ).length,
+  );
+  readonly paymentModeCards = computed(() =>
+    this.activePaymentModes().map((paymentMode) => {
+      const usage = this.paymentModeUsage(paymentMode.id);
+
+      return {
+        ...paymentMode,
+        detail: this.paymentModeDetail(paymentMode),
+        icon: this.paymentModeIcon(paymentMode.type),
+        iconSrc: this.paymentModeIconSrc(paymentMode),
+        providerTone: this.paymentModeVisualTone(paymentMode),
+        recordCount: usage.count,
+        typeLabel: this.paymentModeTypeLabel(paymentMode.type),
+        usageAmount: usage.amount,
+      };
+    }),
   );
   readonly filteredIncomes = computed(() =>
     this.incomes().filter((record) => this.matchesSelectedMember(record)),
@@ -605,18 +690,14 @@ export class BudgetStore implements OnDestroy {
   readonly remainingFunds = computed(
     () => this.monthlyIncome() - this.outflowTotal() - this.investmentTotal(),
   );
-  readonly burnoutRatio = computed(() =>
-    this.ratio(this.outflowTotal(), this.monthlyIncome()),
-  );
+  readonly burnoutRatio = computed(() => this.ratio(this.outflowTotal(), this.monthlyIncome()));
   readonly savingsRatio = computed(() =>
     this.ratio(this.investmentTotal() + Math.max(0, this.remainingFunds()), this.monthlyIncome()),
   );
   readonly debtEmiTotal = computed(() =>
     this.activeLoans().reduce((total, loan) => total + loan.emi, 0),
   );
-  readonly debtRatio = computed(() =>
-    this.ratio(this.debtEmiTotal(), this.monthlyIncome()),
-  );
+  readonly debtRatio = computed(() => this.ratio(this.debtEmiTotal(), this.monthlyIncome()));
   readonly categoryStats = computed(() =>
     this.expenseCategories().map((category) => {
       const spent = this.selectedEntries()
@@ -787,6 +868,9 @@ export class BudgetStore implements OnDestroy {
         dayLabel: this.shortDateLabel(this.recordDate(expense)),
         memberInitial: this.memberInitial(expense.memberEmail),
         memberName: this.memberName(expense.memberEmail),
+        paymentModeMeta: this.paymentModeMeta(expense.paymentModeId),
+        paymentModeLabel: this.paymentModeLabel(expense.paymentModeId),
+        paymentModeTone: this.paymentModeTone(expense.paymentModeId),
         typeLabel: this.expenseTypeLabel(expense),
       }))
       .sort((left, right) => this.recordDate(left).localeCompare(this.recordDate(right))),
@@ -868,7 +952,8 @@ export class BudgetStore implements OnDestroy {
       ...expense,
       categoryName: this.categoryName(expense.categoryId),
       memberName: this.memberName(expense.memberEmail),
-      status: expense.date && expense.date <= new Date().toISOString().slice(0, 10) ? 'Done' : 'Planned',
+      status:
+        expense.date && expense.date <= new Date().toISOString().slice(0, 10) ? 'Done' : 'Planned',
     })),
   );
   readonly budgetAllocationRows = computed(() => {
@@ -952,6 +1037,9 @@ export class BudgetStore implements OnDestroy {
           memberInitial: this.memberInitial(investment.memberEmail),
           memberName: this.memberName(investment.memberEmail),
           monthlyAmount: monthlySchedule?.amount ?? 0,
+          paymentModeMeta: this.paymentModeMeta(investment.paymentModeId),
+          paymentModeLabel: this.paymentModeLabel(investment.paymentModeId),
+          paymentModeTone: this.paymentModeTone(investment.paymentModeId),
           totalInvested: this.scheduledInvestmentTotalThrough(investment, this.selectedMonth()),
         };
       })
@@ -992,6 +1080,9 @@ export class BudgetStore implements OnDestroy {
       .map((loan) => ({
         ...loan,
         color: this.loanColor(loan.id),
+        paymentModeMeta: this.paymentModeMeta(loan.paymentModeId),
+        paymentModeLabel: this.paymentModeLabel(loan.paymentModeId),
+        paymentModeTone: this.paymentModeTone(loan.paymentModeId),
         share: this.ratio(loan.emi, this.debtEmiTotal()),
       }))
       .sort((left, right) => right.emi - left.emi),
@@ -1431,6 +1522,7 @@ export class BudgetStore implements OnDestroy {
       selectedMonth: this.selectedMonth(),
       members: this.activeMembers(),
       selectedMemberEmail: this.selectedMemberEmail(),
+      paymentModes: this.paymentModes(),
       categories: this.categories(),
       incomes: this.filteredIncomes(),
       templates: this.filteredTemplates(),
@@ -1658,6 +1750,7 @@ export class BudgetStore implements OnDestroy {
         createdDate: existing?.createdDate || new Date().toISOString(),
         sourceInvestmentId: plan.id,
         memberEmail: plan.memberEmail,
+        paymentModeId: plan.paymentModeId,
         auditTrail: existing?.auditTrail ?? [],
       });
     }
@@ -1713,6 +1806,9 @@ export class BudgetStore implements OnDestroy {
 
   private async applyImportRows(rows: BudgetImportRow[]): Promise<boolean> {
     const records = {
+      paymentModes: rows
+        .filter((row) => row.collectionName === 'paymentModes')
+        .map((row) => row.record as PaymentMode),
       categories: rows
         .filter((row) => row.collectionName === 'categories')
         .map((row) => row.record as BudgetCategory),
@@ -1739,6 +1835,7 @@ export class BudgetStore implements OnDestroy {
         }
 
         await Promise.all([
+          repository.upsertMany('paymentModes', records.paymentModes),
           repository.upsertMany('categories', records.categories),
           repository.upsertMany('incomes', records.incomes),
           repository.upsertMany('templates', records.templates),
@@ -1748,6 +1845,9 @@ export class BudgetStore implements OnDestroy {
         ]);
       },
       () => {
+        this.paymentModes.update((items) =>
+          [...items, ...records.paymentModes].sort(comparePaymentModes),
+        );
         this.categories.update((items) =>
           this.withDefaultCategories([...items, ...records.categories]),
         );
@@ -1853,6 +1953,7 @@ export class BudgetStore implements OnDestroy {
         note: 'Prepopulated from loan EMI',
         templateId: this.loanTemplateId(loan.id),
         memberEmail: loan.memberEmail,
+        paymentModeId: loan.paymentModeId,
       }));
 
     return [...templateEntries, ...loanEntries];
@@ -1866,6 +1967,229 @@ export class BudgetStore implements OnDestroy {
     return (
       this.categories().find((category) => category.id === categoryId)?.name ?? 'Uncategorized'
     );
+  }
+
+  paymentModeLabel(paymentModeId: string | undefined): string {
+    if (!paymentModeId) {
+      return '';
+    }
+
+    const paymentMode = this.withDefaultPaymentModes(this.paymentModes()).find(
+      (mode) => mode.id === paymentModeId,
+    );
+    if (!paymentMode) {
+      return 'Saved payment mode';
+    }
+
+    return paymentMode.name;
+  }
+
+  paymentModeDetail(paymentMode: PaymentMode): string {
+    if (paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card') {
+      const cardLabel = paymentMode.cardType
+        ? (PAYMENT_CARD_LABELS[paymentMode.cardType] ?? 'Card')
+        : 'Card';
+      return paymentMode.lastFour ? `${cardLabel} ending ${paymentMode.lastFour}` : cardLabel;
+    }
+
+    if (paymentMode.type === 'cash') {
+      return 'Cash';
+    }
+
+    return (
+      this.paymentProviderLabel(paymentMode.provider) ?? this.paymentModeTypeLabel(paymentMode.type)
+    );
+  }
+
+  paymentModeTypeLabel(type: PaymentModeType): string {
+    const labels: Record<PaymentModeType, string> = {
+      cash: 'Cash',
+      upi: 'UPI',
+      wallet: 'Wallet',
+      'credit-card': 'Credit Card',
+      'debit-card': 'Debit Card',
+    };
+
+    return labels[type];
+  }
+
+  paymentModeIcon(type: PaymentModeType): string {
+    if (type === 'cash') {
+      return 'payments';
+    }
+
+    if (type === 'upi') {
+      return 'qr_code_2';
+    }
+
+    if (type === 'wallet') {
+      return 'account_balance_wallet';
+    }
+
+    return 'credit_card';
+  }
+
+  paymentModeIconSrc(paymentMode: PaymentMode): string {
+    if (paymentMode.type === 'cash') {
+      return '/payment-icons/cash.svg';
+    }
+
+    if (paymentMode.provider) {
+      return PAYMENT_PROVIDER_ICONS[paymentMode.provider] ?? '/payment-icons/cash.svg';
+    }
+
+    if (paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card') {
+      return paymentMode.cardType
+        ? (PAYMENT_CARD_ICONS[paymentMode.cardType] ?? DEFAULT_CARD_ICON)
+        : DEFAULT_CARD_ICON;
+    }
+
+    return DEFAULT_CARD_ICON;
+  }
+
+  paymentModeMeta(paymentModeId: string | undefined): {
+    iconSrc: string;
+    label: string;
+    tone: string;
+    typeLabel: string;
+  } | null {
+    if (!paymentModeId) {
+      return null;
+    }
+
+    const paymentMode = this.withDefaultPaymentModes(this.paymentModes()).find(
+      (mode) => mode.id === paymentModeId,
+    );
+    if (!paymentMode) {
+      return {
+        iconSrc: DEFAULT_CARD_ICON,
+        label: 'Saved payment mode',
+        tone: 'neutral',
+        typeLabel: 'Payment mode',
+      };
+    }
+
+    return {
+      iconSrc: this.paymentModeIconSrc(paymentMode),
+      label: paymentMode.name,
+      tone: this.paymentModeVisualTone(paymentMode),
+      typeLabel: this.paymentModeTypeLabel(paymentMode.type),
+    };
+  }
+
+  paymentProviderTone(provider: PaymentModeProvider | string | undefined): string {
+    return provider ? (PAYMENT_PROVIDER_TONES[provider] ?? 'card') : 'card';
+  }
+
+  private paymentProviderLabel(
+    provider: PaymentModeProvider | string | undefined,
+  ): string | undefined {
+    if (provider === 'GPay') {
+      return 'Google Pay';
+    }
+
+    if (provider === 'SamsungPay') {
+      return 'Samsung Pay';
+    }
+
+    return provider;
+  }
+
+  private paymentModeVisualTone(paymentMode: PaymentMode): string {
+    if (paymentMode.provider) {
+      return this.paymentProviderTone(paymentMode.provider);
+    }
+
+    if (paymentMode.type === 'cash') {
+      return 'cash';
+    }
+
+    if (paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card') {
+      return 'card';
+    }
+
+    return paymentMode.type;
+  }
+
+  paymentModeTone(paymentModeId: string | undefined): string {
+    const paymentMode = this.withDefaultPaymentModes(this.paymentModes()).find(
+      (mode) => mode.id === paymentModeId,
+    );
+    if (!paymentMode) {
+      return 'neutral';
+    }
+
+    return this.paymentModeVisualTone(paymentMode);
+  }
+
+  paymentModeUsage(paymentModeId: string): { amount: number; count: number } {
+    let amount = 0;
+    let count = 0;
+
+    for (const expense of this.selectedEntries()) {
+      if (expense.paymentModeId === paymentModeId) {
+        amount += expense.amount;
+        count += 1;
+      }
+    }
+
+    for (const expense of this.legacyInvestmentEntries()) {
+      if (expense.paymentModeId === paymentModeId) {
+        amount += expense.amount;
+        count += 1;
+      }
+    }
+
+    for (const investment of this.selectedInvestments()) {
+      if (investment.paymentModeId === paymentModeId) {
+        amount += investmentScheduleForMonth(investment, this.selectedMonth())?.amount ?? 0;
+        count += 1;
+      }
+    }
+
+    for (const loan of this.activeLoans()) {
+      if (loan.paymentModeId === paymentModeId) {
+        amount += loan.emi;
+        count += 1;
+      }
+    }
+
+    return { amount, count };
+  }
+
+  async savePaymentMode(paymentMode: PaymentMode): Promise<boolean> {
+    const normalized = this.normalizePaymentMode(paymentMode);
+    const saved = await this.saveRecords('paymentModes', [normalized], () => {
+      this.paymentModes.update((paymentModes) => {
+        const others = paymentModes.filter((mode) => mode.id !== normalized.id);
+        return [...others, normalized].sort(comparePaymentModes);
+      });
+    });
+
+    if (saved) {
+      this.syncStatus.set(
+        this.repository() ? 'Payment mode saved to Firebase' : 'Payment mode saved',
+      );
+    }
+
+    return saved;
+  }
+
+  async archivePaymentMode(paymentModeId: string): Promise<boolean> {
+    if (paymentModeId === DEFAULT_CASH_PAYMENT_MODE.id) {
+      return false;
+    }
+
+    const paymentMode = this.paymentModes().find((mode) => mode.id === paymentModeId);
+    if (!paymentMode) {
+      return false;
+    }
+
+    return this.savePaymentMode({
+      ...paymentMode,
+      archivedDate: new Date().toISOString(),
+      updatedDate: new Date().toISOString(),
+    });
   }
 
   memberName(memberEmail: string | undefined): string {
@@ -1902,7 +2226,11 @@ export class BudgetStore implements OnDestroy {
 
   categoryIcon(categoryName: string): string {
     const normalized = categoryName.toLowerCase();
-    if (normalized.includes('housing') || normalized.includes('home') || normalized.includes('rent')) {
+    if (
+      normalized.includes('housing') ||
+      normalized.includes('home') ||
+      normalized.includes('rent')
+    ) {
       return 'home';
     }
 
@@ -1918,7 +2246,11 @@ export class BudgetStore implements OnDestroy {
       return 'favorite';
     }
 
-    if (normalized.includes('transport') || normalized.includes('travel') || normalized.includes('car')) {
+    if (
+      normalized.includes('transport') ||
+      normalized.includes('travel') ||
+      normalized.includes('car')
+    ) {
       return 'directions_car';
     }
 
@@ -1947,7 +2279,11 @@ export class BudgetStore implements OnDestroy {
 
   categoryTone(categoryName: string): string {
     const normalized = categoryName.toLowerCase();
-    if (normalized.includes('housing') || normalized.includes('home') || normalized.includes('rent')) {
+    if (
+      normalized.includes('housing') ||
+      normalized.includes('home') ||
+      normalized.includes('rent')
+    ) {
       return 'blue';
     }
 
@@ -1955,7 +2291,11 @@ export class BudgetStore implements OnDestroy {
       return 'orange';
     }
 
-    if (normalized.includes('health') || normalized.includes('loan') || normalized.includes('emi')) {
+    if (
+      normalized.includes('health') ||
+      normalized.includes('loan') ||
+      normalized.includes('emi')
+    ) {
       return 'red';
     }
 
@@ -1963,7 +2303,11 @@ export class BudgetStore implements OnDestroy {
       return 'purple';
     }
 
-    if (normalized.includes('transport') || normalized.includes('travel') || normalized.includes('invest')) {
+    if (
+      normalized.includes('transport') ||
+      normalized.includes('travel') ||
+      normalized.includes('invest')
+    ) {
       return 'teal';
     }
 
@@ -2100,6 +2444,23 @@ export class BudgetStore implements OnDestroy {
     );
   }
 
+  private findCashPaymentMode(paymentModes: PaymentMode[]): PaymentMode | undefined {
+    return paymentModes.find(
+      (paymentMode) =>
+        paymentMode.id === DEFAULT_CASH_PAYMENT_MODE.id ||
+        (paymentMode.type === 'cash' &&
+          paymentMode.name.trim().toLowerCase() === DEFAULT_CASH_PAYMENT_MODE.name.toLowerCase()),
+    );
+  }
+
+  private withDefaultPaymentModes(paymentModes: PaymentMode[]): PaymentMode[] {
+    if (this.findCashPaymentMode(paymentModes)) {
+      return [...paymentModes];
+    }
+
+    return [...paymentModes, DEFAULT_CASH_PAYMENT_MODE];
+  }
+
   private withDefaultCategories(categories: BudgetCategory[]): BudgetCategory[] {
     const normalized = categories.map((category) => ({
       ...category,
@@ -2142,6 +2503,29 @@ export class BudgetStore implements OnDestroy {
       });
   }
 
+  private ensureDefaultPaymentModeRecord(paymentModes: PaymentMode[]): void {
+    const repository = this.repository();
+    if (
+      !repository ||
+      this.findCashPaymentMode(paymentModes) ||
+      this.cashPaymentModeUpsertInFlight()
+    ) {
+      return;
+    }
+
+    this.cashPaymentModeUpsertInFlight.set(true);
+    void repository
+      .upsert('paymentModes', DEFAULT_CASH_PAYMENT_MODE)
+      .catch((error: unknown) =>
+        this.handleSyncError(
+          error instanceof Error ? error.message : 'Unable to create Cash payment mode.',
+        ),
+      )
+      .finally(() => {
+        this.cashPaymentModeUpsertInFlight.set(false);
+      });
+  }
+
   private expenseFromTemplate(
     template: ExpenseTemplate,
     month: string,
@@ -2159,13 +2543,11 @@ export class BudgetStore implements OnDestroy {
       note: existing?.note || 'Prepopulated from recurring plan',
       templateId: template.id,
       memberEmail: template.memberEmail,
+      paymentModeId: template.paymentModeId,
     };
   }
 
-  templateVersionForMonth(
-    template: ExpenseTemplate,
-    month: string,
-  ): ExpenseTemplate | null {
+  templateVersionForMonth(template: ExpenseTemplate, month: string): ExpenseTemplate | null {
     if (
       template.archivedDate &&
       template.endDate &&
@@ -2194,6 +2576,7 @@ export class BudgetStore implements OnDestroy {
         startDate: auditVersion.effectiveStartDate || auditVersion.startDate,
         endDate: auditVersion.effectiveEndDate || auditVersion.endDate,
         memberEmail: auditVersion.memberEmail ?? template.memberEmail,
+        paymentModeId: auditVersion.paymentModeId ?? template.paymentModeId,
       };
     }
 
@@ -2217,7 +2600,8 @@ export class BudgetStore implements OnDestroy {
       (previous.frequency ?? 'monthly') !== (next.frequency ?? 'monthly') ||
       (previous.startDate || '') !== (next.startDate || '') ||
       (previous.endDate || '') !== (next.endDate || '') ||
-      (previous.memberEmail || '') !== (next.memberEmail || '')
+      (previous.memberEmail || '') !== (next.memberEmail || '') ||
+      (previous.paymentModeId || '') !== (next.paymentModeId || '')
     );
   }
 
@@ -2239,6 +2623,7 @@ export class BudgetStore implements OnDestroy {
       startDate: template.startDate,
       endDate: template.endDate,
       memberEmail: template.memberEmail,
+      paymentModeId: template.paymentModeId,
     };
   }
 
@@ -2257,7 +2642,8 @@ export class BudgetStore implements OnDestroy {
         (audit.frequency ?? 'monthly') === (auditVersion.frequency ?? 'monthly') &&
         (audit.startDate || '') === (auditVersion.startDate || '') &&
         (audit.endDate || '') === (auditVersion.endDate || '') &&
-        (audit.memberEmail || '') === (auditVersion.memberEmail || ''),
+        (audit.memberEmail || '') === (auditVersion.memberEmail || '') &&
+        (audit.paymentModeId || '') === (auditVersion.paymentModeId || ''),
     );
   }
 
@@ -2274,6 +2660,7 @@ export class BudgetStore implements OnDestroy {
       startDate: template.startDate,
       endDate: template.endDate,
       memberEmail: template.memberEmail,
+      paymentModeId: template.paymentModeId,
     };
   }
 
@@ -2585,7 +2972,8 @@ export class BudgetStore implements OnDestroy {
       (previous.startDate || '') !== (next.startDate || '') ||
       (previous.endDate || '') !== (next.endDate || '') ||
       (previous.notes || '') !== (next.notes || '') ||
-      (previous.memberEmail || '') !== (next.memberEmail || '')
+      (previous.memberEmail || '') !== (next.memberEmail || '') ||
+      (previous.paymentModeId || '') !== (next.paymentModeId || '')
     );
   }
 
@@ -2598,7 +2986,8 @@ export class BudgetStore implements OnDestroy {
       (previous.startDate || '') !== (next.startDate || '') ||
       (previous.endDate || '') !== (next.endDate || '') ||
       (previous.notes || '') !== (next.notes || '') ||
-      (previous.memberEmail || '') !== (next.memberEmail || '')
+      (previous.memberEmail || '') !== (next.memberEmail || '') ||
+      (previous.paymentModeId || '') !== (next.paymentModeId || '')
     );
   }
 
@@ -2651,6 +3040,7 @@ export class BudgetStore implements OnDestroy {
       endDate: investment.endDate,
       notes: investment.notes,
       memberEmail: investment.memberEmail,
+      paymentModeId: investment.paymentModeId,
     };
   }
 
@@ -2675,6 +3065,7 @@ export class BudgetStore implements OnDestroy {
       endDate: loan.endDate,
       notes: loan.notes,
       memberEmail: loan.memberEmail,
+      paymentModeId: loan.paymentModeId,
     };
   }
 
@@ -2715,7 +3106,8 @@ export class BudgetStore implements OnDestroy {
         (audit.date || '') === (auditVersion.date || '') &&
         (audit.startDate || '') === (auditVersion.startDate || '') &&
         (audit.endDate || '') === (auditVersion.endDate || '') &&
-        (audit.memberEmail || '') === (auditVersion.memberEmail || ''),
+        (audit.memberEmail || '') === (auditVersion.memberEmail || '') &&
+        (audit.paymentModeId || '') === (auditVersion.paymentModeId || ''),
     )
       ? (auditTrail ?? [])
       : [...(auditTrail ?? []), auditVersion];
@@ -2738,7 +3130,8 @@ export class BudgetStore implements OnDestroy {
         audit.emi === auditVersion.emi &&
         (audit.startDate || '') === (auditVersion.startDate || '') &&
         (audit.endDate || '') === (auditVersion.endDate || '') &&
-        (audit.memberEmail || '') === (auditVersion.memberEmail || ''),
+        (audit.memberEmail || '') === (auditVersion.memberEmail || '') &&
+        (audit.paymentModeId || '') === (auditVersion.paymentModeId || ''),
     )
       ? (auditTrail ?? [])
       : [...(auditTrail ?? []), auditVersion];
@@ -2771,6 +3164,7 @@ export class BudgetStore implements OnDestroy {
 
   private async watchAuthState(): Promise<void> {
     if (!this.firebase.app) {
+      this.paymentModes.set(this.withDefaultPaymentModes([]));
       this.categories.set(this.withDefaultCategories([]));
       this.isSessionChecking.set(false);
       this.isWorkspaceDataLoading.set(false);
@@ -2863,6 +3257,36 @@ export class BudgetStore implements OnDestroy {
     }, applyLocal);
   }
 
+  private normalizePaymentMode(paymentMode: PaymentMode): PaymentMode {
+    const now = new Date().toISOString();
+    const name = paymentMode.name.trim() || this.paymentModeTypeLabel(paymentMode.type);
+    const base = {
+      id: paymentMode.id || id('payment-mode'),
+      type: paymentMode.type,
+      name,
+      createdDate: paymentMode.createdDate || now,
+      updatedDate: paymentMode.updatedDate || now,
+      archivedDate: paymentMode.archivedDate,
+    };
+
+    if (paymentMode.type === 'upi' || paymentMode.type === 'wallet') {
+      return {
+        ...base,
+        provider: paymentMode.provider,
+      };
+    }
+
+    if (paymentMode.type === 'cash') {
+      return base;
+    }
+
+    return {
+      ...base,
+      cardType: paymentMode.cardType,
+      lastFour: paymentMode.lastFour?.replace(/\D/g, '').slice(-4),
+    };
+  }
+
   private async saveWorkspace(workspace: Workspace, message: string): Promise<void> {
     const repository = this.repository();
     if (!repository) {
@@ -2897,6 +3321,15 @@ export class BudgetStore implements OnDestroy {
 
     try {
       const subscriptions = await Promise.all([
+        repository.listen(
+          'paymentModes',
+          (records) => {
+            this.paymentModes.set(this.withDefaultPaymentModes(records));
+            this.ensureDefaultPaymentModeRecord(records);
+            this.markWorkspaceCollectionLoaded('paymentModes', workspaceId);
+          },
+          (message) => this.handleSyncError(message),
+        ),
         repository.listen(
           'categories',
           (records) => {
@@ -3127,6 +3560,7 @@ export class BudgetStore implements OnDestroy {
           amount: loan.emi,
           type: 'recurring' as const,
           note: expense.note || 'Prepopulated from loan EMI',
+          paymentModeId: loan.paymentModeId,
         },
       ];
     });
@@ -3399,7 +3833,15 @@ export class BudgetStore implements OnDestroy {
   }
 
   private clearLegacyLocalData(): void {
-    for (const key of ['categories', 'incomes', 'templates', 'expenses', 'investments', 'loans']) {
+    for (const key of [
+      'paymentModes',
+      'categories',
+      'incomes',
+      'templates',
+      'expenses',
+      'investments',
+      'loans',
+    ]) {
       localStorage.removeItem(`${this.storagePrefix}:${key}`);
     }
   }
@@ -3413,6 +3855,7 @@ export class BudgetStore implements OnDestroy {
   }
 
   private clearAppData(): void {
+    this.paymentModes.set([]);
     this.categories.set([]);
     this.incomes.set([]);
     this.templates.set([]);
@@ -3421,4 +3864,3 @@ export class BudgetStore implements OnDestroy {
     this.loans.set([]);
   }
 }
-

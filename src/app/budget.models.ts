@@ -17,6 +17,33 @@ export type InvestmentFrequency =
   | 'one-time';
 export type CategoryType = 'Income' | 'Investments' | 'Expenses';
 export type WorkspaceRole = 'owner' | 'editor';
+export type PaymentModeType = 'cash' | 'upi' | 'wallet' | 'credit-card' | 'debit-card';
+export type PaymentModeProvider =
+  | 'PhonePe'
+  | 'Apple Pay'
+  | 'Samsung Pay'
+  | 'Google Pay'
+  | 'Paytm'
+  | 'BHIM';
+export type PaymentCardType =
+  | 'rupay'
+  | 'maestro'
+  | 'diners-club'
+  | 'master-card'
+  | 'american-express'
+  | 'visa';
+
+export interface PaymentMode {
+  id: string;
+  type: PaymentModeType;
+  name: string;
+  provider?: PaymentModeProvider;
+  cardType?: PaymentCardType;
+  lastFour?: string;
+  createdDate?: string;
+  updatedDate?: string;
+  archivedDate?: string;
+}
 
 export interface WorkspaceMember {
   email: string;
@@ -89,6 +116,7 @@ export interface ExpenseTemplateAuditVersion {
   startDate?: string;
   endDate?: string;
   memberEmail?: string;
+  paymentModeId?: string;
 }
 
 export interface ExpenseTemplate {
@@ -104,6 +132,7 @@ export interface ExpenseTemplate {
   skippedMonths?: string[];
   archivedDate?: string;
   memberEmail?: string;
+  paymentModeId?: string;
   auditTrail?: ExpenseTemplateAuditVersion[];
 }
 
@@ -118,6 +147,7 @@ export interface ExpenseEntry {
   note: string;
   templateId?: string;
   memberEmail?: string;
+  paymentModeId?: string;
 }
 
 export interface InvestmentEntry {
@@ -134,6 +164,7 @@ export interface InvestmentEntry {
   skippedMonths?: string[];
   sourceInvestmentId?: string;
   memberEmail?: string;
+  paymentModeId?: string;
   auditTrail?: InvestmentAuditVersion[];
 }
 
@@ -152,6 +183,7 @@ export interface InvestmentAuditVersion {
   endDate?: string;
   notes?: string;
   memberEmail?: string;
+  paymentModeId?: string;
 }
 
 export interface Loan {
@@ -166,6 +198,7 @@ export interface Loan {
   endDate: string;
   notes: string;
   memberEmail?: string;
+  paymentModeId?: string;
   auditTrail?: LoanAuditVersion[];
 }
 
@@ -185,9 +218,11 @@ export interface LoanAuditVersion {
   endDate: string;
   notes?: string;
   memberEmail?: string;
+  paymentModeId?: string;
 }
 
 export interface BudgetDataMap {
+  paymentModes: PaymentMode;
   categories: BudgetCategory;
   incomes: IncomeSource;
   templates: ExpenseTemplate;

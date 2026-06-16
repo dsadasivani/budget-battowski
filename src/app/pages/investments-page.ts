@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+import { CommonModule, NgOptimizedImage } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -13,6 +13,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
   selector: 'app-investments-page',
   imports: [
     CommonModule,
+    NgOptimizedImage,
     MatButtonModule,
     MatIconModule,
     MatProgressBarModule,
@@ -132,6 +133,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                   <th>Name</th>
                   <th>Type</th>
                   <th>Member</th>
+                  <th>Paid via</th>
                   <th>Monthly</th>
                   <th>Total Invested</th>
                   <th>Status</th>
@@ -146,6 +148,16 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                     <td>
                       <span class="avatar mini">{{ investment.memberInitial }}</span>
                       {{ investment.memberName }}
+                    </td>
+                    <td>
+                      @if (investment.paymentModeMeta; as paymentMode) {
+                        <span class="payment-mode-badge {{ paymentMode.tone }}">
+                          <img [ngSrc]="paymentMode.iconSrc" width="18" height="18" alt="" />
+                          {{ paymentMode.label }}
+                        </span>
+                      } @else {
+                        <span class="badge neutral">Not set</span>
+                      }
                     </td>
                     <td><b>{{ investment.monthlyAmount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</b></td>
                     <td>{{ investment.totalInvested | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</td>
@@ -165,7 +177,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                   </tr>
                 } @empty {
                   <tr>
-                    <td colspan="7"><div class="empty-state">No investments match this view</div></td>
+                    <td colspan="8"><div class="empty-state">No investments match this view</div></td>
                   </tr>
                 }
               </tbody>

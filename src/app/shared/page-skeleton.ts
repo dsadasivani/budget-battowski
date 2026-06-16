@@ -7,6 +7,7 @@ export type PageSkeletonVariant =
   | 'investments'
   | 'loans'
   | 'categories'
+  | 'paymentModes'
   | 'utility';
 
 type PageSkeletonConfig = {
@@ -23,6 +24,7 @@ const CONFIG: Record<PageSkeletonVariant, PageSkeletonConfig> = {
   investments: { stats: 3, rows: 6, sidePanels: 2, mode: 'table' },
   loans: { stats: 4, rows: 3, sidePanels: 2, mode: 'lists' },
   categories: { stats: 3, rows: 10, sidePanels: 0, mode: 'cards' },
+  paymentModes: { stats: 3, rows: 8, sidePanels: 0, mode: 'cards' },
   utility: { stats: 0, rows: 3, sidePanels: 0, mode: 'utility' },
 };
 

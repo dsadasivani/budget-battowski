@@ -480,7 +480,8 @@
 .cell-pill,
 .category-pill,
 .income-pill,
-.investment-pill {
+.investment-pill,
+.payment-pill {
   display: inline-flex;
   min-height: 28px;
   align-items: center;
@@ -511,6 +512,23 @@
   color: #0f5ff5;
 }
 
+.payment-pill {
+  background: #eef8f2;
+  color: #047857;
+}
+
+.payment-mode-option {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.payment-mode-option img,
+.payment-pill img {
+  flex: 0 0 auto;
+}
+
 .cell-color {
   display: inline-flex;
   max-width: 132px;
@@ -534,11 +552,11 @@
 }
 
 .wide-table {
-  min-width: 1360px;
+  min-width: 1480px;
 }
 
 .loan-table {
-  min-width: 1460px;
+  min-width: 1600px;
 }
 
 .categories-table {
@@ -1443,6 +1461,7 @@
   .category-pill,
   .income-pill,
   .investment-pill,
+  .payment-pill,
   .type-pill,
   .mobile-suggestion-pill,
   .audit-operation {

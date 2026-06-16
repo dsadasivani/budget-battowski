@@ -36,6 +36,11 @@ export const routes: Routes = [
       import('./pages/categories-page').then((component) => component.CategoriesPage),
   },
   {
+    path: 'payment-modes',
+    loadComponent: () =>
+      import('./pages/payment-modes-page').then((component) => component.PaymentModesPage),
+  },
+  {
     path: 'import-export',
     loadComponent: () =>
       import('./pages/import-export-page').then((component) => component.ImportExportPage),

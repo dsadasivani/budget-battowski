@@ -132,6 +132,7 @@ export class App extends BudgetStore {
     { label: 'Investments', icon: 'trending_up', path: '/investments' },
     { label: 'Loans', icon: 'account_balance', path: '/loans' },
     { label: 'Categories', icon: 'sell', path: '/categories' },
+    { label: 'Payment Modes', icon: 'payments', path: '/payment-modes' },
     { label: 'Import/Export', icon: 'upload_file', path: '/import-export' },
     { label: 'Workspace', icon: 'group', path: '/workspace' },
     { label: 'Settings', icon: 'settings', path: '/settings' },

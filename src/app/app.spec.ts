@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { BreakpointObserver } from '@angular/cdk/layout';
+import { computed, signal } from '@angular/core';
 import { MatBottomSheet } from '@angular/material/bottom-sheet';
 import { MAT_DIALOG_DATA, MatDialog, MatDialogRef } from '@angular/material/dialog';
 import { provideRouter, Router } from '@angular/router';
@@ -9,6 +10,8 @@ import { vi } from 'vitest';
 import { App } from './app';
 import { routes } from './app.routes';
 import { BulkEditorDialog, type BulkEditorData } from './bulk-editor-dialog';
+import type { PaymentMode } from './budget.models';
+import { BudgetStore } from './budget.store';
 import {
   buildProcessedImportCsv,
   createBudgetImportTemplateCsv,
@@ -16,6 +19,7 @@ import {
   parseBudgetImportCsv,
   parseBudgetImportFile,
 } from './budget-import.service';
+import { PaymentModeFormSheet, PaymentModesPage } from './pages/payment-modes-page';
 
 function runAxe(element: Element): Promise<axe.AxeResults> {
   return new Promise((resolve, reject) => {
@@ -37,6 +41,119 @@ function runAxe(element: Element): Promise<axe.AxeResults> {
       },
     );
   });
+}
+
+function paymentModeTypeLabel(type: PaymentMode['type']): string {
+  const labels: Record<PaymentMode['type'], string> = {
+    cash: 'Cash',
+    upi: 'UPI',
+    wallet: 'Wallet',
+    'credit-card': 'Credit Card',
+    'debit-card': 'Debit Card',
+  };
+
+  return labels[type];
+}
+
+function paymentProviderTone(provider: PaymentMode['provider']): string {
+  const tones: Record<NonNullable<PaymentMode['provider']>, string> = {
+    PhonePe: 'phonepe',
+    'Apple Pay': 'applepay',
+    'Samsung Pay': 'samsungpay',
+    'Google Pay': 'googlepay',
+    Paytm: 'paytm',
+    BHIM: 'bhim',
+  };
+
+  return provider ? tones[provider] : 'card';
+}
+
+function paymentModeIconSrc(paymentMode: PaymentMode): string {
+  if (paymentMode.type === 'cash') {
+    return '/payment-icons/cash.svg';
+  }
+
+  if (paymentMode.provider) {
+    const icons: Record<NonNullable<PaymentMode['provider']>, string> = {
+      PhonePe: '/payment-icons/phonepe.svg',
+      'Apple Pay': '/payment-icons/apple-pay.svg',
+      'Samsung Pay': '/payment-icons/samsung-pay.svg',
+      'Google Pay': '/payment-icons/google-pay.svg',
+      Paytm: '/payment-icons/paytm.svg',
+      BHIM: '/payment-icons/bhim.svg',
+    };
+
+    return icons[paymentMode.provider];
+  }
+
+  if (paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card') {
+    return paymentMode.cardType
+      ? `/payment-icons/cards_${paymentMode.cardType}.svg`
+      : '/payment-icons/cards_default.svg';
+  }
+
+  return '/payment-icons/cards_default.svg';
+}
+
+function createPaymentModeStore(initialPaymentModes: PaymentMode[] = []) {
+  const paymentModes = signal(initialPaymentModes);
+  const activePaymentModes = computed(() =>
+    paymentModes().filter((paymentMode) => !paymentMode.archivedDate),
+  );
+  const paymentModeCards = computed(() =>
+    activePaymentModes().map((paymentMode) => ({
+      ...paymentMode,
+      detail:
+        paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card'
+          ? `ending ${paymentMode.lastFour}`
+          : paymentMode.provider,
+      icon: paymentMode.type === 'upi' ? 'qr_code_2' : 'credit_card',
+      iconSrc: paymentModeIconSrc(paymentMode),
+      providerTone: paymentMode.provider
+        ? paymentProviderTone(paymentMode.provider)
+        : paymentMode.type,
+      recordCount: 0,
+      typeLabel: paymentModeTypeLabel(paymentMode.type),
+      usageAmount: 0,
+    })),
+  );
+  const savePaymentMode = vi.fn(async (paymentMode: PaymentMode) => {
+    paymentModes.update((items) => [
+      ...items.filter((item) => item.id !== paymentMode.id),
+      paymentMode,
+    ]);
+    return true;
+  });
+  const archivePaymentMode = vi.fn(async (paymentModeId: string) => {
+    paymentModes.update((items) =>
+      items.map((item) =>
+        item.id === paymentModeId ? { ...item, archivedDate: '2026-06-16T00:00:00.000Z' } : item,
+      ),
+    );
+    return true;
+  });
+
+  return {
+    paymentModes,
+    activePaymentModes,
+    paymentModeCards,
+    upiWalletPaymentModeCount: computed(
+      () =>
+        activePaymentModes().filter(
+          (paymentMode) => paymentMode.type === 'upi' || paymentMode.type === 'wallet',
+        ).length,
+    ),
+    cardPaymentModeCount: computed(
+      () =>
+        activePaymentModes().filter(
+          (paymentMode) => paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card',
+        ).length,
+    ),
+    showPageSkeleton: signal(false),
+    canWrite: signal(true),
+    savePaymentMode,
+    archivePaymentMode,
+  };
 }
 
 describe('App', () => {
@@ -127,12 +244,75 @@ describe('App', () => {
     expect(labels).toEqual(['Dashboard', 'Expenses', 'Planning', 'Investments', 'Loans']);
   });
 
+  it('should render payment modes inside the mobile utility menu', async () => {
+    const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const app = fixture.componentInstance as unknown as {
+      firebase: { mode: string };
+      isSessionChecking: { set: (checking: boolean) => void };
+      userPhoto: { set: (photo: string | null) => void };
+    };
+
+    app.firebase.mode = 'local';
+    app.isSessionChecking.set(false);
+    await router.navigateByUrl('/dashboard');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    app.userPhoto.set('https://example.com/profile.jpg');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const trigger = (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>(
+      '.mobile-utility-trigger',
+    );
+    expect(trigger).toBeTruthy();
+    expect(trigger?.querySelector('img')?.getAttribute('src')).toBe(
+      'https://example.com/profile.jpg',
+    );
+
+    trigger?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const menuText = document.body.textContent ?? '';
+    expect(menuText).toContain('Payment Modes');
+    expect(menuText).toContain('Log out');
+  });
+
+  it('should keep the mobile profile trigger on dashboard only', async () => {
+    const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const app = fixture.componentInstance as unknown as {
+      firebase: { mode: string };
+      isSessionChecking: { set: (checking: boolean) => void };
+    };
+
+    app.firebase.mode = 'local';
+    app.isSessionChecking.set(false);
+    await router.navigateByUrl('/dashboard');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('.mobile-utility-trigger'),
+    ).toBeTruthy();
+
+    await router.navigateByUrl('/expenses');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('.mobile-utility-trigger'),
+    ).toBeNull();
+  });
+
   it('should keep secondary mobile destinations in the utility menu model', () => {
     const fixture = TestBed.createComponent(App);
     const app = fixture.componentInstance;
 
     expect(app.utilityMobileNavItems.map((item) => item.label)).toEqual([
       'Categories',
+      'Payment Modes',
       'Import/Export',
       'Workspace',
       'Settings',
@@ -382,7 +562,7 @@ describe('App', () => {
     const app = fixture.componentInstance as unknown as {
       buildDefaultMonthEntries: (
         month: string,
-      ) => Array<{ memberEmail?: string; templateId?: string }>;
+      ) => Array<{ memberEmail?: string; paymentModeId?: string; templateId?: string }>;
       loans: { set: (records: unknown[]) => void };
       selectedMemberEmail: { set: (email: string) => void };
       templates: { set: (records: unknown[]) => void };
@@ -398,6 +578,7 @@ describe('App', () => {
         type: 'recurring',
         startDate: '2026-05-01',
         memberEmail: 'a@example.com',
+        paymentModeId: 'pm-gpay',
       },
     ]);
     app.loans.set([
@@ -413,13 +594,22 @@ describe('App', () => {
         endDate: '2026-12-31',
         notes: '',
         memberEmail: 'a@example.com',
+        paymentModeId: 'pm-card',
       },
     ]);
 
     expect(app.buildDefaultMonthEntries('2026-05')).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ templateId: 'fixed-rent', memberEmail: 'a@example.com' }),
-        expect.objectContaining({ templateId: 'loan:loan-home', memberEmail: 'a@example.com' }),
+        expect.objectContaining({
+          templateId: 'fixed-rent',
+          memberEmail: 'a@example.com',
+          paymentModeId: 'pm-gpay',
+        }),
+        expect.objectContaining({
+          templateId: 'loan:loan-home',
+          memberEmail: 'a@example.com',
+          paymentModeId: 'pm-card',
+        }),
       ]),
     );
   });
@@ -436,7 +626,12 @@ describe('App', () => {
       investmentPlans: () => Array<{ id: string; sourceInvestmentId?: string }>;
       investments: {
         set: (records: unknown[]) => void;
-        (): Array<{ id: string; frequency: string; sourceInvestmentId?: string }>;
+        (): Array<{
+          id: string;
+          frequency: string;
+          paymentModeId?: string;
+          sourceInvestmentId?: string;
+        }>;
       };
       selectedMonth: { set: (month: string) => void };
     };
@@ -452,6 +647,7 @@ describe('App', () => {
         frequency: 'monthly',
         startDate: '2026-01-01',
         notes: '',
+        paymentModeId: 'pm-upi',
       },
     ]);
 
@@ -473,6 +669,9 @@ describe('App', () => {
     expect(app.investmentTotal()).toBe(15000);
     expect(app.investments().some((record) => record.sourceInvestmentId === 'sip-index')).toBe(
       true,
+    );
+    expect(app.investments().find((record) => record.sourceInvestmentId === 'sip-index')).toEqual(
+      expect.objectContaining({ paymentModeId: 'pm-upi' }),
     );
     expect(app.investmentPlans()).toEqual([
       expect.objectContaining({
@@ -1078,6 +1277,182 @@ describe('App', () => {
     expect(app.categoryName(loanExpense?.categoryId ?? '')).toBe('Loan EMI');
   });
 
+  it('should resolve payment mode labels including archived modes', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      activePaymentModes: () => PaymentMode[];
+      paymentModeLabel: (paymentModeId: string | undefined) => string;
+      paymentModeMeta: (
+        paymentModeId: string | undefined,
+      ) => { iconSrc: string; label: string } | null;
+      paymentModes: { set: (records: PaymentMode[]) => void };
+    };
+
+    app.paymentModes.set([
+      {
+        id: 'pm-gpay',
+        type: 'upi',
+        provider: 'Google Pay',
+        name: 'Personal Google Pay',
+      },
+      {
+        id: 'pm-old-card',
+        type: 'credit-card',
+        name: 'Old card',
+        lastFour: '1234',
+        archivedDate: '2026-06-01T00:00:00.000Z',
+      },
+    ]);
+
+    expect(app.paymentModeLabel('pm-old-card')).toBe('Old card');
+    expect(app.paymentModeMeta('pm-old-card')).toEqual(
+      expect.objectContaining({
+        iconSrc: '/payment-icons/cards_default.svg',
+        label: 'Old card',
+      }),
+    );
+    expect(app.paymentModeMeta('payment-mode-cash')).toEqual(
+      expect.objectContaining({
+        iconSrc: '/payment-icons/cash.svg',
+        label: 'Cash',
+      }),
+    );
+    expect(app.paymentModeLabel(undefined)).toBe('');
+    expect(app.activePaymentModes()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'payment-mode-cash' }),
+        expect.objectContaining({ id: 'pm-gpay' }),
+      ]),
+    );
+  });
+
+  it('should total selected-month payment mode usage across expenses investments and loan EMIs', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      expenses: { set: (records: unknown[]) => void };
+      investments: { set: (records: unknown[]) => void };
+      loans: { set: (records: unknown[]) => void };
+      paymentModeCards: () => Array<{ id: string; recordCount: number; usageAmount: number }>;
+      paymentModes: { set: (records: PaymentMode[]) => void };
+      selectedMonth: { set: (month: string) => void };
+    };
+
+    app.selectedMonth.set('2026-06');
+    app.paymentModes.set([
+      { id: 'pm-gpay', type: 'upi', provider: 'Google Pay', name: 'Personal Google Pay' },
+    ]);
+    app.expenses.set([
+      {
+        id: 'expense-food',
+        month: '2026-06',
+        date: '2026-06-05',
+        name: 'Food',
+        categoryId: 'category-food',
+        amount: 1000,
+        type: 'one-time',
+        note: '',
+        paymentModeId: 'pm-gpay',
+      },
+    ]);
+    app.investments.set([
+      {
+        id: 'investment-gold',
+        name: 'Gold',
+        amount: 2000,
+        categoryId: 'category-invest',
+        frequency: 'one-time',
+        date: '2026-06-08',
+        notes: '',
+        paymentModeId: 'pm-gpay',
+      },
+    ]);
+    app.loans.set([
+      {
+        id: 'loan-bike',
+        lender: 'Bank',
+        loanType: 'Bike',
+        principal: 100000,
+        outstanding: 90000,
+        annualRate: 9,
+        emi: 3000,
+        startDate: '2026-01-01',
+        endDate: '2026-12-31',
+        notes: '',
+        paymentModeId: 'pm-gpay',
+      },
+    ]);
+
+    expect(app.paymentModeCards().find((paymentMode) => paymentMode.id === 'pm-gpay')).toEqual(
+      expect.objectContaining({ recordCount: 3, usageAmount: 6000 }),
+    );
+  });
+
+  it('should expose icon and label metadata for tagged financial rows', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      expenseRows: () => Array<{ paymentModeMeta?: { iconSrc: string; label: string } | null }>;
+      expenses: { set: (records: unknown[]) => void };
+      investments: { set: (records: unknown[]) => void };
+      loans: { set: (records: unknown[]) => void };
+      loanRepaymentRows: () => Array<{
+        paymentModeMeta?: { iconSrc: string; label: string } | null;
+      }>;
+      paymentModes: { set: (records: PaymentMode[]) => void };
+      portfolioRows: () => Array<{ paymentModeMeta?: { iconSrc: string; label: string } | null }>;
+      selectedMonth: { set: (month: string) => void };
+    };
+
+    app.selectedMonth.set('2026-06');
+    app.paymentModes.set([
+      { id: 'pm-paytm', type: 'wallet', provider: 'Paytm', name: 'Paytm Wallet' },
+    ]);
+    app.expenses.set([
+      {
+        id: 'expense-food',
+        month: '2026-06',
+        date: '2026-06-05',
+        name: 'Food',
+        categoryId: 'category-food',
+        amount: 1000,
+        type: 'one-time',
+        note: '',
+        paymentModeId: 'pm-paytm',
+      },
+    ]);
+    app.investments.set([
+      {
+        id: 'investment-sip',
+        name: 'SIP',
+        amount: 2000,
+        categoryId: 'category-invest',
+        frequency: 'monthly',
+        startDate: '2026-01-01',
+        notes: '',
+        paymentModeId: 'pm-paytm',
+      },
+    ]);
+    app.loans.set([
+      {
+        id: 'loan-bike',
+        lender: 'Bank',
+        loanType: 'Bike',
+        principal: 100000,
+        outstanding: 90000,
+        annualRate: 9,
+        emi: 3000,
+        startDate: '2026-01-01',
+        endDate: '2026-12-31',
+        notes: '',
+        paymentModeId: 'pm-paytm',
+      },
+    ]);
+
+    const expected = { iconSrc: '/payment-icons/paytm.svg', label: 'Paytm Wallet' };
+    expect(app.expenseRows()[0].paymentModeMeta).toEqual(expect.objectContaining(expected));
+    expect(app.portfolioRows()[0].paymentModeMeta).toEqual(expect.objectContaining(expected));
+    expect(app.loanRepaymentRows()[0].paymentModeMeta).toEqual(expect.objectContaining(expected));
+  });
+
   it('should materialize past recurring expenses while current months wait for review', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 5, 11));
@@ -1115,10 +1490,176 @@ describe('App', () => {
   });
 });
 
+describe('PaymentModesPage', () => {
+  let store: ReturnType<typeof createPaymentModeStore>;
+  let bottomSheetOpen: ReturnType<typeof vi.fn>;
+  let breakpointObserver: {
+    isMatched: ReturnType<typeof vi.fn>;
+    observe: ReturnType<typeof vi.fn>;
+  };
+
+  beforeEach(async () => {
+    store = createPaymentModeStore();
+    bottomSheetOpen = vi.fn();
+    breakpointObserver = {
+      isMatched: vi.fn(() => false),
+      observe: vi.fn(() => of({ matches: false, breakpoints: {} })),
+    };
+    await TestBed.configureTestingModule({
+      imports: [PaymentModesPage],
+      providers: [
+        { provide: BudgetStore, useValue: store },
+        { provide: BreakpointObserver, useValue: breakpointObserver },
+      ],
+    })
+      .overrideProvider(MatBottomSheet, { useValue: { open: bottomSheetOpen } })
+      .compileComponents();
+  });
+
+  it('should validate required fields and save UPI providers', async () => {
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    const page = fixture.componentInstance;
+    fixture.detectChanges();
+
+    page.savePaymentMode();
+
+    expect(page.validationError()).toBe('Display name is required.');
+    expect(store.savePaymentMode).not.toHaveBeenCalled();
+
+    page.form.patchValue({ name: 'Personal Google Pay', provider: 'Google Pay' });
+    page.savePaymentMode();
+    await Promise.resolve();
+
+    expect(store.savePaymentMode).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'upi',
+        name: 'Personal Google Pay',
+        provider: 'Google Pay',
+        lastFour: undefined,
+      }),
+    );
+  });
+
+  it('should require card last four digits before saving card modes', async () => {
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    const page = fixture.componentInstance;
+    fixture.detectChanges();
+
+    page.setFormType('credit-card');
+    page.form.patchValue({ name: 'Visa Credit', lastFour: '12' });
+    page.savePaymentMode();
+
+    expect(page.validationError()).toBe('Card modes need exactly 4 digits.');
+
+    page.form.patchValue({ cardType: 'visa', lastFour: '9876' });
+    page.savePaymentMode();
+    await Promise.resolve();
+
+    expect(store.savePaymentMode).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'credit-card',
+        name: 'Visa Credit',
+        provider: undefined,
+        cardType: 'visa',
+        lastFour: '9876',
+      }),
+    );
+  });
+
+  it('should update and archive existing payment modes', async () => {
+    const existing: PaymentMode = {
+      id: 'pm-card',
+      type: 'debit-card',
+      name: 'Old debit',
+      lastFour: '1111',
+    };
+    store.paymentModes.set([existing]);
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    const page = fixture.componentInstance;
+    fixture.detectChanges();
+
+    page.editPaymentMode(existing);
+    page.form.patchValue({ name: 'Salary debit', lastFour: '2222' });
+    page.savePaymentMode();
+    await Promise.resolve();
+    page.archivePaymentMode('pm-card');
+
+    expect(store.savePaymentMode).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'pm-card',
+        name: 'Salary debit',
+        lastFour: '2222',
+      }),
+    );
+    expect(store.archivePaymentMode).toHaveBeenCalledWith('pm-card');
+  });
+
+  it('should open a bottom sheet for adding payment modes on mobile', () => {
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    const page = fixture.componentInstance;
+    fixture.detectChanges();
+
+    page.openMobilePaymentModeForm();
+
+    expect(bottomSheetOpen).toHaveBeenCalledWith(
+      PaymentModeFormSheet,
+      expect.objectContaining({
+        data: { paymentMode: undefined },
+        ariaLabel: 'Add payment mode',
+        viewContainerRef: expect.anything(),
+      }),
+    );
+  });
+
+  it('should open a bottom sheet with existing payment mode data for mobile edits', () => {
+    const existing: PaymentMode = {
+      id: 'pm-gpay',
+      type: 'upi',
+      provider: 'Google Pay',
+      name: 'Personal Google Pay',
+    };
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    const page = fixture.componentInstance;
+    fixture.detectChanges();
+
+    page.openMobilePaymentModeForm(existing);
+
+    expect(bottomSheetOpen).toHaveBeenCalledWith(
+      PaymentModeFormSheet,
+      expect.objectContaining({
+        data: { paymentMode: existing },
+        ariaLabel: 'Edit payment mode',
+        viewContainerRef: expect.anything(),
+      }),
+    );
+  });
+
+  it('should keep the inline form for payment modes on desktop', () => {
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    const page = fixture.componentInstance;
+    fixture.detectChanges();
+
+    page.openPaymentModeForm();
+
+    expect(bottomSheetOpen).not.toHaveBeenCalled();
+    expect(page.editingId()).toBeNull();
+  });
+});
+
 describe('BulkEditorDialog', () => {
   const dialogData: BulkEditorData = {
     scope: 'monthly',
     selectedMonth: '2026-05',
+    paymentModes: [
+      { id: 'pm-gpay', type: 'upi', provider: 'Google Pay', name: 'Personal Google Pay' },
+      {
+        id: 'pm-card',
+        type: 'credit-card',
+        name: 'Visa Credit',
+        cardType: 'visa',
+        lastFour: '1234',
+      },
+    ],
     categories: [{ id: 'category-home', name: 'Home', monthlyBudget: 35000, color: '#1f7a8c' }],
     incomes: [
       { id: 'income-salary', source: 'Salary', amount: 120000, cadence: 'monthly', notes: '' },
@@ -1357,6 +1898,61 @@ describe('BulkEditorDialog', () => {
     expect(
       result.expenses.find((expense: { name: string }) => expense.name === 'Snacks')?.type,
     ).toBe('one-time');
+  });
+
+  it('should include selected payment modes in edited financial rows', () => {
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialogRef = TestBed.inject(MatDialogRef) as unknown as {
+      close: ReturnType<typeof vi.fn>;
+    };
+    const dialog = fixture.componentInstance as unknown as {
+      apply: () => void;
+      expenses: () => Array<{ paymentModeId?: string }>;
+      investments: () => Array<{ paymentModeId?: string }>;
+      loans: () => Array<{ paymentModeId?: string }>;
+      templates: () => Array<{ paymentModeId?: string }>;
+    };
+
+    dialog.expenses()[0].paymentModeId = 'pm-gpay';
+    dialog.templates()[0].paymentModeId = 'pm-card';
+    dialog.investments()[0].paymentModeId = 'pm-gpay';
+    dialog.loans()[0].paymentModeId = 'pm-card';
+    dialog.apply();
+
+    const result = dialogRef.close.mock.calls[0][0];
+    expect(result.expenses[0]).toEqual(expect.objectContaining({ paymentModeId: 'pm-gpay' }));
+    expect(result.templates[0]).toEqual(expect.objectContaining({ paymentModeId: 'pm-card' }));
+    expect(result.investments[0]).toEqual(expect.objectContaining({ paymentModeId: 'pm-gpay' }));
+    expect(result.loans[0]).toEqual(expect.objectContaining({ paymentModeId: 'pm-card' }));
+  });
+
+  it('should resolve archived payment mode labels without offering archived modes in selectors', () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        paymentModes: [
+          ...(dialogData.paymentModes ?? []),
+          {
+            id: 'pm-old-wallet',
+            type: 'wallet',
+            provider: 'Paytm',
+            name: 'Old Paytm Wallet',
+            archivedDate: '2026-05-01T00:00:00.000Z',
+          },
+        ],
+        expenses: [{ ...dialogData.expenses[0], paymentModeId: 'pm-old-wallet' }],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      activePaymentModes: PaymentMode[];
+      paymentModeName: (paymentModeId?: string) => string;
+    };
+
+    expect(dialog.paymentModeName('pm-old-wallet')).toBe('Old Paytm Wallet');
+    expect(
+      dialog.activePaymentModes.some((paymentMode) => paymentMode.id === 'pm-old-wallet'),
+    ).toBe(false);
   });
 
   it('should not persist untouched suggested one-time expense rows', () => {
@@ -1741,7 +2337,6 @@ describe('BulkEditorDialog', () => {
     expect(compiled.textContent).not.toContain('Recurring Plans');
     expect(compiled.textContent).not.toContain('Loans');
   });
-
 });
 
 describe('BudgetStore bulk editor launcher', () => {
@@ -1810,27 +2405,32 @@ describe('App accessibility', () => {
     '/investments',
     '/loans',
     '/categories',
+    '/payment-modes',
     '/import-export',
     '/workspace',
     '/settings',
-  ])('should pass axe checks for %s', async (path) => {
-    const fixture = TestBed.createComponent(App);
-    const router = TestBed.inject(Router);
-    const app = fixture.componentInstance as unknown as {
-      firebase: { mode: string };
-      isSessionChecking: { set: (checking: boolean) => void };
-    };
+  ])(
+    'should pass axe checks for %s',
+    async (path) => {
+      const fixture = TestBed.createComponent(App);
+      const router = TestBed.inject(Router);
+      const app = fixture.componentInstance as unknown as {
+        firebase: { mode: string };
+        isSessionChecking: { set: (checking: boolean) => void };
+      };
 
-    app.firebase.mode = 'local';
-    app.isSessionChecking.set(false);
-    await router.navigateByUrl(path);
-    fixture.detectChanges();
-    await Promise.resolve();
+      app.firebase.mode = 'local';
+      app.isSessionChecking.set(false);
+      await router.navigateByUrl(path);
+      fixture.detectChanges();
+      await Promise.resolve();
 
-    const results = await runAxe(fixture.nativeElement);
+      const results = await runAxe(fixture.nativeElement);
 
-    expect(results.violations).toEqual([]);
-  }, 12000);
+      expect(results.violations).toEqual([]);
+    },
+    12000,
+  );
 });
 
 describe('budget import helpers', () => {

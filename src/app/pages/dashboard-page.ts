@@ -61,7 +61,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
             [disabled]="store.firebase.mode !== 'firebase' || store.isSyncing()"
           >
             <mat-icon aria-hidden="true">logout</mat-icon>
-            <span>Sign out</span>
+            <span>Log out</span>
           </button>
         </mat-menu>
       </header>
@@ -248,6 +248,7 @@ export class DashboardPage {
   readonly store = inject(BudgetStore);
   readonly utilityMobileNavItems = [
     { label: 'Categories', icon: 'sell', path: '/categories' },
+    { label: 'Payment Modes', icon: 'payments', path: '/payment-modes' },
     { label: 'Import/Export', icon: 'upload_file', path: '/import-export' },
     { label: 'Workspace', icon: 'group', path: '/workspace' },
     { label: 'Settings', icon: 'settings', path: '/settings' },
