@@ -30,7 +30,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
       <header class="mobile-home-header">
         <div class="mobile-brand-row">
           <span class="mobile-page-mark" aria-hidden="true">
-            <mat-icon>dashboard</mat-icon>
+            <mat-icon>account_balance_wallet</mat-icon>
           </span>
           <strong>Budget Battowski</strong>
         </div>

@@ -204,7 +204,7 @@ a {
 .month-picker-panel {
   display: grid;
   gap: 12px;
-  width: 292px;
+  width: 280px;
   padding: 14px;
   border: 1px solid #dce4ef;
   border-radius: 8px;
@@ -4157,9 +4157,7 @@ a {
     margin: 0 -8px;
     padding: 10px 12px;
     border-bottom: 1px solid rgba(216, 227, 242, 0.12);
-    background:
-      linear-gradient(135deg, rgba(47, 128, 237, 0.14), transparent 38%),
-      #10213f;
+    background: linear-gradient(135deg, rgba(47, 128, 237, 0.14), transparent 38%), #10213f;
     box-shadow: none;
   }
 
@@ -4573,5 +4571,95 @@ a {
 
   .cdk-overlay-pane.monthly-review-panel .mat-mdc-dialog-surface {
     border-radius: 0 !important;
+  }
+}
+
+@media (max-width: 780px) {
+  .mobile-home-header .mobile-page-mark {
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.16), transparent 48%), #2f80ed;
+    box-shadow: 0 8px 18px rgba(10, 19, 38, 0.18);
+  }
+
+  .mobile-home-header .mobile-page-mark mat-icon {
+    color: #fff;
+  }
+
+  .cdk-overlay-pane:has(.month-picker-menu) {
+    max-width: calc(100vw - 40px) !important;
+    transform: translateX(-14%);
+  }
+
+  .mat-mdc-menu-panel.month-picker-menu {
+    min-width: min(304px, calc(100vw - 40px));
+    max-width: min(304px, calc(100vw - 40px));
+    border-radius: 12px;
+    box-shadow:
+      0 18px 42px rgba(16, 33, 63, 0.22),
+      0 0 0 1px rgba(255, 255, 255, 0.76) inset;
+  }
+
+  .month-picker-panel {
+    gap: 6px;
+    padding: 8px;
+    border-radius: 12px;
+
+    header {
+      grid-template-columns: 30px minmax(0, 1fr) 30px;
+      gap: 5px;
+      padding: 4px;
+      border-radius: 10px;
+
+      .mat-mdc-icon-button {
+        --mat-icon-button-state-layer-size: 30px;
+        width: 30px;
+        height: 30px;
+        padding: 0;
+
+        mat-icon {
+          width: 17px;
+          height: 17px;
+          font-size: 17px;
+        }
+      }
+    }
+
+    .month-picker-title {
+      min-height: 30px;
+      border-radius: 8px;
+      font-size: 0.78rem;
+    }
+  }
+
+  .picker-grid {
+    gap: 5px;
+
+    button {
+      min-height: 34px;
+      border-radius: 8px;
+      font-size: 0.7rem;
+      box-shadow: 0 3px 8px rgba(15, 23, 42, 0.04);
+    }
+  }
+
+  .year-grid button {
+    min-height: 31px;
+    font-size: 0.66rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .mat-mdc-menu-panel.month-picker-menu {
+    min-width: min(286px, calc(100vw - 36px));
+    max-width: min(286px, calc(100vw - 36px));
+  }
+
+  .month-picker-panel {
+    padding: 7px;
+  }
+
+  .picker-grid button {
+    min-height: 32px;
   }
 }
