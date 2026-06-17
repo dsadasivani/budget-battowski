@@ -153,7 +153,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
               }
             </div>
 
-            <div class="data-table-wrap compact">
+            <div class="data-table-wrap compact" tabindex="0" aria-label="One-time planned expenses table">
               <table class="data-table">
                 <thead>
                   <tr>

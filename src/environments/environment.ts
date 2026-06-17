@@ -6,3 +6,8 @@ export const firebaseConfig = {
   messagingSenderId: '124157519209',
   appId: '1:124157519209:web:2fc5f0ad923c4d746089f8',
 };
+
+export const appEnvironment = {
+  name: 'Production',
+  enablePasswordLogin: false,
+};

@@ -60,7 +60,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
         </button>
       </header>
 
-      <section class="stat-grid four">
+      <section class="stat-grid four" tabindex="0" aria-label="Loan summary">
         <article class="stat-card">
           <span class="icon-chip orange"><mat-icon aria-hidden="true">account_balance</mat-icon></span>
           <p>Total EMI/Month</p>
@@ -153,14 +153,15 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                 <div class="calendar-day" [class.has-items]="day.items.length">
                   <span>{{ day.day }}</span>
                   @for (item of day.items; track item.id) {
-                    <i [style.background]="item.color" [attr.aria-label]="item.label"></i>
+                    <i [style.background]="item.color" aria-hidden="true"></i>
+                    <span class="sr-only">{{ item.label }}</span>
                   }
                 </div>
               }
             </div>
             <div class="calendar-legend">
               @for (loan of store.loanRepaymentRows(); track loan.id) {
-                <span><i [style.background]="loan.color"></i> {{ loan.lender }} {{ loan.emi | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
+                <span><i [style.background]="loan.color" aria-hidden="true"></i> {{ loan.lender }} {{ loan.emi | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
               }
             </div>
           </article>

@@ -37,6 +37,7 @@ type TourCapableStore = BudgetStore & {
               <mat-icon>account_balance_wallet</mat-icon>
             </span>
             <strong>Budget Battowski</strong>
+            <h1 class="sr-only">Dashboard</h1>
           </div>
           <button
             class="mobile-utility-trigger"
@@ -118,7 +119,7 @@ type TourCapableStore = BudgetStore & {
           <app-month-member-controls />
         </div>
 
-        <section class="stat-grid five" aria-label="Monthly financial summary">
+        <section class="stat-grid five" tabindex="0" aria-label="Monthly financial summary">
           <article class="stat-card">
             <span class="icon-chip blue"><mat-icon aria-hidden="true">download</mat-icon></span>
             <p>Total Income</p>

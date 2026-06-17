@@ -121,7 +121,7 @@ a {
 
   p {
     margin-top: 7px;
-    color: #66748a;
+    color: #4b5563;
     font-size: 0.98rem;
     font-weight: 500;
     line-height: 1.42;
@@ -250,8 +250,8 @@ a {
     font-weight: 600;
 
     &.active {
-      border-color: #2f80ed;
-      background: #2f80ed;
+      border-color: #1d4ed8;
+      background: #1d4ed8;
       color: #fff;
       box-shadow: 0 10px 20px rgba(47, 128, 237, 0.24);
     }
@@ -263,7 +263,7 @@ a {
     }
 
     &.active:hover {
-      background: #2f80ed;
+      background: #1d4ed8;
       color: #fff;
     }
 
@@ -298,7 +298,7 @@ a {
     font-weight: 600;
 
     &.active {
-      background: #2f80ed;
+      background: #1d4ed8;
       color: #fff;
       box-shadow: 0 8px 18px rgba(47, 128, 237, 0.24);
     }
@@ -370,13 +370,13 @@ a {
   &.gpay {
     border-color: #cfe5ff;
     background: #eaf4ff;
-    color: #1a73e8;
+    color: #1558b0;
   }
 
   &.googlepay {
     border-color: #cfe5ff;
     background: #eaf4ff;
-    color: #1a73e8;
+    color: #1558b0;
   }
 
   &.paytm {
@@ -431,6 +431,11 @@ a {
   &.five {
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
+}
+
+.stat-grid[tabindex]:focus-visible {
+  outline: 3px solid rgba(21, 94, 117, 0.38);
+  outline-offset: 4px;
 }
 
 .content-grid.two-one,
@@ -598,14 +603,14 @@ a {
   }
 
   p {
-    color: #66748a;
+    color: #4b5563;
     font-size: 0.92rem;
     font-weight: 500;
     line-height: 1.35;
   }
 
   a {
-    color: #2f80ed;
+    color: #1d4ed8;
     font-weight: 600;
     text-decoration: none;
   }
@@ -672,7 +677,7 @@ a {
   min-width: 0;
   margin-top: 2px;
   overflow-wrap: anywhere;
-  color: #66748a;
+  color: #4b5563;
   font-weight: 500;
 }
 
@@ -683,7 +688,7 @@ a {
   place-items: center;
   border-radius: 50%;
   background: #e7f1ff;
-  color: #2f80ed;
+  color: #1d4ed8;
   font-weight: 700;
 
   &.mini {
@@ -694,7 +699,7 @@ a {
 }
 
 .teal-text {
-  color: #0f8f83;
+  color: #0f766e;
 }
 
 .badge {
@@ -810,6 +815,11 @@ a {
   border: 1px solid #e5ebf3;
   border-radius: 8px;
 
+  &:focus-visible {
+    outline: 3px solid rgba(29, 78, 216, 0.34);
+    outline-offset: 3px;
+  }
+
   &.compact {
     max-width: 100%;
   }
@@ -830,7 +840,7 @@ a {
 
   th {
     background: #f8fafc;
-    color: #657184;
+    color: #4b5563;
     font-size: 0.74rem;
     font-weight: 700;
     letter-spacing: 0;
@@ -969,7 +979,7 @@ a {
   gap: 8px;
 
   > strong {
-    color: #8a97aa;
+    color: #5b6574;
     font-size: 0.78rem;
     text-align: center;
   }
@@ -1136,7 +1146,7 @@ a {
   }
 
   b {
-    color: #0f8f83;
+    color: #0f766e;
   }
 
   &.expense b,
@@ -1684,8 +1694,8 @@ a {
       color: #111827;
 
       &.active {
-        border-color: #2f80ed;
-        background: #2f80ed;
+        border-color: #1d4ed8;
+        background: #1d4ed8;
         color: #fff;
       }
     }
@@ -2134,7 +2144,7 @@ a {
   .table-actions .mat-mdc-unelevated-button {
     max-width: 50vw;
     overflow: hidden;
-    background: #2f80ed;
+    background: #1d4ed8;
     color: #fff;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -4539,8 +4549,8 @@ a {
       box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
 
       &.active {
-        border-color: #2f80ed;
-        background: #2f80ed;
+        border-color: #1d4ed8;
+        background: #1d4ed8;
         color: #fff;
         box-shadow: 0 10px 20px rgba(47, 128, 237, 0.22);
       }
@@ -4552,7 +4562,7 @@ a {
       }
 
       &.active:hover {
-        background: #2f80ed;
+        background: #1d4ed8;
         color: #fff;
       }
 
@@ -4787,4 +4797,10 @@ a {
   .picker-grid button {
     min-height: 32px;
   }
+}
+
+.mobile-expense-row > span:first-child,
+.mobile-plan-card small,
+.mobile-loans-page .loan-account small {
+  color: #4b5563;
 }

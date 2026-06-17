@@ -1100,6 +1100,7 @@ export class PaymentAccountModesSheet {
                         @if (isCardType(paymentMode.type)) {
                           <p
                             class="payment-card-number"
+                            role="img"
                             [attr.aria-label]="paymentMode.typeLabel + ' ending ' + paymentMode.lastFour"
                           >
                             <span aria-hidden="true">{{ paymentMode.detail }}</span>
@@ -1825,12 +1826,12 @@ export class PaymentAccountModesSheet {
       .payment-provider-mark.googlepay,
       .provider-chip.gpay {
         background: #eaf4ff;
-        color: #1a73e8;
+        color: #1558b0;
       }
 
       .provider-chip.googlepay {
         background: #eaf4ff;
-        color: #1a73e8;
+        color: #1558b0;
       }
 
       .payment-provider-mark.paytm,

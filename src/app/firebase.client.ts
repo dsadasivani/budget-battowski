@@ -57,6 +57,17 @@ export async function signInWithGoogle(app: FirebaseApp): Promise<User> {
   return credential.user;
 }
 
+export async function signInWithEmailPassword(
+  app: FirebaseApp,
+  email: string,
+  password: string,
+): Promise<User> {
+  const { getAuth, signInWithEmailAndPassword } = await import('firebase/auth');
+  const credential = await signInWithEmailAndPassword(getAuth(app), email, password);
+
+  return credential.user;
+}
+
 export async function signOutBudgetUser(app: FirebaseApp): Promise<void> {
   const { getAuth, signOut } = await import('firebase/auth');
 

@@ -5,8 +5,17 @@
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
+    "build:dev": "ng build --configuration development",
+    "build:prod": "ng build --configuration production",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "start:qa": "ng serve --configuration qa",
+    "build:qa": "ng build --configuration qa",
+    "deploy:dev": "npm run build:dev && npx firebase-tools deploy --only hosting --project budget-battowski",
+    "deploy:qa": "npm run build:qa && npx firebase-tools deploy --only hosting --project budget-battowski-qa",
+    "deploy:prod": "npm run build:prod && npx firebase-tools deploy --only hosting --project budget-battowski",
+    "qa:seed": "node scripts/qa-seed.mjs",
+    "qa:regression": "node scripts/qa-regression.mjs"
   },
   "private": true,
   "packageManager": "npm@11.12.1",

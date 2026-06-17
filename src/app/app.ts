@@ -1,5 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, forwardRef, signal } from '@angular/core';
+import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatBottomSheetModule } from '@angular/material/bottom-sheet';
 import { MatIconModule } from '@angular/material/icon';
@@ -8,6 +9,7 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 
+import { appEnvironment } from '../environments/environment';
 import { BudgetStore } from './budget.store';
 
 type NavItem = {
@@ -46,6 +48,7 @@ type LoginFeature = {
   selector: 'app-root',
   imports: [
     CommonModule,
+    ReactiveFormsModule,
     RouterLink,
     RouterLinkActive,
     RouterOutlet,
@@ -70,6 +73,18 @@ export class App extends BudgetStore {
   readonly onboardingIndex = signal(0);
   readonly loginCarouselIndex = signal(0);
   readonly loginCarouselPaused = signal(false);
+  readonly passwordLoginEnabled = Boolean(appEnvironment.enablePasswordLogin);
+  readonly appEnvironmentName = appEnvironment.name;
+  readonly qaLoginForm = new FormGroup({
+    email: new FormControl('', {
+      nonNullable: true,
+      validators: [Validators.required, Validators.email],
+    }),
+    password: new FormControl('', {
+      nonNullable: true,
+      validators: [Validators.required],
+    }),
+  });
 
   readonly onboardingSteps: OnboardingStep[] = [
     {
@@ -248,6 +263,20 @@ export class App extends BudgetStore {
 
   selectOnboardingStep(index: number): void {
     this.onboardingIndex.set(index);
+  }
+
+  async loginWithPassword(): Promise<void> {
+    if (!this.passwordLoginEnabled) {
+      return;
+    }
+
+    if (this.qaLoginForm.invalid) {
+      this.qaLoginForm.markAllAsTouched();
+      return;
+    }
+
+    const { email, password } = this.qaLoginForm.getRawValue();
+    await this.loginWithEmailPassword(email.trim(), password);
   }
 
   private openOnboardingForFirstVisit(): void {

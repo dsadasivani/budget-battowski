@@ -146,7 +146,8 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                 <article class="mobile-expense-row">
                   <span>{{ expense.dayLabel }}</span>
                   <strong>{{ expense.name }}</strong>
-                  <span class="badge" [style.color]="expense.categoryColor">
+                  <span class="badge">
+                    <span class="dot" [style.background]="expense.categoryColor" aria-hidden="true"></span>
                     {{ expense.categoryName }}
                   </span>
                   <span class="avatar mini">{{ expense.memberInitial }}</span>
@@ -196,7 +197,8 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                         <strong>{{ expense.name }}</strong>
                       </td>
                       <td>
-                        <span class="badge" [style.color]="expense.categoryColor">
+                        <span class="badge">
+                          <span class="dot" [style.background]="expense.categoryColor" aria-hidden="true"></span>
                           {{ expense.categoryName }}
                         </span>
                       </td>

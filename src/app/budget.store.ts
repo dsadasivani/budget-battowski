@@ -21,6 +21,7 @@ import {
 import {
   initializeBudgetFirebase,
   observeBudgetAuth,
+  signInWithEmailPassword,
   signInWithGoogle,
   signOutBudgetUser,
 } from './firebase.client';
@@ -1195,6 +1196,29 @@ export class BudgetStore implements OnDestroy {
       this.syncStatus.set('Signing in');
     } catch (error) {
       this.handleSyncError(error instanceof Error ? error.message : 'Google sign-in failed.');
+      this.loginLoaderActive.set(false);
+    } finally {
+      this.isSyncing.set(false);
+    }
+  }
+
+  async loginWithEmailPassword(email: string, password: string): Promise<void> {
+    if (!this.firebase.app) {
+      this.syncStatus.set('Firebase config needed');
+      return;
+    }
+
+    this.loginLoaderActive.set(true);
+    this.isSyncing.set(true);
+    this.syncError.set(null);
+
+    try {
+      await signInWithEmailPassword(this.firebase.app, email, password);
+      this.syncStatus.set('Signing in');
+    } catch (error) {
+      this.handleSyncError(
+        error instanceof Error ? error.message : 'Email and password sign-in failed.',
+      );
       this.loginLoaderActive.set(false);
     } finally {
       this.isSyncing.set(false);
@@ -3380,6 +3404,14 @@ export class BudgetStore implements OnDestroy {
   }
 
   private async handleAuthUser(user: User | null): Promise<void> {
+    if (this.firebase.mode !== 'firebase') {
+      this.isWorkspaceDataLoading.set(false);
+      this.isSessionChecking.set(false);
+      this.loginLoaderActive.set(false);
+      this.isSyncing.set(false);
+      return;
+    }
+
     this.stopFirestoreListeners();
     this.repository.set(null);
     const email = user?.email ?? null;
