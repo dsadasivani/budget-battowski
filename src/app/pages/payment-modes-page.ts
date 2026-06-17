@@ -152,7 +152,9 @@ function isCardType(type: PaymentModeType): boolean {
 }
 
 function isAccountBackedType(type: PaymentModeType): boolean {
-  return type === 'upi' || type === 'credit-card' || type === 'debit-card' || type === 'internet-banking';
+  return (
+    type === 'upi' || type === 'credit-card' || type === 'debit-card' || type === 'internet-banking'
+  );
 }
 
 function buildPaymentModeFromForm(
@@ -360,7 +362,12 @@ function buildPaymentAccountFromForm(
               @for (account of store.activePaymentAccounts(); track account.id) {
                 <mat-option [value]="account.id">
                   <span class="select-option-with-icon">
-                    <img [ngSrc]="store.paymentAccountIconSrc(account)" width="28" height="28" alt="" />
+                    <img
+                      [ngSrc]="store.paymentAccountIconSrc(account)"
+                      width="28"
+                      height="28"
+                      alt=""
+                    />
                     <span>{{ account.name }} · {{ account.bankName }}</span>
                   </span>
                 </mat-option>
@@ -976,7 +983,9 @@ export class PaymentAccountModesSheet {
               (click)="openPrimaryForm()"
               [disabled]="!store.canWrite()"
             >
-              <mat-icon aria-hidden="true">{{ selectedTabIndex() === 0 ? 'add_card' : 'add' }}</mat-icon>
+              <mat-icon aria-hidden="true">{{
+                selectedTabIndex() === 0 ? 'add_card' : 'add'
+              }}</mat-icon>
               {{ selectedTabIndex() === 0 ? 'Add Mode' : 'Add Account' }}
             </button>
           </div>
@@ -1052,7 +1061,9 @@ export class PaymentAccountModesSheet {
                       >
                         <header>
                           <span
-                            class="category-icon payment-provider-mark {{ paymentMode.providerTone }}"
+                            class="category-icon payment-provider-mark {{
+                              paymentMode.providerTone
+                            }}"
                             aria-hidden="true"
                           >
                             <img [ngSrc]="paymentMode.iconSrc" width="40" height="40" alt="" />
@@ -1067,7 +1078,12 @@ export class PaymentAccountModesSheet {
                             @if (paymentMode.paymentAccountName) {
                               <span class="payment-account-chip">
                                 @if (paymentMode.bankIconSrc) {
-                                  <img [ngSrc]="paymentMode.bankIconSrc" width="18" height="18" alt="" />
+                                  <img
+                                    [ngSrc]="paymentMode.bankIconSrc"
+                                    width="18"
+                                    height="18"
+                                    alt=""
+                                  />
                                 }
                                 {{ paymentMode.paymentAccountName }}
                               </span>
@@ -1101,7 +1117,9 @@ export class PaymentAccountModesSheet {
                           <p
                             class="payment-card-number"
                             role="img"
-                            [attr.aria-label]="paymentMode.typeLabel + ' ending ' + paymentMode.lastFour"
+                            [attr.aria-label]="
+                              paymentMode.typeLabel + ' ending ' + paymentMode.lastFour
+                            "
                           >
                             <span aria-hidden="true">{{ paymentMode.detail }}</span>
                           </p>
@@ -1246,7 +1264,9 @@ export class PaymentAccountModesSheet {
 
                     <div class="form-actions">
                       @if (editingId()) {
-                        <button mat-stroked-button type="button" (click)="resetForm()">Cancel</button>
+                        <button mat-stroked-button type="button" (click)="resetForm()">
+                          Cancel
+                        </button>
                       }
                       <button mat-flat-button type="submit" [disabled]="!store.canWrite()">
                         <mat-icon aria-hidden="true">{{ editingId() ? 'save' : 'add' }}</mat-icon>
@@ -1286,7 +1306,9 @@ export class PaymentAccountModesSheet {
                   </span>
                   <span class="payment-stat-copy">
                     <span>Account Usage</span>
-                    <strong>{{ paymentAccountUsageTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</strong>
+                    <strong>{{
+                      paymentAccountUsageTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                    }}</strong>
                   </span>
                 </span>
               </aside>
@@ -1307,7 +1329,10 @@ export class PaymentAccountModesSheet {
                             [attr.aria-pressed]="isSelectedAccount(account.id)"
                             (click)="$event.stopPropagation(); selectPaymentAccount(account.id)"
                           >
-                            <span class="category-icon payment-provider-mark bank" aria-hidden="true">
+                            <span
+                              class="category-icon payment-provider-mark bank"
+                              aria-hidden="true"
+                            >
                               <img [ngSrc]="account.iconSrc" width="40" height="40" alt="" />
                             </span>
                             <span>
@@ -1334,7 +1359,9 @@ export class PaymentAccountModesSheet {
                               aria-label="Archive payment account"
                               matTooltip="Archive payment account"
                               (click)="$event.stopPropagation(); archivePaymentAccount(account.id)"
-                              [disabled]="!store.canWrite() || !store.canArchivePaymentAccount(account.id)"
+                              [disabled]="
+                                !store.canWrite() || !store.canArchivePaymentAccount(account.id)
+                              "
                             >
                               <mat-icon aria-hidden="true">archive</mat-icon>
                             </button>
@@ -1344,7 +1371,9 @@ export class PaymentAccountModesSheet {
                         <div class="category-card-body">
                           <span>
                             Used
-                            {{ account.usageAmount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}
+                            {{
+                              account.usageAmount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                            }}
                           </span>
                           <span class="badge neutral">
                             {{ account.mappedModeCount }}
@@ -1366,7 +1395,9 @@ export class PaymentAccountModesSheet {
 
                       <div class="mapped-mode-list" aria-label="Mapped payment modes">
                         @for (paymentMode of account.mappedModes; track paymentMode.id) {
-                          <span class="payment-mode-badge {{ store.paymentModeTone(paymentMode.id) }}">
+                          <span
+                            class="payment-mode-badge {{ store.paymentModeTone(paymentMode.id) }}"
+                          >
                             <img
                               [ngSrc]="store.paymentModeIconSrc(paymentMode)"
                               width="18"
@@ -1386,7 +1417,9 @@ export class PaymentAccountModesSheet {
                 <article class="panel-card payment-form-card">
                   <header class="panel-heading">
                     <h2>
-                      {{ editingPaymentAccountId() ? 'Edit Payment Account' : 'Add Payment Account' }}
+                      {{
+                        editingPaymentAccountId() ? 'Edit Payment Account' : 'Add Payment Account'
+                      }}
                     </h2>
                     <p>Save the bank and last four digits for account-level totals.</p>
                   </header>
@@ -1485,7 +1518,11 @@ export class PaymentAccountModesSheet {
         color: #10213f;
       }
 
-      :host ::ng-deep .payment-tabs.mat-primary .mat-mdc-tab-header .mdc-tab-indicator__content--underline {
+      :host
+        ::ng-deep
+        .payment-tabs.mat-primary
+        .mat-mdc-tab-header
+        .mdc-tab-indicator__content--underline {
         border-color: #2f80ed;
         border-width: 3px;
       }
@@ -1700,6 +1737,10 @@ export class PaymentAccountModesSheet {
         align-items: start;
       }
 
+      .payment-mode-card header > div {
+        min-width: 0;
+      }
+
       .payment-mode-card h2,
       .payment-mode-card p {
         margin: 0;
@@ -1777,24 +1818,30 @@ export class PaymentAccountModesSheet {
 
       .payment-account-chip {
         display: inline-flex;
-        max-width: 100%;
-        min-height: 28px;
+        width: max-content;
+        // max-width: min(100%, 158px);
+        min-height: 24px;
         align-items: center;
-        gap: 7px;
-        margin-top: 9px;
-        padding: 0 10px;
+        gap: 6px;
+        margin-top: 8px;
+        padding: 0 9px;
         border: 1px solid #cfe2ff;
         border-radius: 999px;
         background: #fff;
         color: #135ab8;
-        font-size: 0.76rem;
+        font-size: 0.72rem;
         font-weight: 800;
+        line-height: 1.1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       .payment-account-chip img {
+        flex: 0 0 auto;
         display: block;
-        width: 18px;
-        height: 18px;
+        width: 16px;
+        height: 16px;
         object-fit: contain;
       }
 
@@ -2141,8 +2188,9 @@ export class PaymentModesPage {
   readonly selectedPaymentAccountCard = computed(() => {
     const selectedId = this.selectedPaymentAccountId();
     return selectedId
-      ? (this.store.paymentAccountCards().find((paymentAccount) => paymentAccount.id === selectedId) ??
-          null)
+      ? (this.store
+          .paymentAccountCards()
+          .find((paymentAccount) => paymentAccount.id === selectedId) ?? null)
       : null;
   });
   readonly formSubtitle = computed(() =>
@@ -2350,7 +2398,9 @@ export class PaymentModesPage {
     });
   }
 
-  private openMappedPaymentModes(paymentAccount: ReturnType<BudgetStore['paymentAccountCards']>[number]): void {
+  private openMappedPaymentModes(
+    paymentAccount: ReturnType<BudgetStore['paymentAccountCards']>[number],
+  ): void {
     this.bottomSheet.open(PaymentAccountModesSheet, {
       ariaLabel: `${paymentAccount.name} mapped payment modes`,
       data: {

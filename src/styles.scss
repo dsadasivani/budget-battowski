@@ -854,8 +854,8 @@ a {
 
 .donut-layout {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  gap: 28px;
+  grid-template-columns: minmax(190px, 220px) minmax(180px, 1fr);
+  gap: 22px;
   align-items: center;
 
   &.single {
@@ -896,7 +896,28 @@ a {
   }
 }
 
-.legend-list div,
+.legend-list div {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+
+  .dot {
+    width: 10px;
+    height: 10px;
+  }
+
+  strong {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  b {
+    justify-self: end;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
 .summary-list div {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -970,6 +991,21 @@ a {
     display: block;
     color: #66748a;
     font-weight: 500;
+  }
+
+  .payment-mode-badge {
+    justify-content: flex-start;
+    max-width: min(160px, 100%);
+    min-height: 24px;
+    margin-top: 6px;
+    padding: 0 8px;
+    font-size: 0.72rem;
+
+    img {
+      width: 14px;
+      height: 14px;
+      margin-right: 5px;
+    }
   }
 }
 
