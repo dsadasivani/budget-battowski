@@ -9,9 +9,7 @@
         <span>Budget Battowski</span>
       </div>
       <h1 id="global-loader-title">Budget Battowski</h1>
-      <p class="loader-copy">
-        Preparing your private budget workspace.
-      </p>
+      <p class="loader-copy">Preparing your private budget workspace.</p>
       <div class="loader-progress" role="progressbar" aria-label="Loading your workspace">
         <span></span>
       </div>
@@ -145,10 +143,14 @@
         <button
           mat-icon-button
           type="button"
-          [attr.aria-label]="loginCarouselPaused() ? 'Play feature carousel' : 'Pause feature carousel'"
+          [attr.aria-label]="
+            loginCarouselPaused() ? 'Play feature carousel' : 'Pause feature carousel'
+          "
           (click)="toggleLoginCarousel()"
         >
-          <mat-icon aria-hidden="true">{{ loginCarouselPaused() ? 'play_arrow' : 'pause' }}</mat-icon>
+          <mat-icon aria-hidden="true">{{
+            loginCarouselPaused() ? 'play_arrow' : 'pause'
+          }}</mat-icon>
         </button>
       </div>
     </section>
@@ -227,11 +229,21 @@
       </mat-menu>
 
       <nav class="side-nav">
+        <button
+          class="guided-tour-button"
+          type="button"
+          matTooltip="Open a plain-English walkthrough of the app"
+          (click)="openOnboarding()"
+        >
+          <mat-icon aria-hidden="true">tips_and_updates</mat-icon>
+          <span>Guided tour</span>
+        </button>
         @for (item of navItems; track item.path) {
           <a
             [routerLink]="item.path"
             routerLinkActive="active"
             [routerLinkActiveOptions]="{ exact: true }"
+            [matTooltip]="'What you can do in ' + item.label"
             (click)="closeNav()"
           >
             <mat-icon aria-hidden="true">{{ item.icon }}</mat-icon>
@@ -275,6 +287,80 @@
     <main class="content-shell" id="main-content">
       <router-outlet></router-outlet>
     </main>
+
+    @if (onboardingOpen(); as isOpen) {
+      <section
+        class="onboarding-backdrop"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="onboarding-title"
+        aria-describedby="onboarding-description"
+      >
+        <article class="onboarding-panel">
+          <button
+            class="onboarding-close"
+            mat-icon-button
+            type="button"
+            aria-label="Close guided tour"
+            (click)="closeOnboarding()"
+          >
+            <mat-icon aria-hidden="true">close</mat-icon>
+          </button>
+
+          <div class="onboarding-hero">
+            <span class="onboarding-icon" aria-hidden="true">
+              <mat-icon>{{ activeOnboardingStep().icon }}</mat-icon>
+            </span>
+            <span class="onboarding-step-label">{{ onboardingProgressLabel() }}</span>
+            <p class="onboarding-eyebrow">{{ activeOnboardingStep().eyebrow }}</p>
+            <h2 id="onboarding-title">{{ activeOnboardingStep().title }}</h2>
+            <p id="onboarding-description">{{ activeOnboardingStep().description }}</p>
+          </div>
+
+          <ul class="onboarding-tips" aria-label="Helpful tips">
+            @for (tip of activeOnboardingStep().tips; track tip) {
+              <li>
+                <mat-icon aria-hidden="true">check_circle</mat-icon>
+                <span>{{ tip }}</span>
+              </li>
+            }
+          </ul>
+
+          <div class="onboarding-dots" aria-label="Tour steps">
+            @for (step of onboardingSteps; track step.title; let index = $index) {
+              <button
+                type="button"
+                [class.active]="index === onboardingIndex()"
+                [attr.aria-label]="'Show tour step: ' + step.eyebrow"
+                [attr.aria-current]="index === onboardingIndex() ? 'step' : null"
+                (click)="selectOnboardingStep(index)"
+              ></button>
+            }
+          </div>
+
+          <footer class="onboarding-actions">
+            <button
+              mat-stroked-button
+              type="button"
+              (click)="previousOnboardingStep()"
+              [disabled]="onboardingIndex() === 0"
+            >
+              Back
+            </button>
+            <a
+              mat-stroked-button
+              [routerLink]="activeOnboardingStep().path"
+              (click)="closeOnboarding(); closeNav()"
+            >
+              {{ activeOnboardingStep().actionLabel }}
+            </a>
+            <button mat-flat-button type="button" (click)="nextOnboardingStep()">
+              {{ onboardingIndex() === onboardingSteps.length - 1 ? 'Finish tour' : 'Next' }}
+            </button>
+          </footer>
+        </article>
+      </section>
+    }
 
     <nav class="mobile-bottom-nav" aria-label="Mobile primary navigation">
       @for (item of primaryMobileNavItems; track item.path) {

@@ -1,11 +1,5 @@
 import { CommonModule } from '@angular/common';
-import {
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  forwardRef,
-  signal,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, forwardRef, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatBottomSheetModule } from '@angular/material/bottom-sheet';
 import { MatIconModule } from '@angular/material/icon';
@@ -21,6 +15,16 @@ type NavItem = {
   icon: string;
   path: string;
   shortLabel?: string;
+};
+
+type OnboardingStep = {
+  icon: string;
+  eyebrow: string;
+  title: string;
+  description: string;
+  actionLabel: string;
+  path: string;
+  tips: string[];
 };
 
 type LoginFeature = {
@@ -58,11 +62,75 @@ type LoginFeature = {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class App extends BudgetStore {
+  private static readonly onboardingStorageKey = 'budget-battowski-onboarding-v1';
   private loginCarouselTimer: ReturnType<typeof setInterval> | null = null;
 
   readonly navOpen = signal(false);
+  readonly onboardingOpen = signal(false);
+  readonly onboardingIndex = signal(0);
   readonly loginCarouselIndex = signal(0);
   readonly loginCarouselPaused = signal(false);
+
+  readonly onboardingSteps: OnboardingStep[] = [
+    {
+      icon: 'dashboard',
+      eyebrow: 'Start here',
+      title: 'Your dashboard is the quick health check.',
+      description:
+        'See income, expenses, investments, loan EMIs, and what is left for the selected month before making decisions.',
+      actionLabel: 'Open dashboard',
+      path: '/dashboard',
+      tips: ['Use month and member filters first.', 'Watch the remaining amount and runway badge.'],
+    },
+    {
+      icon: 'credit_card',
+      eyebrow: 'Daily tracking',
+      title: 'Add spending as recurring or one-time.',
+      description:
+        'Recurring entries are bills that repeat. One-time entries are ad-hoc purchases. Keeping them separate makes every month easier to review.',
+      actionLabel: 'Review expenses',
+      path: '/expenses',
+      tips: ['Use search to find a bill quickly.', 'Monthly review helps confirm expected rows.'],
+    },
+    {
+      icon: 'calendar_month',
+      eyebrow: 'Plan ahead',
+      title: 'Use planning before the money moves.',
+      description:
+        'Planning lets you compare expected income, commitments, and savings goals so there are fewer surprises later.',
+      actionLabel: 'Open planning',
+      path: '/planning',
+      tips: ['Plan by month.', 'Adjust categories before overspending.'],
+    },
+    {
+      icon: 'trending_up',
+      eyebrow: 'Grow and repay',
+      title: 'Investments and loans stay in the same picture.',
+      description:
+        'Track SIPs, savings, and EMIs beside expenses so your budget reflects the full household cash flow.',
+      actionLabel: 'See investments',
+      path: '/investments',
+      tips: ['Keep SIPs updated.', 'Check loan EMI totals on the dashboard.'],
+    },
+    {
+      icon: 'group',
+      eyebrow: 'Household setup',
+      title: 'Invite the right people and keep data organized.',
+      description:
+        'Workspaces, members, categories, payment modes, and import/export tools help you keep the app clean as usage grows.',
+      actionLabel: 'Open workspace',
+      path: '/workspace',
+      tips: [
+        'Create a workspace for each household.',
+        'Use categories and payment modes for cleaner reports.',
+      ],
+    },
+  ];
+  readonly activeOnboardingStep = computed(() => this.onboardingSteps[this.onboardingIndex()]);
+  readonly onboardingProgressLabel = computed(
+    () => `Step ${this.onboardingIndex() + 1} of ${this.onboardingSteps.length}`,
+  );
+
   readonly loginFeatures: LoginFeature[] = [
     {
       eyebrow: 'Month-first planning',
@@ -144,6 +212,7 @@ export class App extends BudgetStore {
   constructor() {
     super();
     this.startLoginCarousel();
+    this.openOnboardingForFirstVisit();
   }
 
   override ngOnDestroy(): void {
@@ -152,6 +221,49 @@ export class App extends BudgetStore {
     }
 
     super.ngOnDestroy();
+  }
+
+  openOnboarding(): void {
+    this.onboardingIndex.set(0);
+    this.onboardingOpen.set(true);
+  }
+
+  closeOnboarding(): void {
+    this.onboardingOpen.set(false);
+    this.markOnboardingSeen();
+  }
+
+  nextOnboardingStep(): void {
+    if (this.onboardingIndex() === this.onboardingSteps.length - 1) {
+      this.closeOnboarding();
+      return;
+    }
+
+    this.onboardingIndex.update((index) => index + 1);
+  }
+
+  previousOnboardingStep(): void {
+    this.onboardingIndex.update((index) => Math.max(0, index - 1));
+  }
+
+  selectOnboardingStep(index: number): void {
+    this.onboardingIndex.set(index);
+  }
+
+  private openOnboardingForFirstVisit(): void {
+    if (this.firebase.mode === 'firebase' && !this.workspaceId()) {
+      return;
+    }
+
+    if (globalThis.localStorage?.getItem(App.onboardingStorageKey) === 'seen') {
+      return;
+    }
+
+    this.onboardingOpen.set(true);
+  }
+
+  private markOnboardingSeen(): void {
+    globalThis.localStorage?.setItem(App.onboardingStorageKey, 'seen');
   }
 
   toggleNav(): void {

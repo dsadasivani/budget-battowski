@@ -115,7 +115,9 @@ function paymentAccountIconSrc(paymentAccount?: Pick<PaymentAccount, 'bankName'>
     Axis: '/bank-icons/Axis Bank Symbol SVG.svg',
   };
 
-  return paymentAccount ? (icons[paymentAccount.bankName] ?? '/bank-icons/bank-building-icon.svg') : '/bank-icons/bank-building-icon.svg';
+  return paymentAccount
+    ? (icons[paymentAccount.bankName] ?? '/bank-icons/bank-building-icon.svg')
+    : '/bank-icons/bank-building-icon.svg';
 }
 
 function createPaymentModeStore(
@@ -212,9 +214,7 @@ function createPaymentModeStore(
   const archivePaymentAccount = vi.fn(async (paymentAccountId: string) => {
     paymentAccounts.update((items) =>
       items.map((item) =>
-        item.id === paymentAccountId
-          ? { ...item, archivedDate: '2026-06-16T00:00:00.000Z' }
-          : item,
+        item.id === paymentAccountId ? { ...item, archivedDate: '2026-06-16T00:00:00.000Z' } : item,
       ),
     );
     return true;
@@ -381,6 +381,7 @@ describe('App', () => {
 
     const menuText = document.body.textContent ?? '';
     expect(menuText).toContain('Payment Modes');
+    expect(menuText).toContain('Guided tour');
     expect(menuText).toContain('Log out');
   });
 
@@ -1939,9 +1940,7 @@ describe('PaymentModesPage', () => {
     page.selectPaymentAccount('pa-hdfc');
     fixture.detectChanges();
 
-    expect(page.selectedPaymentAccountCard()).toEqual(
-      expect.objectContaining({ id: 'pa-hdfc' }),
-    );
+    expect(page.selectedPaymentAccountCard()).toEqual(expect.objectContaining({ id: 'pa-hdfc' }));
     expect(element.querySelector('.account-detail-panel')?.textContent ?? '').toContain('GPay');
   });
 
