@@ -13,6 +13,7 @@ import { MatTabsModule } from '@angular/material/tabs';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { provideNativeDateAdapter } from '@angular/material/core';
 
+import { PAYMENT_BANK_OPTIONS } from './budget.models';
 import type {
   BudgetCategory,
   Cadence,
@@ -207,6 +208,10 @@ const PAYMENT_CARD_ICONS: Record<string, string> = {
   visa: '/payment-icons/cards_visa.svg',
 };
 const DEFAULT_CARD_ICON = '/payment-icons/cards_default.svg';
+const DEFAULT_BANK_ICON = '/bank-icons/bank-building-icon.svg';
+const PAYMENT_BANK_ICON_BY_NAME = new Map(
+  PAYMENT_BANK_OPTIONS.map((bank) => [bank.name, bank.iconSrc] as const),
+);
 
 @Component({
   selector: 'app-bulk-editor-dialog',
@@ -737,6 +742,10 @@ export class BulkEditorDialog {
   }
 
   protected paymentModeIconSrc(paymentMode: PaymentMode): string {
+    if (paymentMode.type === 'internet-banking') {
+      return PAYMENT_BANK_ICON_BY_NAME.get(paymentMode.bankName ?? 'Default') ?? DEFAULT_BANK_ICON;
+    }
+
     if (paymentMode.type === 'cash') {
       return '/payment-icons/cash.svg';
     }

@@ -10,7 +10,7 @@ import { vi } from 'vitest';
 import { App } from './app';
 import { routes } from './app.routes';
 import { BulkEditorDialog, type BulkEditorData } from './bulk-editor-dialog';
-import type { PaymentMode } from './budget.models';
+import type { PaymentAccount, PaymentMode } from './budget.models';
 import { BudgetStore } from './budget.store';
 import {
   buildProcessedImportCsv,
@@ -19,7 +19,12 @@ import {
   parseBudgetImportCsv,
   parseBudgetImportFile,
 } from './budget-import.service';
-import { PaymentModeFormSheet, PaymentModesPage } from './pages/payment-modes-page';
+import {
+  PaymentAccountFormSheet,
+  PaymentAccountModesSheet,
+  PaymentModeFormSheet,
+  PaymentModesPage,
+} from './pages/payment-modes-page';
 
 function runAxe(element: Element): Promise<axe.AxeResults> {
   return new Promise((resolve, reject) => {
@@ -50,6 +55,7 @@ function paymentModeTypeLabel(type: PaymentMode['type']): string {
     wallet: 'Wallet',
     'credit-card': 'Credit Card',
     'debit-card': 'Debit Card',
+    'internet-banking': 'Internet Banking',
   };
 
   return labels[type];
@@ -69,6 +75,10 @@ function paymentProviderTone(provider: PaymentMode['provider']): string {
 }
 
 function paymentModeIconSrc(paymentMode: PaymentMode): string {
+  if (paymentMode.type === 'internet-banking') {
+    return '/bank-icons/bank-building-icon.svg';
+  }
+
   if (paymentMode.type === 'cash') {
     return '/payment-icons/cash.svg';
   }
@@ -95,23 +105,83 @@ function paymentModeIconSrc(paymentMode: PaymentMode): string {
   return '/payment-icons/cards_default.svg';
 }
 
-function createPaymentModeStore(initialPaymentModes: PaymentMode[] = []) {
+function paymentAccountDetail(paymentAccount: Pick<PaymentAccount, 'lastFour'>): string {
+  return `xxxx ${paymentAccount.lastFour}`;
+}
+
+function paymentAccountIconSrc(paymentAccount?: Pick<PaymentAccount, 'bankName'>): string {
+  const icons: Partial<Record<PaymentAccount['bankName'], string>> = {
+    HDFC: '/bank-icons/HDFC Bank Symbol SVG.svg',
+    Axis: '/bank-icons/Axis Bank Symbol SVG.svg',
+  };
+
+  return paymentAccount ? (icons[paymentAccount.bankName] ?? '/bank-icons/bank-building-icon.svg') : '/bank-icons/bank-building-icon.svg';
+}
+
+function createPaymentModeStore(
+  initialPaymentModes: PaymentMode[] = [],
+  initialPaymentAccounts: PaymentAccount[] = [],
+) {
   const paymentModes = signal(initialPaymentModes);
+  const paymentAccounts = signal(initialPaymentAccounts);
+  const activePaymentAccounts = computed(() =>
+    paymentAccounts().filter((paymentAccount) => !paymentAccount.archivedDate),
+  );
   const activePaymentModes = computed(() =>
     paymentModes().filter((paymentMode) => !paymentMode.archivedDate),
+  );
+  const paymentModesForAccount = (paymentAccountId: string) =>
+    activePaymentModes().filter((paymentMode) => paymentMode.paymentAccountId === paymentAccountId);
+  const paymentAccountUsage = (paymentAccountId: string) =>
+    paymentModesForAccount(paymentAccountId).reduce(
+      (total, paymentMode) => {
+        const card = paymentModeCards().find((item) => item.id === paymentMode.id);
+        return {
+          amount: total.amount + (card?.usageAmount ?? 0),
+          count: total.count + (card?.recordCount ?? 0),
+        };
+      },
+      { amount: 0, count: 0 },
+    );
+  const paymentAccountCards = computed(() =>
+    activePaymentAccounts().map((paymentAccount) => {
+      const usage = paymentAccountUsage(paymentAccount.id);
+      const mappedModes = paymentModesForAccount(paymentAccount.id);
+      return {
+        ...paymentAccount,
+        detail: paymentAccountDetail(paymentAccount),
+        iconSrc: paymentAccountIconSrc(paymentAccount),
+        mappedModeCount: mappedModes.length,
+        mappedModes,
+        recordCount: usage.count,
+        usageAmount: usage.amount,
+      };
+    }),
   );
   const paymentModeCards = computed(() =>
     activePaymentModes().map((paymentMode) => ({
       ...paymentMode,
       detail:
         paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card'
-          ? `ending ${paymentMode.lastFour}`
-          : paymentMode.provider,
+          ? `xxxx xxxx xxxx ${paymentMode.lastFour}`
+          : paymentMode.type === 'internet-banking'
+            ? paymentMode.bankName
+            : paymentMode.provider,
       icon: paymentMode.type === 'upi' ? 'qr_code_2' : 'credit_card',
       iconSrc: paymentModeIconSrc(paymentMode),
+      bankIconSrc: paymentMode.paymentAccountId
+        ? paymentAccountIconSrc(
+            activePaymentAccounts().find((account) => account.id === paymentMode.paymentAccountId),
+          )
+        : undefined,
+      paymentAccountName:
+        activePaymentAccounts().find((account) => account.id === paymentMode.paymentAccountId)
+          ?.name ?? '',
       providerTone: paymentMode.provider
         ? paymentProviderTone(paymentMode.provider)
-        : paymentMode.type,
+        : paymentMode.type === 'internet-banking'
+          ? 'bank'
+          : paymentMode.type,
       recordCount: 0,
       typeLabel: paymentModeTypeLabel(paymentMode.type),
       usageAmount: 0,
@@ -132,8 +202,28 @@ function createPaymentModeStore(initialPaymentModes: PaymentMode[] = []) {
     );
     return true;
   });
+  const savePaymentAccount = vi.fn(async (paymentAccount: PaymentAccount) => {
+    paymentAccounts.update((items) => [
+      ...items.filter((item) => item.id !== paymentAccount.id),
+      paymentAccount,
+    ]);
+    return true;
+  });
+  const archivePaymentAccount = vi.fn(async (paymentAccountId: string) => {
+    paymentAccounts.update((items) =>
+      items.map((item) =>
+        item.id === paymentAccountId
+          ? { ...item, archivedDate: '2026-06-16T00:00:00.000Z' }
+          : item,
+      ),
+    );
+    return true;
+  });
 
   return {
+    paymentAccounts,
+    activePaymentAccounts,
+    paymentAccountCards,
     paymentModes,
     activePaymentModes,
     paymentModeCards,
@@ -151,8 +241,23 @@ function createPaymentModeStore(initialPaymentModes: PaymentMode[] = []) {
     ),
     showPageSkeleton: signal(false),
     canWrite: signal(true),
+    paymentAccountDetail,
+    paymentAccountIconSrc,
+    paymentModesForAccount,
+    canArchivePaymentAccount: (paymentAccountId: string) =>
+      paymentModesForAccount(paymentAccountId).length === 0,
+    paymentModeIconSrc,
+    paymentModeTone: (paymentModeId: string | undefined) =>
+      activePaymentModes().find((paymentMode) => paymentMode.id === paymentModeId)?.provider
+        ? 'googlepay'
+        : activePaymentModes().find((paymentMode) => paymentMode.id === paymentModeId)?.type ===
+            'internet-banking'
+          ? 'bank'
+          : 'card',
     savePaymentMode,
     archivePaymentMode,
+    savePaymentAccount,
+    archivePaymentAccount,
   };
 }
 
@@ -1387,6 +1492,182 @@ describe('App', () => {
     );
   });
 
+  it('should total selected-month usage at payment account level', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      expenses: { set: (records: unknown[]) => void };
+      paymentAccountCards: () => Array<{
+        id: string;
+        mappedModeCount: number;
+        recordCount: number;
+        usageAmount: number;
+      }>;
+      paymentAccounts: { set: (records: PaymentAccount[]) => void };
+      paymentModeCards: () => Array<{ bankIconSrc?: string; id: string; iconSrc: string }>;
+      paymentModes: { set: (records: PaymentMode[]) => void };
+      selectedMonth: { set: (month: string) => void };
+    };
+
+    app.selectedMonth.set('2026-06');
+    app.paymentAccounts.set([
+      {
+        id: 'pa-hdfc',
+        name: 'Salary account',
+        bankName: 'HDFC',
+        lastFour: '4321',
+      },
+    ]);
+    app.paymentModes.set([
+      {
+        id: 'pm-upi',
+        type: 'upi',
+        provider: 'Google Pay',
+        name: 'GPay',
+        paymentAccountId: 'pa-hdfc',
+      },
+      {
+        id: 'pm-netbanking',
+        type: 'internet-banking',
+        name: 'HDFC NetBanking',
+        bankName: 'HDFC',
+        paymentAccountId: 'pa-hdfc',
+      },
+    ]);
+    app.expenses.set([
+      {
+        id: 'expense-food',
+        month: '2026-06',
+        date: '2026-06-05',
+        name: 'Food',
+        categoryId: 'category-food',
+        amount: 1000,
+        type: 'one-time',
+        note: '',
+        paymentModeId: 'pm-upi',
+      },
+      {
+        id: 'expense-tax',
+        month: '2026-06',
+        date: '2026-06-06',
+        name: 'Tax',
+        categoryId: 'category-tax',
+        amount: 2500,
+        type: 'one-time',
+        note: '',
+        paymentModeId: 'pm-netbanking',
+      },
+    ]);
+
+    expect(app.paymentAccountCards().find((account) => account.id === 'pa-hdfc')).toEqual(
+      expect.objectContaining({ mappedModeCount: 2, recordCount: 2, usageAmount: 3500 }),
+    );
+    expect(app.paymentModeCards().find((paymentMode) => paymentMode.id === 'pm-upi')).toEqual(
+      expect.objectContaining({
+        bankIconSrc: '/bank-icons/HDFC Bank Symbol SVG.svg',
+        iconSrc: '/payment-icons/google-pay.svg',
+      }),
+    );
+    expect(
+      app.paymentModeCards().find((paymentMode) => paymentMode.id === 'pm-netbanking'),
+    ).toEqual(
+      expect.objectContaining({
+        iconSrc: '/bank-icons/HDFC Bank Symbol SVG.svg',
+      }),
+    );
+  });
+
+  it('should block archiving payment accounts that still have active mapped modes', async () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      archivePaymentAccount: (paymentAccountId: string) => Promise<boolean>;
+      canArchivePaymentAccount: (paymentAccountId: string) => boolean;
+      paymentAccounts: { set: (records: PaymentAccount[]) => void };
+      paymentModes: { set: (records: PaymentMode[]) => void };
+    };
+
+    app.paymentAccounts.set([
+      {
+        id: 'pa-axis',
+        name: 'Bills account',
+        bankName: 'Axis',
+        lastFour: '9999',
+      },
+    ]);
+    app.paymentModes.set([
+      {
+        id: 'pm-axis-upi',
+        type: 'upi',
+        provider: 'Google Pay',
+        name: 'Bills UPI',
+        paymentAccountId: 'pa-axis',
+      },
+    ]);
+
+    expect(app.canArchivePaymentAccount('pa-axis')).toBe(false);
+    await expect(app.archivePaymentAccount('pa-axis')).resolves.toBe(false);
+  });
+
+  it('should restore archived payment modes and accounts', async () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      activePaymentAccounts: () => PaymentAccount[];
+      activePaymentModes: () => PaymentMode[];
+      archivedPaymentAccounts: () => PaymentAccount[];
+      archivedPaymentModes: () => PaymentMode[];
+      firebase: { mode: string };
+      paymentAccounts: { set: (records: PaymentAccount[]) => void };
+      paymentModes: { set: (records: PaymentMode[]) => void };
+      restorePaymentAccount: (paymentAccountId: string) => Promise<boolean>;
+      restorePaymentMode: (paymentModeId: string) => Promise<boolean>;
+    };
+
+    app.firebase.mode = 'local';
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    app.paymentModes.set([
+      {
+        id: 'pm-old-upi',
+        type: 'upi',
+        provider: 'Google Pay',
+        name: 'Old UPI',
+        archivedDate: '2026-06-01T00:00:00.000Z',
+      },
+    ]);
+    app.paymentAccounts.set([
+      {
+        id: 'pa-old',
+        name: 'Old account',
+        bankName: 'HDFC',
+        lastFour: '4321',
+        archivedDate: '2026-06-01T00:00:00.000Z',
+      },
+    ]);
+
+    expect(app.archivedPaymentModes()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'pm-old-upi' })]),
+    );
+    expect(app.archivedPaymentAccounts()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'pa-old' })]),
+    );
+
+    await expect(app.restorePaymentMode('pm-old-upi')).resolves.toBe(true);
+    await expect(app.restorePaymentAccount('pa-old')).resolves.toBe(true);
+
+    expect(app.activePaymentModes()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'pm-old-upi' })]),
+    );
+    expect(app.activePaymentAccounts()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'pa-old' })]),
+    );
+    expect(app.archivedPaymentModes()).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'pm-old-upi' })]),
+    );
+    expect(app.archivedPaymentAccounts()).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'pa-old' })]),
+    );
+  });
+
   it('should expose icon and label metadata for tagged financial rows', () => {
     const fixture = TestBed.createComponent(App);
     const app = fixture.componentInstance as unknown as {
@@ -1566,6 +1847,164 @@ describe('PaymentModesPage', () => {
     );
   });
 
+  it('should save internet banking modes with bank and mapped account data', async () => {
+    store.paymentAccounts.set([
+      {
+        id: 'pa-hdfc',
+        name: 'Salary account',
+        bankName: 'HDFC',
+        lastFour: '4321',
+      },
+    ]);
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    const page = fixture.componentInstance;
+    fixture.detectChanges();
+
+    page.setFormType('internet-banking');
+    page.form.patchValue({
+      name: 'HDFC NetBanking',
+      bankName: 'HDFC',
+      paymentAccountId: 'pa-hdfc',
+    });
+    page.savePaymentMode();
+    await Promise.resolve();
+
+    expect(store.savePaymentMode).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'internet-banking',
+        name: 'HDFC NetBanking',
+        bankName: 'HDFC',
+        paymentAccountId: 'pa-hdfc',
+        provider: undefined,
+      }),
+    );
+  });
+
+  it('should render the payment accounts tab and save account records', async () => {
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    const page = fixture.componentInstance;
+    fixture.detectChanges();
+
+    page.selectedTabIndex.set(1);
+    page.savePaymentAccount();
+
+    expect(page.accountValidationError()).toBe('Account name is required.');
+    expect(store.savePaymentAccount).not.toHaveBeenCalled();
+
+    page.accountForm.patchValue({
+      name: 'Salary account',
+      bankName: 'HDFC',
+      lastFour: '4321',
+    });
+    page.savePaymentAccount();
+    await Promise.resolve();
+    fixture.detectChanges();
+
+    expect(store.savePaymentAccount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Salary account',
+        bankName: 'HDFC',
+        lastFour: '4321',
+      }),
+    );
+  });
+
+  it('should hide mapped payment modes until an account is selected on desktop', () => {
+    store.paymentAccounts.set([
+      {
+        id: 'pa-hdfc',
+        name: 'Salary account',
+        bankName: 'HDFC',
+        lastFour: '4321',
+      },
+    ]);
+    store.paymentModes.set([
+      {
+        id: 'pm-upi',
+        type: 'upi',
+        provider: 'Google Pay',
+        name: 'GPay',
+        paymentAccountId: 'pa-hdfc',
+      },
+    ]);
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    const page = fixture.componentInstance;
+    page.selectedTabIndex.set(1);
+    fixture.detectChanges();
+
+    const element = fixture.nativeElement as HTMLElement;
+    expect(page.selectedPaymentAccountCard()).toBeNull();
+    expect(element.querySelector('.account-detail-panel')).toBeNull();
+
+    page.selectPaymentAccount('pa-hdfc');
+    fixture.detectChanges();
+
+    expect(page.selectedPaymentAccountCard()).toEqual(
+      expect.objectContaining({ id: 'pa-hdfc' }),
+    );
+    expect(element.querySelector('.account-detail-panel')?.textContent ?? '').toContain('GPay');
+  });
+
+  it('should show mapped payment modes in a bottom sheet on mobile account clicks', () => {
+    breakpointObserver.isMatched.mockReturnValue(true);
+    store.paymentAccounts.set([
+      {
+        id: 'pa-hdfc',
+        name: 'Salary account',
+        bankName: 'HDFC',
+        lastFour: '4321',
+      },
+    ]);
+    store.paymentModes.set([
+      {
+        id: 'pm-upi',
+        type: 'upi',
+        provider: 'Google Pay',
+        name: 'GPay',
+        paymentAccountId: 'pa-hdfc',
+      },
+    ]);
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    const page = fixture.componentInstance;
+    page.selectedTabIndex.set(1);
+    fixture.detectChanges();
+
+    const cardBody = (fixture.nativeElement as HTMLElement).querySelector(
+      '.payment-account-card .category-card-body',
+    ) as HTMLElement;
+    cardBody.click();
+
+    expect(page.selectedPaymentAccountCard()).toBeNull();
+    expect(bottomSheetOpen).toHaveBeenCalledWith(
+      PaymentAccountModesSheet,
+      expect.objectContaining({
+        ariaLabel: 'Salary account mapped payment modes',
+        data: expect.objectContaining({
+          mappedModes: [expect.objectContaining({ id: 'pm-upi' })],
+          paymentAccount: expect.objectContaining({ id: 'pa-hdfc' }),
+        }),
+      }),
+    );
+  });
+
+  it('should render card modes with masked virtual card numbers', () => {
+    store.paymentModes.set([
+      {
+        id: 'pm-card',
+        type: 'credit-card',
+        name: 'Visa Credit',
+        cardType: 'visa',
+        lastFour: '9002',
+      },
+    ]);
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    fixture.detectChanges();
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('xxxx xxxx xxxx 9002');
+    expect(text).not.toContain('ending 9002');
+  });
+
   it('should update and archive existing payment modes', async () => {
     const existing: PaymentMode = {
       id: 'pm-card',
@@ -1629,6 +2068,23 @@ describe('PaymentModesPage', () => {
       expect.objectContaining({
         data: { paymentMode: existing },
         ariaLabel: 'Edit payment mode',
+        viewContainerRef: expect.anything(),
+      }),
+    );
+  });
+
+  it('should open a bottom sheet for adding payment accounts on mobile', () => {
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    const page = fixture.componentInstance;
+    fixture.detectChanges();
+
+    page.openMobilePaymentAccountForm();
+
+    expect(bottomSheetOpen).toHaveBeenCalledWith(
+      PaymentAccountFormSheet,
+      expect.objectContaining({
+        data: { paymentAccount: undefined },
+        ariaLabel: 'Add payment account',
         viewContainerRef: expect.anything(),
       }),
     );

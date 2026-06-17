@@ -32,6 +32,7 @@ import {
   type BudgetImportRow,
   type BudgetImportSummary,
 } from './budget-import.service';
+import { PAYMENT_BANK_OPTIONS } from './budget.models';
 import type {
   BudgetCategory,
   BudgetCollectionName,
@@ -48,6 +49,8 @@ import type {
   InvestmentFrequency,
   Loan,
   LoanAuditVersion,
+  PaymentAccount,
+  PaymentBankName,
   PaymentCardType,
   PaymentMode,
   PaymentModeProvider,
@@ -186,6 +189,15 @@ function comparePaymentModes(left: PaymentMode, right: PaymentMode): number {
   }
 
   return left.type.localeCompare(right.type) || left.name.localeCompare(right.name);
+}
+
+function comparePaymentAccounts(left: PaymentAccount, right: PaymentAccount): number {
+  const archivedRank = Number(!!left.archivedDate) - Number(!!right.archivedDate);
+  if (archivedRank) {
+    return archivedRank;
+  }
+
+  return left.bankName.localeCompare(right.bankName) || left.name.localeCompare(right.name);
 }
 
 type ScheduledPlan = {
@@ -391,16 +403,14 @@ const PAYMENT_CARD_ICONS: Record<PaymentCardType, string> = {
   'american-express': '/payment-icons/cards_american-express.svg',
   visa: '/payment-icons/cards_visa.svg',
 };
-const PAYMENT_CARD_LABELS: Record<PaymentCardType, string> = {
-  rupay: 'Rupay',
-  maestro: 'Maestro',
-  'diners-club': 'Diners Club',
-  'master-card': 'Master Card',
-  'american-express': 'American Express',
-  visa: 'VISA',
-};
 const DEFAULT_CARD_ICON = '/payment-icons/cards_default.svg';
+const DEFAULT_BANK_NAME: PaymentBankName = 'Default';
+const DEFAULT_BANK_ICON = '/bank-icons/bank-building-icon.svg';
+const PAYMENT_BANK_ICON_BY_NAME: Record<PaymentBankName, string> = Object.fromEntries(
+  PAYMENT_BANK_OPTIONS.map((bank) => [bank.name, bank.iconSrc]),
+) as Record<PaymentBankName, string>;
 const WORKSPACE_DATA_COLLECTIONS: BudgetCollectionName[] = [
+  'paymentAccounts',
   'paymentModes',
   'categories',
   'incomes',
@@ -451,6 +461,7 @@ export class BudgetStore implements OnDestroy {
   readonly pickerYear = signal(monthParts(this.selectedMonth()).year);
   readonly pickerYearPageStart = signal(yearPageStart(this.pickerYear()));
   readonly activeTabIndex = signal(0);
+  readonly paymentAccounts = signal<PaymentAccount[]>([]);
   readonly paymentModes = signal<PaymentMode[]>([]);
   readonly categories = signal<BudgetCategory[]>([]);
   readonly incomes = signal<IncomeSource[]>([]);
@@ -491,7 +502,8 @@ export class BudgetStore implements OnDestroy {
   );
   readonly hasBudgetData = computed(
     () =>
-      this.categories().length +
+        this.categories().length +
+        this.paymentAccounts().length +
         this.paymentModes().length +
         this.incomes().length +
         this.templates().length +
@@ -500,10 +512,41 @@ export class BudgetStore implements OnDestroy {
         this.loans().length >
       0,
   );
+  readonly activePaymentAccounts = computed(() =>
+    this.paymentAccounts()
+      .filter((paymentAccount) => !paymentAccount.archivedDate)
+      .sort(comparePaymentAccounts),
+  );
+  readonly archivedPaymentAccounts = computed(() =>
+    this.paymentAccounts()
+      .filter((paymentAccount) => !!paymentAccount.archivedDate)
+      .sort(comparePaymentAccounts),
+  );
   readonly activePaymentModes = computed(() =>
     this.withDefaultPaymentModes(this.paymentModes())
       .filter((paymentMode) => !paymentMode.archivedDate)
       .sort(comparePaymentModes),
+  );
+  readonly archivedPaymentModes = computed(() =>
+    this.paymentModes()
+      .filter((paymentMode) => !!paymentMode.archivedDate)
+      .sort(comparePaymentModes),
+  );
+  readonly paymentAccountCards = computed(() =>
+    this.activePaymentAccounts().map((paymentAccount) => {
+      const usage = this.paymentAccountUsage(paymentAccount.id);
+      const mappedModes = this.paymentModesForAccount(paymentAccount.id);
+
+      return {
+        ...paymentAccount,
+        detail: this.paymentAccountDetail(paymentAccount),
+        iconSrc: this.paymentAccountIconSrc(paymentAccount),
+        mappedModeCount: mappedModes.length,
+        mappedModes,
+        recordCount: usage.count,
+        usageAmount: usage.amount,
+      };
+    }),
   );
   readonly upiWalletPaymentModeCount = computed(
     () =>
@@ -520,12 +563,20 @@ export class BudgetStore implements OnDestroy {
   readonly paymentModeCards = computed(() =>
     this.activePaymentModes().map((paymentMode) => {
       const usage = this.paymentModeUsage(paymentMode.id);
+      const paymentAccount = this.paymentAccountForMode(paymentMode);
 
       return {
         ...paymentMode,
+        bankIconSrc: paymentAccount
+          ? this.paymentAccountIconSrc(paymentAccount)
+          : paymentMode.bankName
+            ? this.bankIconSrc(paymentMode.bankName)
+            : undefined,
         detail: this.paymentModeDetail(paymentMode),
         icon: this.paymentModeIcon(paymentMode.type),
         iconSrc: this.paymentModeIconSrc(paymentMode),
+        paymentAccountDetail: paymentAccount ? this.paymentAccountDetail(paymentAccount) : '',
+        paymentAccountName: paymentAccount?.name ?? '',
         providerTone: this.paymentModeVisualTone(paymentMode),
         recordCount: usage.count,
         typeLabel: this.paymentModeTypeLabel(paymentMode.type),
@@ -1806,6 +1857,9 @@ export class BudgetStore implements OnDestroy {
 
   private async applyImportRows(rows: BudgetImportRow[]): Promise<boolean> {
     const records = {
+      paymentAccounts: rows
+        .filter((row) => row.collectionName === 'paymentAccounts')
+        .map((row) => row.record as PaymentAccount),
       paymentModes: rows
         .filter((row) => row.collectionName === 'paymentModes')
         .map((row) => row.record as PaymentMode),
@@ -1835,6 +1889,7 @@ export class BudgetStore implements OnDestroy {
         }
 
         await Promise.all([
+          repository.upsertMany('paymentAccounts', records.paymentAccounts),
           repository.upsertMany('paymentModes', records.paymentModes),
           repository.upsertMany('categories', records.categories),
           repository.upsertMany('incomes', records.incomes),
@@ -1845,6 +1900,9 @@ export class BudgetStore implements OnDestroy {
         ]);
       },
       () => {
+        this.paymentAccounts.update((items) =>
+          [...items, ...records.paymentAccounts].sort(comparePaymentAccounts),
+        );
         this.paymentModes.update((items) =>
           [...items, ...records.paymentModes].sort(comparePaymentModes),
         );
@@ -1986,14 +2044,15 @@ export class BudgetStore implements OnDestroy {
 
   paymentModeDetail(paymentMode: PaymentMode): string {
     if (paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card') {
-      const cardLabel = paymentMode.cardType
-        ? (PAYMENT_CARD_LABELS[paymentMode.cardType] ?? 'Card')
-        : 'Card';
-      return paymentMode.lastFour ? `${cardLabel} ending ${paymentMode.lastFour}` : cardLabel;
+      return paymentMode.lastFour ? `xxxx xxxx xxxx ${paymentMode.lastFour}` : 'xxxx xxxx xxxx ----';
     }
 
     if (paymentMode.type === 'cash') {
       return 'Cash';
+    }
+
+    if (paymentMode.type === 'internet-banking') {
+      return paymentMode.bankName ?? DEFAULT_BANK_NAME;
     }
 
     return (
@@ -2008,6 +2067,7 @@ export class BudgetStore implements OnDestroy {
       wallet: 'Wallet',
       'credit-card': 'Credit Card',
       'debit-card': 'Debit Card',
+      'internet-banking': 'Internet Banking',
     };
 
     return labels[type];
@@ -2026,10 +2086,18 @@ export class BudgetStore implements OnDestroy {
       return 'account_balance_wallet';
     }
 
+    if (type === 'internet-banking') {
+      return 'account_balance';
+    }
+
     return 'credit_card';
   }
 
   paymentModeIconSrc(paymentMode: PaymentMode): string {
+    if (paymentMode.type === 'internet-banking' && paymentMode.bankName) {
+      return this.bankIconSrc(paymentMode.bankName);
+    }
+
     if (paymentMode.type === 'cash') {
       return '/payment-icons/cash.svg';
     }
@@ -2045,6 +2113,14 @@ export class BudgetStore implements OnDestroy {
     }
 
     return DEFAULT_CARD_ICON;
+  }
+
+  paymentAccountDetail(paymentAccount: Pick<PaymentAccount, 'lastFour'>): string {
+    return paymentAccount.lastFour ? `xxxx ${paymentAccount.lastFour}` : 'xxxx ----';
+  }
+
+  paymentAccountIconSrc(paymentAccount: Pick<PaymentAccount, 'bankName'>): string {
+    return this.bankIconSrc(paymentAccount.bankName);
   }
 
   paymentModeMeta(paymentModeId: string | undefined): {
@@ -2081,6 +2157,29 @@ export class BudgetStore implements OnDestroy {
     return provider ? (PAYMENT_PROVIDER_TONES[provider] ?? 'card') : 'card';
   }
 
+  paymentModesForAccount(paymentAccountId: string): PaymentMode[] {
+    return this.activePaymentModes().filter(
+      (paymentMode) => paymentMode.paymentAccountId === paymentAccountId,
+    );
+  }
+
+  canArchivePaymentAccount(paymentAccountId: string): boolean {
+    return this.paymentModesForAccount(paymentAccountId).length === 0;
+  }
+
+  paymentAccountUsage(paymentAccountId: string): { amount: number; count: number } {
+    return this.paymentModesForAccount(paymentAccountId).reduce(
+      (total, paymentMode) => {
+        const usage = this.paymentModeUsage(paymentMode.id);
+        return {
+          amount: total.amount + usage.amount,
+          count: total.count + usage.count,
+        };
+      },
+      { amount: 0, count: 0 },
+    );
+  }
+
   private paymentProviderLabel(
     provider: PaymentModeProvider | string | undefined,
   ): string | undefined {
@@ -2095,7 +2194,31 @@ export class BudgetStore implements OnDestroy {
     return provider;
   }
 
+  private paymentAccountForMode(paymentMode: PaymentMode): PaymentAccount | undefined {
+    if (!paymentMode.paymentAccountId) {
+      return undefined;
+    }
+
+    return this.paymentAccounts().find((account) => account.id === paymentMode.paymentAccountId);
+  }
+
+  private bankIconSrc(bankName: PaymentBankName | string | undefined): string {
+    return bankName && bankName in PAYMENT_BANK_ICON_BY_NAME
+      ? PAYMENT_BANK_ICON_BY_NAME[bankName as PaymentBankName]
+      : DEFAULT_BANK_ICON;
+  }
+
+  private paymentBankNameValue(bankName: PaymentBankName | string | undefined): PaymentBankName {
+    return bankName && bankName in PAYMENT_BANK_ICON_BY_NAME
+      ? (bankName as PaymentBankName)
+      : DEFAULT_BANK_NAME;
+  }
+
   private paymentModeVisualTone(paymentMode: PaymentMode): string {
+    if (paymentMode.type === 'internet-banking') {
+      return 'bank';
+    }
+
     if (paymentMode.provider) {
       return this.paymentProviderTone(paymentMode.provider);
     }
@@ -2188,6 +2311,68 @@ export class BudgetStore implements OnDestroy {
     return this.savePaymentMode({
       ...paymentMode,
       archivedDate: new Date().toISOString(),
+      updatedDate: new Date().toISOString(),
+    });
+  }
+
+  async restorePaymentMode(paymentModeId: string): Promise<boolean> {
+    const paymentMode = this.paymentModes().find((mode) => mode.id === paymentModeId);
+    if (!paymentMode?.archivedDate) {
+      return false;
+    }
+
+    return this.savePaymentMode({
+      ...paymentMode,
+      archivedDate: undefined,
+      updatedDate: new Date().toISOString(),
+    });
+  }
+
+  async savePaymentAccount(paymentAccount: PaymentAccount): Promise<boolean> {
+    const normalized = this.normalizePaymentAccount(paymentAccount);
+    const saved = await this.saveRecords('paymentAccounts', [normalized], () => {
+      this.paymentAccounts.update((paymentAccounts) => {
+        const others = paymentAccounts.filter((account) => account.id !== normalized.id);
+        return [...others, normalized].sort(comparePaymentAccounts);
+      });
+    });
+
+    if (saved) {
+      this.syncStatus.set(
+        this.repository() ? 'Payment account saved to Firebase' : 'Payment account saved',
+      );
+    }
+
+    return saved;
+  }
+
+  async archivePaymentAccount(paymentAccountId: string): Promise<boolean> {
+    if (!this.canArchivePaymentAccount(paymentAccountId)) {
+      this.syncStatus.set('Remove mapped payment modes before archiving this account');
+      return false;
+    }
+
+    const paymentAccount = this.paymentAccounts().find((account) => account.id === paymentAccountId);
+    if (!paymentAccount) {
+      return false;
+    }
+
+    return this.savePaymentAccount({
+      ...paymentAccount,
+      archivedDate: new Date().toISOString(),
+      updatedDate: new Date().toISOString(),
+    });
+  }
+
+  async restorePaymentAccount(paymentAccountId: string): Promise<boolean> {
+    const paymentAccount = this.paymentAccounts().find((account) => account.id === paymentAccountId);
+    if (!paymentAccount?.archivedDate) {
+      return false;
+    }
+
+    return this.savePaymentAccount({
+      ...paymentAccount,
+      archivedDate: undefined,
       updatedDate: new Date().toISOString(),
     });
   }
@@ -3164,6 +3349,7 @@ export class BudgetStore implements OnDestroy {
 
   private async watchAuthState(): Promise<void> {
     if (!this.firebase.app) {
+      this.paymentAccounts.set([]);
       this.paymentModes.set(this.withDefaultPaymentModes([]));
       this.categories.set(this.withDefaultCategories([]));
       this.isSessionChecking.set(false);
@@ -3264,6 +3450,9 @@ export class BudgetStore implements OnDestroy {
       id: paymentMode.id || id('payment-mode'),
       type: paymentMode.type,
       name,
+      paymentAccountId: this.isAccountBackedPaymentMode(paymentMode)
+        ? paymentMode.paymentAccountId
+        : undefined,
       createdDate: paymentMode.createdDate || now,
       updatedDate: paymentMode.updatedDate || now,
       archivedDate: paymentMode.archivedDate,
@@ -3276,6 +3465,13 @@ export class BudgetStore implements OnDestroy {
       };
     }
 
+    if (paymentMode.type === 'internet-banking') {
+      return {
+        ...base,
+        bankName: this.paymentBankNameValue(paymentMode.bankName),
+      };
+    }
+
     if (paymentMode.type === 'cash') {
       return base;
     }
@@ -3285,6 +3481,30 @@ export class BudgetStore implements OnDestroy {
       cardType: paymentMode.cardType,
       lastFour: paymentMode.lastFour?.replace(/\D/g, '').slice(-4),
     };
+  }
+
+  private normalizePaymentAccount(paymentAccount: PaymentAccount): PaymentAccount {
+    const now = new Date().toISOString();
+    const lastFour = paymentAccount.lastFour.replace(/\D/g, '').slice(-4);
+
+    return {
+      id: paymentAccount.id || id('payment-account'),
+      name: paymentAccount.name.trim() || 'Bank account',
+      bankName: this.paymentBankNameValue(paymentAccount.bankName),
+      lastFour,
+      createdDate: paymentAccount.createdDate || now,
+      updatedDate: paymentAccount.updatedDate || now,
+      archivedDate: paymentAccount.archivedDate,
+    };
+  }
+
+  private isAccountBackedPaymentMode(paymentMode: Pick<PaymentMode, 'type'>): boolean {
+    return (
+      paymentMode.type === 'upi' ||
+      paymentMode.type === 'credit-card' ||
+      paymentMode.type === 'debit-card' ||
+      paymentMode.type === 'internet-banking'
+    );
   }
 
   private async saveWorkspace(workspace: Workspace, message: string): Promise<void> {
@@ -3321,6 +3541,14 @@ export class BudgetStore implements OnDestroy {
 
     try {
       const subscriptions = await Promise.all([
+        repository.listen(
+          'paymentAccounts',
+          (records) => {
+            this.paymentAccounts.set(records);
+            this.markWorkspaceCollectionLoaded('paymentAccounts', workspaceId);
+          },
+          (message) => this.handleSyncError(message),
+        ),
         repository.listen(
           'paymentModes',
           (records) => {
@@ -3834,6 +4062,7 @@ export class BudgetStore implements OnDestroy {
 
   private clearLegacyLocalData(): void {
     for (const key of [
+      'paymentAccounts',
       'paymentModes',
       'categories',
       'incomes',
@@ -3855,6 +4084,7 @@ export class BudgetStore implements OnDestroy {
   }
 
   private clearAppData(): void {
+    this.paymentAccounts.set([]);
     this.paymentModes.set([]);
     this.categories.set([]);
     this.incomes.set([]);

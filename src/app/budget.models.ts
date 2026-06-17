@@ -17,7 +17,37 @@ export type InvestmentFrequency =
   | 'one-time';
 export type CategoryType = 'Income' | 'Investments' | 'Expenses';
 export type WorkspaceRole = 'owner' | 'editor';
-export type PaymentModeType = 'cash' | 'upi' | 'wallet' | 'credit-card' | 'debit-card';
+export const PAYMENT_BANK_OPTIONS = [
+  { name: 'Default', iconSrc: '/bank-icons/bank-building-icon.svg' },
+  { name: 'Indian Bank', iconSrc: '/bank-icons/Indian Bank Symbol PNG.png' },
+  { name: 'IDFC FIRST', iconSrc: '/bank-icons/IDFC FIRST Bank Symbol PNG.png' },
+  { name: 'Yes Bank', iconSrc: '/bank-icons/Yes Bank Symbol SVG.svg' },
+  { name: 'IndusInd', iconSrc: '/bank-icons/IndusInd Bank Symbol PNG.png' },
+  { name: 'Kotak Mahindra', iconSrc: '/bank-icons/Kotak Mahindra Bank Symbol PNG.png' },
+  {
+    name: 'Punjab National',
+    iconSrc: '/bank-icons/Punjab National Bank Symbol PNG.png',
+  },
+  {
+    name: 'Indian Overseas',
+    iconSrc: '/bank-icons/Indian Overseas Bank Symbol PNG.png',
+  },
+  { name: 'Bank of Baroda', iconSrc: '/bank-icons/Bank of Baroda Symbol PNG.png' },
+  { name: 'Bank of America', iconSrc: '/bank-icons/Bank of America Symbol SVG.svg' },
+  { name: 'HSBC', iconSrc: '/bank-icons/HSBC Holdings Symbol SVG.svg' },
+  { name: 'HDFC', iconSrc: '/bank-icons/HDFC Bank Symbol SVG.svg' },
+  { name: 'SBI', iconSrc: '/bank-icons/State Bank of India Symbol SVG.svg' },
+  { name: 'Axis', iconSrc: '/bank-icons/Axis Bank Symbol SVG.svg' },
+  { name: 'ICICI', iconSrc: '/bank-icons/ICICI Bank Symbol SVG.svg' },
+] as const;
+export type PaymentBankName = (typeof PAYMENT_BANK_OPTIONS)[number]['name'];
+export type PaymentModeType =
+  | 'cash'
+  | 'upi'
+  | 'wallet'
+  | 'credit-card'
+  | 'debit-card'
+  | 'internet-banking';
 export type PaymentModeProvider =
   | 'PhonePe'
   | 'Apple Pay'
@@ -40,6 +70,18 @@ export interface PaymentMode {
   provider?: PaymentModeProvider;
   cardType?: PaymentCardType;
   lastFour?: string;
+  bankName?: PaymentBankName;
+  paymentAccountId?: string;
+  createdDate?: string;
+  updatedDate?: string;
+  archivedDate?: string;
+}
+
+export interface PaymentAccount {
+  id: string;
+  name: string;
+  bankName: PaymentBankName;
+  lastFour: string;
   createdDate?: string;
   updatedDate?: string;
   archivedDate?: string;
@@ -222,6 +264,7 @@ export interface LoanAuditVersion {
 }
 
 export interface BudgetDataMap {
+  paymentAccounts: PaymentAccount;
   paymentModes: PaymentMode;
   categories: BudgetCategory;
   incomes: IncomeSource;

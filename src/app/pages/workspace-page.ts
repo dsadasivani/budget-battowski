@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+import { CommonModule, NgOptimizedImage } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -9,7 +9,14 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 
 @Component({
   selector: 'app-workspace-page',
-  imports: [CommonModule, MatButtonModule, MatIconModule, MatTooltipModule, AppPageSkeletonComponent],
+  imports: [
+    CommonModule,
+    NgOptimizedImage,
+    MatButtonModule,
+    MatIconModule,
+    MatTooltipModule,
+    AppPageSkeletonComponent,
+  ],
   template: `
     @if (store.showPageSkeleton()) {
       <app-page-skeleton variant="utility" />
@@ -121,6 +128,71 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
         </article>
       </section>
 
+      <article class="panel-card archived-payments-card">
+        <header class="panel-heading">
+          <h2>Archived Payments</h2>
+          <p>Restore archived payment modes and payment accounts when you need them again.</p>
+        </header>
+
+        <section class="archived-payment-columns">
+          <div>
+            <h3>Payment Modes</h3>
+            <div class="soft-list compact-archive-list">
+              @for (paymentMode of store.archivedPaymentModes(); track paymentMode.id) {
+                <article class="archived-payment-row">
+                  <span class="icon-chip archived-payment-icon" aria-hidden="true">
+                    <img [ngSrc]="store.paymentModeIconSrc(paymentMode)" width="28" height="28" alt="" />
+                  </span>
+                  <div>
+                    <strong>{{ paymentMode.name }}</strong>
+                    <small>{{ store.paymentModeTypeLabel(paymentMode.type) }}</small>
+                  </div>
+                  <button
+                    mat-stroked-button
+                    type="button"
+                    (click)="store.restorePaymentMode(paymentMode.id)"
+                    [disabled]="!store.canWrite()"
+                  >
+                    <mat-icon aria-hidden="true">restore</mat-icon>
+                    Restore
+                  </button>
+                </article>
+              } @empty {
+                <div class="empty-state">No archived payment modes</div>
+              }
+            </div>
+          </div>
+
+          <div>
+            <h3>Payment Accounts</h3>
+            <div class="soft-list compact-archive-list">
+              @for (account of store.archivedPaymentAccounts(); track account.id) {
+                <article class="archived-payment-row">
+                  <span class="icon-chip archived-payment-icon" aria-hidden="true">
+                    <img [ngSrc]="store.paymentAccountIconSrc(account)" width="28" height="28" alt="" />
+                  </span>
+                  <div>
+                    <strong>{{ account.name }}</strong>
+                    <small>{{ account.bankName }} &middot; {{ store.paymentAccountDetail(account) }}</small>
+                  </div>
+                  <button
+                    mat-stroked-button
+                    type="button"
+                    (click)="store.restorePaymentAccount(account.id)"
+                    [disabled]="!store.canWrite()"
+                  >
+                    <mat-icon aria-hidden="true">restore</mat-icon>
+                    Restore
+                  </button>
+                </article>
+              } @empty {
+                <div class="empty-state">No archived payment accounts</div>
+              }
+            </div>
+          </div>
+        </section>
+      </article>
+
       <article class="panel-card action-strip">
         <div>
           <h2>Workspace Actions</h2>
@@ -148,6 +220,85 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
     </section>
     }
   `,
+  styles: [
+    `
+      .archived-payments-card {
+        display: grid;
+        gap: 18px;
+      }
+
+      .archived-payment-columns {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      h3 {
+        margin: 0 0 10px;
+        color: #10213f;
+        font-size: 0.95rem;
+        font-weight: 800;
+      }
+
+      .compact-archive-list {
+        gap: 10px;
+      }
+
+      .archived-payment-row {
+        display: grid;
+        grid-template-columns: 44px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+        padding: 12px;
+        border: 1px solid #e5ebf3;
+        border-radius: 8px;
+        background: #fbfcfe;
+      }
+
+      .archived-payment-row strong,
+      .archived-payment-row small {
+        display: block;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .archived-payment-row strong {
+        color: #17233b;
+        font-size: 0.95rem;
+      }
+
+      .archived-payment-row small {
+        margin-top: 3px;
+        color: #66748a;
+        font-size: 0.78rem;
+        font-weight: 700;
+      }
+
+      .archived-payment-icon img {
+        display: block;
+        width: 28px;
+        height: 28px;
+        object-fit: contain;
+      }
+
+      @media (max-width: 780px) {
+        .archived-payment-columns {
+          grid-template-columns: 1fr;
+        }
+
+        .archived-payment-row {
+          grid-template-columns: 40px minmax(0, 1fr);
+        }
+
+        .archived-payment-row button {
+          grid-column: 1 / -1;
+          justify-self: stretch;
+        }
+      }
+    `,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class WorkspacePage {

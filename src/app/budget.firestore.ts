@@ -317,6 +317,18 @@ export class BudgetFirestoreRepository {
         return `${leftMode.type}-${leftMode.name}`.localeCompare(`${rightMode.type}-${rightMode.name}`);
       }
 
+      if (collectionName === 'paymentAccounts') {
+        const leftAccount = left as { archivedDate?: string; bankName: string; name: string };
+        const rightAccount = right as { archivedDate?: string; bankName: string; name: string };
+        if (!!leftAccount.archivedDate !== !!rightAccount.archivedDate) {
+          return leftAccount.archivedDate ? 1 : -1;
+        }
+
+        return `${leftAccount.bankName}-${leftAccount.name}`.localeCompare(
+          `${rightAccount.bankName}-${rightAccount.name}`,
+        );
+      }
+
       if (collectionName === 'loans') {
         return (left as { loanType: string }).loanType.localeCompare(
           (right as { loanType: string }).loanType,
