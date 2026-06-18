@@ -202,11 +202,7 @@
             </label>
             <label>
               <span>Password</span>
-              <input
-                type="password"
-                formControlName="password"
-                autocomplete="current-password"
-              />
+              <input type="password" formControlName="password" autocomplete="current-password" />
             </label>
             <button
               mat-stroked-button
@@ -280,7 +276,6 @@
             [routerLink]="item.path"
             routerLinkActive="active"
             [routerLinkActiveOptions]="{ exact: true }"
-            [matTooltip]="'What you can do in ' + item.label"
             (click)="closeNav()"
           >
             <mat-icon aria-hidden="true">{{ item.icon }}</mat-icon>

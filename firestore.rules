@@ -37,6 +37,15 @@ service cloud.firestore {
         && workspaceData(workspaceId).ownerEmail == request.auth.token.email;
     }
 
+    match /budgetUserProfiles/{profileEmail} {
+      allow get: if isSignedIn();
+      allow list: if false;
+      allow create, update: if isSignedIn()
+        && request.auth.token.email == profileEmail
+        && request.resource.data.email == profileEmail;
+      allow delete: if isSignedIn() && request.auth.token.email == profileEmail;
+    }
+
     match /budgetWorkspaces/{workspaceId} {
       allow create: if isSignedIn()
         && request.resource.data.ownerEmail == request.auth.token.email

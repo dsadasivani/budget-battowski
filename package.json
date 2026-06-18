@@ -13,7 +13,9 @@
     "build:qa": "ng build --configuration qa",
     "deploy:dev": "npm run build:dev && npx firebase-tools deploy --only hosting --project budget-battowski",
     "deploy:qa": "npm run build:qa && npx firebase-tools deploy --only hosting --project budget-battowski-qa",
-    "deploy:prod": "npm run build:prod && npx firebase-tools deploy --only hosting --project budget-battowski",
+    "deploy": "npm run build:prod && npx firebase-tools deploy --only hosting --project budget-battowski",
+    "firebase:rules:qa": "npx firebase-tools deploy --only firestore:rules --project budget-battowski-qa",
+    "firebase:rules": "npx firebase-tools deploy --only firestore:rules --project budget-battowski",
     "qa:seed": "node scripts/qa-seed.mjs",
     "qa:regression": "node scripts/qa-regression.mjs"
   },

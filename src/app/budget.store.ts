@@ -6,6 +6,7 @@ import { MatBottomSheet } from '@angular/material/bottom-sheet';
 import { MatDialog } from '@angular/material/dialog';
 import { MatMenuTrigger } from '@angular/material/menu';
 import type { User } from 'firebase/auth';
+import { firstValueFrom } from 'rxjs';
 
 import { BudgetFirestoreRepository } from './budget.firestore';
 import {
@@ -18,6 +19,13 @@ import {
   type MonthlyReviewResult,
   type MonthlyReviewRow,
 } from './monthly-review-dialog';
+import {
+  WorkspaceConfirmDialog,
+  WorkspaceFormDialog,
+  type WorkspaceConfirmData,
+  type WorkspaceFormData,
+  type WorkspaceFormResult,
+} from './workspace-form-dialog';
 import {
   initializeBudgetFirebase,
   observeBudgetAuth,
@@ -56,6 +64,7 @@ import type {
   PaymentMode,
   PaymentModeProvider,
   PaymentModeType,
+  UserProfile,
   Workspace,
   WorkspaceMember,
 } from './budget.models';
@@ -435,6 +444,8 @@ export class BudgetStore implements OnDestroy {
   private readonly prefillInFlightSignatures = signal(new Set<string>());
   private readonly loanEmiCategoryUpsertInFlight = signal(false);
   private readonly cashPaymentModeUpsertInFlight = signal(false);
+  private authHydrationKey: string | null = null;
+  private authHydrationInFlight: Promise<void> | null = null;
 
   readonly firebase = initializeBudgetFirebase();
   private readonly repository = signal<BudgetFirestoreRepository | null>(null);
@@ -1192,8 +1203,9 @@ export class BudgetStore implements OnDestroy {
     this.syncError.set(null);
 
     try {
-      await signInWithGoogle(this.firebase.app);
       this.syncStatus.set('Signing in');
+      const user = await signInWithGoogle(this.firebase.app);
+      await this.handleAuthUser(user);
     } catch (error) {
       this.handleSyncError(error instanceof Error ? error.message : 'Google sign-in failed.');
       this.loginLoaderActive.set(false);
@@ -1213,8 +1225,9 @@ export class BudgetStore implements OnDestroy {
     this.syncError.set(null);
 
     try {
-      await signInWithEmailPassword(this.firebase.app, email, password);
       this.syncStatus.set('Signing in');
+      const user = await signInWithEmailPassword(this.firebase.app, email, password);
+      await this.handleAuthUser(user);
     } catch (error) {
       this.handleSyncError(
         error instanceof Error ? error.message : 'Email and password sign-in failed.',
@@ -1322,13 +1335,18 @@ export class BudgetStore implements OnDestroy {
   }
 
   async createWorkspace(): Promise<void> {
-    const email = this.userEmail();
-    if (!this.firebase.app || !email) {
+    const ownerProfile = this.currentUserProfile();
+    if (!this.firebase.app || !ownerProfile) {
       return;
     }
 
-    const name = globalThis.prompt?.('Workspace name');
-    if (!name?.trim()) {
+    const result = await this.openWorkspaceForm({
+      mode: 'create',
+      ownerProfile,
+      existingMembers: [],
+      lookupUserProfile: (email) => this.findUserProfile(email),
+    });
+    if (!result?.name.trim()) {
       return;
     }
 
@@ -1338,9 +1356,9 @@ export class BudgetStore implements OnDestroy {
     try {
       const workspace = await BudgetFirestoreRepository.createWorkspace(
         this.firebase.app,
-        email,
-        this.userName() || email,
-        name,
+        ownerProfile,
+        result.name,
+        result.members,
       );
       this.workspaces.update((workspaces) =>
         [...workspaces, workspace].sort((left, right) => left.name.localeCompare(right.name)),
@@ -1357,48 +1375,43 @@ export class BudgetStore implements OnDestroy {
   async addWorkspaceMember(): Promise<void> {
     const workspace = this.activeWorkspace();
     const repository = this.repository();
-    if (!workspace || !repository || !this.canManageWorkspace()) {
+    const ownerProfile = this.currentUserProfile();
+    if (!workspace || !repository || !this.canManageWorkspace() || !ownerProfile) {
       return;
     }
 
-    const email = this.normalizeEmail(globalThis.prompt?.('Member Google email') ?? '');
-    if (!email) {
+    const result = await this.openWorkspaceForm({
+      mode: 'add-member',
+      ownerProfile,
+      workspaceName: workspace.name,
+      existingMembers: workspace.members,
+      lookupUserProfile: (email) => this.findUserProfile(email),
+    });
+    if (!result?.members.length) {
       return;
     }
 
-    const displayName = globalThis.prompt?.('Display name', email)?.trim() || email;
-    const existingMember = workspace.members.find((member) => member.email === email);
-    const today = new Date().toISOString();
-    const nextWorkspace: Workspace = {
-      ...workspace,
-      updatedDate: today,
-      members: existingMember
-        ? workspace.members.map((member) =>
-            member.email === email
-              ? { ...member, displayName, role: 'editor', archivedDate: undefined }
-              : member,
-          )
-        : [
-            ...workspace.members,
-            {
-              email,
-              displayName,
-              role: 'editor',
-              createdDate: today,
-            },
-          ],
-    };
-
-    await this.saveWorkspace(nextWorkspace, 'Member access updated');
+    await this.saveWorkspace(
+      this.workspaceWithEditorProfiles(workspace, result.members),
+      'Member access updated',
+    );
   }
 
   async renameWorkspace(): Promise<void> {
     const workspace = this.activeWorkspace();
-    if (!workspace || !this.canManageWorkspace()) {
+    const ownerProfile = this.currentUserProfile();
+    if (!workspace || !this.canManageWorkspace() || !ownerProfile) {
       return;
     }
 
-    const name = globalThis.prompt?.('Workspace name', workspace.name)?.trim();
+    const result = await this.openWorkspaceForm({
+      mode: 'rename',
+      ownerProfile,
+      workspaceName: workspace.name,
+      existingMembers: workspace.members,
+      lookupUserProfile: (email) => this.findUserProfile(email),
+    });
+    const name = result?.name.trim();
     if (!name || name === workspace.name) {
       return;
     }
@@ -1419,7 +1432,12 @@ export class BudgetStore implements OnDestroy {
       return;
     }
 
-    const confirmed = globalThis.confirm?.(`Archive ${workspace.name}?`);
+    const confirmed = await this.openWorkspaceConfirm({
+      title: 'Archive Workspace',
+      message: `Archive ${workspace.name}? You can switch to another workspace after this one is hidden.`,
+      confirmLabel: 'Archive',
+      icon: 'archive',
+    });
     if (!confirmed) {
       return;
     }
@@ -1454,7 +1472,12 @@ export class BudgetStore implements OnDestroy {
       return;
     }
 
-    const confirmed = globalThis.confirm?.(`Remove access for ${this.memberName(memberEmail)}?`);
+    const confirmed = await this.openWorkspaceConfirm({
+      title: 'Remove Workspace Access',
+      message: `Remove access for ${this.memberName(memberEmail)}?`,
+      confirmLabel: 'Remove',
+      icon: 'person_remove',
+    });
     if (!confirmed) {
       return;
     }
@@ -3404,6 +3427,25 @@ export class BudgetStore implements OnDestroy {
   }
 
   private async handleAuthUser(user: User | null): Promise<void> {
+    const authKey = user?.uid ?? 'signed-out';
+    if (this.authHydrationInFlight && this.authHydrationKey === authKey) {
+      await this.authHydrationInFlight;
+      return;
+    }
+
+    this.authHydrationKey = authKey;
+    this.authHydrationInFlight = this.hydrateAuthUser(user);
+
+    try {
+      await this.authHydrationInFlight;
+    } finally {
+      if (this.authHydrationKey === authKey) {
+        this.authHydrationInFlight = null;
+      }
+    }
+  }
+
+  private async hydrateAuthUser(user: User | null): Promise<void> {
     if (this.firebase.mode !== 'firebase') {
       this.isWorkspaceDataLoading.set(false);
       this.isSessionChecking.set(false);
@@ -3436,10 +3478,20 @@ export class BudgetStore implements OnDestroy {
     this.syncError.set(null);
 
     try {
+      const userProfile: UserProfile = {
+        email,
+        displayName: user.displayName ?? email,
+        photoUrl: user.photoURL ?? undefined,
+        updatedDate: new Date().toISOString(),
+      };
+      void BudgetFirestoreRepository.upsertUserProfile(this.firebase.app, userProfile).catch(() => {
+        // Profile sync is helpful for member lookup, but it should never block login.
+      });
       const legacyWorkspace = await BudgetFirestoreRepository.ensureLegacyWorkspace(
         this.firebase.app,
         email,
-        user.displayName ?? email,
+        userProfile.displayName,
+        userProfile.photoUrl,
       );
       const accessibleWorkspaces = await BudgetFirestoreRepository.listAccessibleWorkspaces(
         this.firebase.app,
@@ -3537,6 +3589,135 @@ export class BudgetStore implements OnDestroy {
       paymentMode.type === 'debit-card' ||
       paymentMode.type === 'internet-banking'
     );
+  }
+
+  private currentUserProfile(): UserProfile | null {
+    const email = this.userEmail();
+    if (!email) {
+      return null;
+    }
+
+    return {
+      email,
+      displayName: this.userName() || email,
+      photoUrl: this.userPhoto() ?? undefined,
+      updatedDate: new Date().toISOString(),
+    };
+  }
+
+  private async findUserProfile(email: string): Promise<UserProfile | null> {
+    if (!this.firebase.app) {
+      return null;
+    }
+
+    return BudgetFirestoreRepository.findUserProfile(this.firebase.app, this.normalizeEmail(email));
+  }
+
+  private workspaceWithEditorProfiles(workspace: Workspace, profiles: UserProfile[]): Workspace {
+    const today = new Date().toISOString();
+    const editorProfiles = profiles.filter((profile) => profile.email !== workspace.ownerEmail);
+    let members = workspace.members;
+
+    for (const profile of editorProfiles) {
+      const existingMember = members.find((member) => member.email === profile.email);
+      members = existingMember
+        ? members.map((member) =>
+            member.email === profile.email
+              ? {
+                  ...member,
+                  displayName: profile.displayName || profile.email,
+                  photoUrl: profile.photoUrl,
+                  role: 'editor',
+                  archivedDate: undefined,
+                }
+              : member,
+          )
+        : [
+            ...members,
+            {
+              email: profile.email,
+              displayName: profile.displayName || profile.email,
+              photoUrl: profile.photoUrl,
+              role: 'editor',
+              createdDate: today,
+            },
+          ];
+    }
+
+    return {
+      ...workspace,
+      updatedDate: today,
+      members,
+    };
+  }
+
+  private async openWorkspaceForm(
+    data: WorkspaceFormData,
+  ): Promise<WorkspaceFormResult | undefined> {
+    if (this.breakpointObserver.isMatched('(max-width: 780px)')) {
+      const bottomSheetRef = this.bottomSheet.open<
+        WorkspaceFormDialog,
+        WorkspaceFormData,
+        WorkspaceFormResult
+      >(WorkspaceFormDialog, {
+        ariaLabel: data.mode === 'create' ? 'Create workspace' : 'Manage workspace members',
+        autoFocus: false,
+        data,
+        maxHeight: 'calc(100dvh - 44px)',
+        panelClass: 'workspace-form-sheet-panel',
+        restoreFocus: true,
+      });
+
+      return firstValueFrom(bottomSheetRef.afterDismissed());
+    }
+
+    const dialogRef = this.dialog.open<WorkspaceFormDialog, WorkspaceFormData, WorkspaceFormResult>(
+      WorkspaceFormDialog,
+      {
+        ariaLabel: data.mode === 'create' ? 'Create workspace' : 'Manage workspace members',
+        autoFocus: false,
+        data,
+        maxWidth: '94vw',
+        panelClass: 'workspace-form-panel',
+        restoreFocus: true,
+        width: 'min(640px, 94vw)',
+      },
+    );
+
+    return firstValueFrom(dialogRef.afterClosed());
+  }
+
+  private async openWorkspaceConfirm(data: WorkspaceConfirmData): Promise<boolean> {
+    if (this.breakpointObserver.isMatched('(max-width: 780px)')) {
+      const bottomSheetRef = this.bottomSheet.open<
+        WorkspaceConfirmDialog,
+        WorkspaceConfirmData,
+        boolean
+      >(WorkspaceConfirmDialog, {
+        ariaLabel: data.title,
+        autoFocus: false,
+        data,
+        panelClass: 'workspace-form-sheet-panel',
+        restoreFocus: true,
+      });
+
+      return (await firstValueFrom(bottomSheetRef.afterDismissed())) === true;
+    }
+
+    const dialogRef = this.dialog.open<WorkspaceConfirmDialog, WorkspaceConfirmData, boolean>(
+      WorkspaceConfirmDialog,
+      {
+        ariaLabel: data.title,
+        autoFocus: false,
+        data,
+        maxWidth: '94vw',
+        panelClass: 'workspace-form-panel',
+        restoreFocus: true,
+        width: 'min(460px, 94vw)',
+      },
+    );
+
+    return (await firstValueFrom(dialogRef.afterClosed())) === true;
   }
 
   private async saveWorkspace(workspace: Workspace, message: string): Promise<void> {

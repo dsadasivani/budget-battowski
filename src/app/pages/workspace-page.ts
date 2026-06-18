@@ -104,7 +104,13 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
           <div class="soft-list">
             @for (member of store.activeMembers(); track member.email) {
               <article class="member-row-card">
-                <span class="avatar">{{ store.memberInitial(member.email) }}</span>
+                <span class="avatar" aria-hidden="true">
+                  @if (member.photoUrl) {
+                    <img [src]="member.photoUrl" alt="" referrerpolicy="no-referrer" />
+                  } @else {
+                    {{ store.memberInitial(member.email) }}
+                  }
+                </span>
                 <div>
                   <strong>{{ store.memberDisplayName(member) }}</strong>
                   <small>{{ member.email }} &middot; {{ member.role }}</small>

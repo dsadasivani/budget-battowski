@@ -9,10 +9,12 @@ import type {
   ExpenseEntry,
   ExpenseTemplate,
   InvestmentEntry,
+  UserProfile,
   Workspace,
 } from './budget.models';
 
 const WORKSPACE_COLLECTION = 'budgetWorkspaces';
+const PROFILE_COLLECTION = 'budgetUserProfiles';
 
 type FirestoreRecord<T extends BudgetRecord> = Omit<T, 'id'> & {
   createdAt?: unknown;
@@ -106,6 +108,7 @@ export class BudgetFirestoreRepository {
     app: FirebaseApp,
     userEmail: string,
     displayName: string,
+    photoUrl?: string,
   ): Promise<Workspace> {
     const { doc, getDoc, getFirestore, serverTimestamp, setDoc } =
       await import('firebase/firestore');
@@ -129,6 +132,7 @@ export class BudgetFirestoreRepository {
         {
           email: userEmail,
           displayName: displayName || userEmail,
+          photoUrl,
           role: 'owner',
           createdDate: today,
         },
@@ -152,15 +156,16 @@ export class BudgetFirestoreRepository {
 
   static async createWorkspace(
     app: FirebaseApp,
-    ownerEmail: string,
-    ownerDisplayName: string,
+    ownerProfile: UserProfile,
     name: string,
+    editorProfiles: UserProfile[] = [],
   ): Promise<Workspace> {
     const { collection, doc, getFirestore, serverTimestamp, setDoc } =
       await import('firebase/firestore');
     const db = getFirestore(app);
     const workspaceRef = doc(collection(db, WORKSPACE_COLLECTION));
     const today = new Date().toISOString();
+    const ownerEmail = ownerProfile.email;
     const workspace: Workspace = {
       id: workspaceRef.id,
       name: name.trim() || 'New workspace',
@@ -168,10 +173,18 @@ export class BudgetFirestoreRepository {
       members: [
         {
           email: ownerEmail,
-          displayName: ownerDisplayName || ownerEmail,
+          displayName: ownerProfile.displayName || ownerEmail,
+          photoUrl: ownerProfile.photoUrl,
           role: 'owner',
           createdDate: today,
         },
+        ...editorProfiles.map((profile) => ({
+          email: profile.email,
+          displayName: profile.displayName || profile.email,
+          photoUrl: profile.photoUrl,
+          role: 'editor' as const,
+          createdDate: today,
+        })),
       ],
       createdDate: today,
       updatedDate: today,
@@ -179,11 +192,37 @@ export class BudgetFirestoreRepository {
 
     await setDoc(workspaceRef, {
       ...stripUndefined(workspaceWithoutId(workspace)),
-      memberEmails: [ownerEmail],
+      memberEmails: activeMemberEmails(workspace),
       updatedAt: serverTimestamp(),
     });
 
     return workspace;
+  }
+
+  static async upsertUserProfile(app: FirebaseApp, profile: UserProfile): Promise<void> {
+    const { doc, getFirestore, serverTimestamp, setDoc } = await import('firebase/firestore');
+    const db = getFirestore(app);
+
+    await setDoc(
+      doc(db, PROFILE_COLLECTION, profile.email),
+      {
+        ...stripUndefined(profile),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
+  }
+
+  static async findUserProfile(app: FirebaseApp, email: string): Promise<UserProfile | null> {
+    const { doc, getDoc, getFirestore } = await import('firebase/firestore');
+    const db = getFirestore(app);
+    const snapshot = await getDoc(doc(db, PROFILE_COLLECTION, email));
+
+    if (!snapshot.exists()) {
+      return null;
+    }
+
+    return snapshot.data() as UserProfile;
   }
 
   async upsertWorkspace(workspace: Workspace): Promise<void> {

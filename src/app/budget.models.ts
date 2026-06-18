@@ -90,9 +90,17 @@ export interface PaymentAccount {
 export interface WorkspaceMember {
   email: string;
   displayName: string;
+  photoUrl?: string;
   role: WorkspaceRole;
   createdDate: string;
   archivedDate?: string;
+}
+
+export interface UserProfile {
+  email: string;
+  displayName: string;
+  photoUrl?: string;
+  updatedDate: string;
 }
 
 export interface Workspace {
