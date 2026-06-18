@@ -1,8 +1,17 @@
 import { TestBed } from '@angular/core/testing';
-import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
+import { BreakpointObserver } from '@angular/cdk/layout';
+import { computed, signal } from '@angular/core';
+import { MatBottomSheet } from '@angular/material/bottom-sheet';
+import { MAT_DIALOG_DATA, MatDialog, MatDialogRef } from '@angular/material/dialog';
+import { provideRouter, Router } from '@angular/router';
+import axe from 'axe-core';
+import { of } from 'rxjs';
 import { vi } from 'vitest';
 import { App } from './app';
+import { routes } from './app.routes';
 import { BulkEditorDialog, type BulkEditorData } from './bulk-editor-dialog';
+import type { PaymentAccount, PaymentMode } from './budget.models';
+import { BudgetStore } from './budget.store';
 import {
   buildProcessedImportCsv,
   createBudgetImportTemplateCsv,
@@ -10,11 +19,253 @@ import {
   parseBudgetImportCsv,
   parseBudgetImportFile,
 } from './budget-import.service';
+import {
+  PaymentAccountFormSheet,
+  PaymentAccountModesSheet,
+  PaymentModeFormSheet,
+  PaymentModesPage,
+} from './pages/payment-modes-page';
+
+function runAxe(element: Element): Promise<axe.AxeResults> {
+  return new Promise((resolve, reject) => {
+    axe.run(
+      element,
+      {
+        resultTypes: ['violations'],
+        rules: {
+          'color-contrast': { enabled: false },
+        },
+      },
+      (error, results) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve(results);
+      },
+    );
+  });
+}
+
+function paymentModeTypeLabel(type: PaymentMode['type']): string {
+  const labels: Record<PaymentMode['type'], string> = {
+    cash: 'Cash',
+    upi: 'UPI',
+    wallet: 'Wallet',
+    'credit-card': 'Credit Card',
+    'debit-card': 'Debit Card',
+    'internet-banking': 'Internet Banking',
+  };
+
+  return labels[type];
+}
+
+function paymentProviderTone(provider: PaymentMode['provider']): string {
+  const tones: Record<NonNullable<PaymentMode['provider']>, string> = {
+    PhonePe: 'phonepe',
+    'Apple Pay': 'applepay',
+    'Samsung Pay': 'samsungpay',
+    'Google Pay': 'googlepay',
+    Paytm: 'paytm',
+    BHIM: 'bhim',
+  };
+
+  return provider ? tones[provider] : 'card';
+}
+
+function paymentModeIconSrc(paymentMode: PaymentMode): string {
+  if (paymentMode.type === 'internet-banking') {
+    return '/bank-icons/bank-building-icon.svg';
+  }
+
+  if (paymentMode.type === 'cash') {
+    return '/payment-icons/cash.svg';
+  }
+
+  if (paymentMode.provider) {
+    const icons: Record<NonNullable<PaymentMode['provider']>, string> = {
+      PhonePe: '/payment-icons/phonepe.svg',
+      'Apple Pay': '/payment-icons/apple-pay.svg',
+      'Samsung Pay': '/payment-icons/samsung-pay.svg',
+      'Google Pay': '/payment-icons/google-pay.svg',
+      Paytm: '/payment-icons/paytm.svg',
+      BHIM: '/payment-icons/bhim.svg',
+    };
+
+    return icons[paymentMode.provider];
+  }
+
+  if (paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card') {
+    return paymentMode.cardType
+      ? `/payment-icons/cards_${paymentMode.cardType}.svg`
+      : '/payment-icons/cards_default.svg';
+  }
+
+  return '/payment-icons/cards_default.svg';
+}
+
+function paymentAccountDetail(paymentAccount: Pick<PaymentAccount, 'lastFour'>): string {
+  return `xxxx ${paymentAccount.lastFour}`;
+}
+
+function paymentAccountIconSrc(paymentAccount?: Pick<PaymentAccount, 'bankName'>): string {
+  const icons: Partial<Record<PaymentAccount['bankName'], string>> = {
+    HDFC: '/bank-icons/HDFC Bank Symbol SVG.svg',
+    Axis: '/bank-icons/Axis Bank Symbol SVG.svg',
+  };
+
+  return paymentAccount
+    ? (icons[paymentAccount.bankName] ?? '/bank-icons/bank-building-icon.svg')
+    : '/bank-icons/bank-building-icon.svg';
+}
+
+function createPaymentModeStore(
+  initialPaymentModes: PaymentMode[] = [],
+  initialPaymentAccounts: PaymentAccount[] = [],
+) {
+  const paymentModes = signal(initialPaymentModes);
+  const paymentAccounts = signal(initialPaymentAccounts);
+  const activePaymentAccounts = computed(() =>
+    paymentAccounts().filter((paymentAccount) => !paymentAccount.archivedDate),
+  );
+  const activePaymentModes = computed(() =>
+    paymentModes().filter((paymentMode) => !paymentMode.archivedDate),
+  );
+  const paymentModesForAccount = (paymentAccountId: string) =>
+    activePaymentModes().filter((paymentMode) => paymentMode.paymentAccountId === paymentAccountId);
+  const paymentAccountUsage = (paymentAccountId: string) =>
+    paymentModesForAccount(paymentAccountId).reduce(
+      (total, paymentMode) => {
+        const card = paymentModeCards().find((item) => item.id === paymentMode.id);
+        return {
+          amount: total.amount + (card?.usageAmount ?? 0),
+          count: total.count + (card?.recordCount ?? 0),
+        };
+      },
+      { amount: 0, count: 0 },
+    );
+  const paymentAccountCards = computed(() =>
+    activePaymentAccounts().map((paymentAccount) => {
+      const usage = paymentAccountUsage(paymentAccount.id);
+      const mappedModes = paymentModesForAccount(paymentAccount.id);
+      return {
+        ...paymentAccount,
+        detail: paymentAccountDetail(paymentAccount),
+        iconSrc: paymentAccountIconSrc(paymentAccount),
+        mappedModeCount: mappedModes.length,
+        mappedModes,
+        recordCount: usage.count,
+        usageAmount: usage.amount,
+      };
+    }),
+  );
+  const paymentModeCards = computed(() =>
+    activePaymentModes().map((paymentMode) => ({
+      ...paymentMode,
+      detail:
+        paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card'
+          ? `xxxx xxxx xxxx ${paymentMode.lastFour}`
+          : paymentMode.type === 'internet-banking'
+            ? paymentMode.bankName
+            : paymentMode.provider,
+      icon: paymentMode.type === 'upi' ? 'qr_code_2' : 'credit_card',
+      iconSrc: paymentModeIconSrc(paymentMode),
+      bankIconSrc: paymentMode.paymentAccountId
+        ? paymentAccountIconSrc(
+            activePaymentAccounts().find((account) => account.id === paymentMode.paymentAccountId),
+          )
+        : undefined,
+      paymentAccountName:
+        activePaymentAccounts().find((account) => account.id === paymentMode.paymentAccountId)
+          ?.name ?? '',
+      providerTone: paymentMode.provider
+        ? paymentProviderTone(paymentMode.provider)
+        : paymentMode.type === 'internet-banking'
+          ? 'bank'
+          : paymentMode.type,
+      recordCount: 0,
+      typeLabel: paymentModeTypeLabel(paymentMode.type),
+      usageAmount: 0,
+    })),
+  );
+  const savePaymentMode = vi.fn(async (paymentMode: PaymentMode) => {
+    paymentModes.update((items) => [
+      ...items.filter((item) => item.id !== paymentMode.id),
+      paymentMode,
+    ]);
+    return true;
+  });
+  const archivePaymentMode = vi.fn(async (paymentModeId: string) => {
+    paymentModes.update((items) =>
+      items.map((item) =>
+        item.id === paymentModeId ? { ...item, archivedDate: '2026-06-16T00:00:00.000Z' } : item,
+      ),
+    );
+    return true;
+  });
+  const savePaymentAccount = vi.fn(async (paymentAccount: PaymentAccount) => {
+    paymentAccounts.update((items) => [
+      ...items.filter((item) => item.id !== paymentAccount.id),
+      paymentAccount,
+    ]);
+    return true;
+  });
+  const archivePaymentAccount = vi.fn(async (paymentAccountId: string) => {
+    paymentAccounts.update((items) =>
+      items.map((item) =>
+        item.id === paymentAccountId ? { ...item, archivedDate: '2026-06-16T00:00:00.000Z' } : item,
+      ),
+    );
+    return true;
+  });
+
+  return {
+    paymentAccounts,
+    activePaymentAccounts,
+    paymentAccountCards,
+    paymentModes,
+    activePaymentModes,
+    paymentModeCards,
+    upiWalletPaymentModeCount: computed(
+      () =>
+        activePaymentModes().filter(
+          (paymentMode) => paymentMode.type === 'upi' || paymentMode.type === 'wallet',
+        ).length,
+    ),
+    cardPaymentModeCount: computed(
+      () =>
+        activePaymentModes().filter(
+          (paymentMode) => paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card',
+        ).length,
+    ),
+    showPageSkeleton: signal(false),
+    canWrite: signal(true),
+    paymentAccountDetail,
+    paymentAccountIconSrc,
+    paymentModesForAccount,
+    canArchivePaymentAccount: (paymentAccountId: string) =>
+      paymentModesForAccount(paymentAccountId).length === 0,
+    paymentModeIconSrc,
+    paymentModeTone: (paymentModeId: string | undefined) =>
+      activePaymentModes().find((paymentMode) => paymentMode.id === paymentModeId)?.provider
+        ? 'googlepay'
+        : activePaymentModes().find((paymentMode) => paymentMode.id === paymentModeId)?.type ===
+            'internet-banking'
+          ? 'bank'
+          : 'card',
+    savePaymentMode,
+    archivePaymentMode,
+    savePaymentAccount,
+    archivePaymentAccount,
+  };
+}
 
 describe('App', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [App],
+      providers: [provideRouter(routes)],
     }).compileComponents();
   });
 
@@ -33,7 +284,7 @@ describe('App', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('mat-toolbar')?.textContent).toContain('Budget Battowski');
+    expect(compiled.textContent).toContain('Budget Battowski');
   });
 
   it("should default the month picker to today's month", () => {
@@ -50,6 +301,185 @@ describe('App', () => {
 
     expect(app.selectedMonth()).toBe('2026-06');
     expect(app.pickerYear()).toBe(2026);
+  });
+
+  it('should jump directly to a selected month and ignore invalid month input', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      selectedMonth: () => string;
+      setSelectedMonth: (month: string) => void;
+    };
+
+    app.setSelectedMonth('2027-11');
+    expect(app.selectedMonth()).toBe('2027-11');
+
+    app.setSelectedMonth('2027-13');
+    expect(app.selectedMonth()).toBe('2027-11');
+  });
+
+  it('should expose exactly five primary mobile navigation items', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+
+    expect(app.primaryMobileNavItems.map((item) => item.shortLabel || item.label)).toEqual([
+      'Dashboard',
+      'Expenses',
+      'Planning',
+      'Investments',
+      'Loans',
+    ]);
+  });
+
+  it('should render exactly five primary labels in the mobile bottom nav', async () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      firebase: { mode: string };
+      isSessionChecking: { set: (checking: boolean) => void };
+    };
+
+    app.firebase.mode = 'local';
+    app.isSessionChecking.set(false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const labels = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('.mobile-bottom-nav a span'),
+    ).map((item) => item.textContent?.trim());
+
+    expect(labels).toEqual(['Dashboard', 'Expenses', 'Planning', 'Investments', 'Loans']);
+  });
+
+  it('should render payment modes inside the mobile utility menu', async () => {
+    const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const app = fixture.componentInstance as unknown as {
+      firebase: { mode: string };
+      isSessionChecking: { set: (checking: boolean) => void };
+      userPhoto: { set: (photo: string | null) => void };
+    };
+
+    app.firebase.mode = 'local';
+    app.isSessionChecking.set(false);
+    await router.navigateByUrl('/dashboard');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    app.userPhoto.set('https://example.com/profile.jpg');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const trigger = (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>(
+      '.mobile-utility-trigger',
+    );
+    expect(trigger).toBeTruthy();
+    expect(trigger?.querySelector('img')?.getAttribute('src')).toBe(
+      'https://example.com/profile.jpg',
+    );
+
+    trigger?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const menuText = document.body.textContent ?? '';
+    expect(menuText).toContain('Payment Modes');
+    expect(menuText).toContain('Guided tour');
+    expect(menuText).toContain('Log out');
+  });
+
+  it('should keep the mobile profile trigger on dashboard only', async () => {
+    const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const app = fixture.componentInstance as unknown as {
+      firebase: { mode: string };
+      isSessionChecking: { set: (checking: boolean) => void };
+    };
+
+    app.firebase.mode = 'local';
+    app.isSessionChecking.set(false);
+    await router.navigateByUrl('/dashboard');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('.mobile-utility-trigger'),
+    ).toBeTruthy();
+
+    await router.navigateByUrl('/expenses');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('.mobile-utility-trigger'),
+    ).toBeNull();
+  });
+
+  it('should keep secondary mobile destinations in the utility menu model', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+
+    expect(app.utilityMobileNavItems.map((item) => item.label)).toEqual([
+      'Categories',
+      'Payment Modes',
+      'Import/Export',
+      'Workspace',
+      'Settings',
+    ]);
+  });
+
+  it('should keep the branded loader for explicit login transitions only', async () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      firebase: { mode: string };
+      isSessionChecking: { set: (checking: boolean) => void };
+      loginLoaderActive: { set: (active: boolean) => void };
+      showGlobalLoader: () => boolean;
+      showPageSkeleton: () => boolean;
+      workspaceId: { set: (workspaceId: string | null) => void };
+    };
+
+    app.firebase.mode = 'firebase';
+    app.workspaceId.set(null);
+    app.isSessionChecking.set(true);
+    app.loginLoaderActive.set(false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(app.showGlobalLoader()).toBe(false);
+    expect(app.showPageSkeleton()).toBe(true);
+    expect((fixture.nativeElement as HTMLElement).querySelector('.global-loader-shell')).toBeNull();
+
+    app.loginLoaderActive.set(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const loader = (fixture.nativeElement as HTMLElement).querySelector('.global-loader-shell');
+    expect(app.showGlobalLoader()).toBe(true);
+    expect(loader).not.toBeNull();
+    expect(loader?.textContent).toContain('Preparing your private budget workspace.');
+    expect(loader?.querySelector('.loader-skeleton-card')).toBeNull();
+  });
+
+  it('should stop showing page skeletons after workspace data loading completes', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      firebase: { mode: string };
+      isSessionChecking: { set: (checking: boolean) => void };
+      isWorkspaceDataLoading: { set: (loading: boolean) => void };
+      loginLoaderActive: { set: (active: boolean) => void };
+      showPageSkeleton: () => boolean;
+      workspaceId: { set: (workspaceId: string | null) => void };
+    };
+
+    app.firebase.mode = 'firebase';
+    app.workspaceId.set('workspace-1');
+    app.isSessionChecking.set(false);
+    app.loginLoaderActive.set(false);
+    app.isWorkspaceDataLoading.set(true);
+
+    expect(app.showPageSkeleton()).toBe(true);
+
+    app.isWorkspaceDataLoading.set(false);
+
+    expect(app.showPageSkeleton()).toBe(false);
   });
 
   it('should carry the latest monthly income into future months', () => {
@@ -101,6 +531,78 @@ describe('App', () => {
 
     expect(app.selectedEntries().map((expense) => expense.id)).toContain('expense-legacy');
     expect(app.oneTimeTotal()).toBe(1200);
+  });
+
+  it('should filter financial data by selected workspace member', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      expenses: { set: (records: unknown[]) => void };
+      incomes: { set: (records: unknown[]) => void };
+      monthlyIncome: () => number;
+      outflowTotal: () => number;
+      selectedEntries: () => Array<{ id: string }>;
+      selectedMemberEmail: { set: (email: string) => void };
+      selectedMonth: { set: (month: string) => void };
+    };
+
+    app.selectedMonth.set('2026-06');
+    app.incomes.set([
+      {
+        id: 'income-a',
+        source: 'A Salary',
+        amount: 100000,
+        cadence: 'monthly',
+        notes: '',
+        memberEmail: 'a@example.com',
+      },
+      {
+        id: 'income-b',
+        source: 'B Salary',
+        amount: 80000,
+        cadence: 'monthly',
+        notes: '',
+        memberEmail: 'b@example.com',
+      },
+      {
+        id: 'income-legacy',
+        source: 'Legacy',
+        amount: 20000,
+        cadence: 'monthly',
+        notes: '',
+      },
+    ]);
+    app.expenses.set([
+      {
+        id: 'expense-a',
+        month: '2026-06',
+        date: '2026-06-01',
+        name: 'A Rent',
+        categoryId: 'category-home',
+        amount: 30000,
+        type: 'one-time',
+        note: '',
+        memberEmail: 'a@example.com',
+      },
+      {
+        id: 'expense-legacy',
+        month: '2026-06',
+        date: '2026-06-02',
+        name: 'Legacy',
+        categoryId: 'category-home',
+        amount: 5000,
+        type: 'one-time',
+        note: '',
+      },
+    ]);
+
+    app.selectedMemberEmail.set('ALL');
+    expect(app.monthlyIncome()).toBe(200000);
+    expect(app.outflowTotal()).toBe(35000);
+
+    app.selectedMemberEmail.set('a@example.com');
+    expect(app.monthlyIncome()).toBe(100000);
+    expect(app.selectedEntries().map((expense) => expense.id)).toEqual(['expense-a']);
+    expect(app.outflowTotal()).toBe(30000);
   });
 
   it('should approve reviewed recurring expenses into the selected month', async () => {
@@ -159,6 +661,65 @@ describe('App', () => {
     expect(app.hasMonthlyReviewRows()).toBe(false);
   });
 
+  it('should preserve member ownership on generated recurring and loan expenses', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 11));
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      buildDefaultMonthEntries: (
+        month: string,
+      ) => Array<{ memberEmail?: string; paymentModeId?: string; templateId?: string }>;
+      loans: { set: (records: unknown[]) => void };
+      selectedMemberEmail: { set: (email: string) => void };
+      templates: { set: (records: unknown[]) => void };
+    };
+
+    app.selectedMemberEmail.set('a@example.com');
+    app.templates.set([
+      {
+        id: 'fixed-rent',
+        name: 'Rent',
+        categoryId: 'category-home',
+        amount: 25000,
+        type: 'recurring',
+        startDate: '2026-05-01',
+        memberEmail: 'a@example.com',
+        paymentModeId: 'pm-gpay',
+      },
+    ]);
+    app.loans.set([
+      {
+        id: 'loan-home',
+        lender: 'Bank',
+        loanType: 'Home',
+        principal: 1000000,
+        outstanding: 900000,
+        annualRate: 8,
+        emi: 30000,
+        startDate: '2026-01-01',
+        endDate: '2026-12-31',
+        notes: '',
+        memberEmail: 'a@example.com',
+        paymentModeId: 'pm-card',
+      },
+    ]);
+
+    expect(app.buildDefaultMonthEntries('2026-05')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          templateId: 'fixed-rent',
+          memberEmail: 'a@example.com',
+          paymentModeId: 'pm-gpay',
+        }),
+        expect.objectContaining({
+          templateId: 'loan:loan-home',
+          memberEmail: 'a@example.com',
+          paymentModeId: 'pm-card',
+        }),
+      ]),
+    );
+  });
+
   it('should require current recurring investments to be reviewed before they count', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 5, 11));
@@ -171,7 +732,12 @@ describe('App', () => {
       investmentPlans: () => Array<{ id: string; sourceInvestmentId?: string }>;
       investments: {
         set: (records: unknown[]) => void;
-        (): Array<{ id: string; frequency: string; sourceInvestmentId?: string }>;
+        (): Array<{
+          id: string;
+          frequency: string;
+          paymentModeId?: string;
+          sourceInvestmentId?: string;
+        }>;
       };
       selectedMonth: { set: (month: string) => void };
     };
@@ -187,6 +753,7 @@ describe('App', () => {
         frequency: 'monthly',
         startDate: '2026-01-01',
         notes: '',
+        paymentModeId: 'pm-upi',
       },
     ]);
 
@@ -208,6 +775,9 @@ describe('App', () => {
     expect(app.investmentTotal()).toBe(15000);
     expect(app.investments().some((record) => record.sourceInvestmentId === 'sip-index')).toBe(
       true,
+    );
+    expect(app.investments().find((record) => record.sourceInvestmentId === 'sip-index')).toEqual(
+      expect.objectContaining({ paymentModeId: 'pm-upi' }),
     );
     expect(app.investmentPlans()).toEqual([
       expect.objectContaining({
@@ -813,6 +1383,358 @@ describe('App', () => {
     expect(app.categoryName(loanExpense?.categoryId ?? '')).toBe('Loan EMI');
   });
 
+  it('should resolve payment mode labels including archived modes', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      activePaymentModes: () => PaymentMode[];
+      paymentModeLabel: (paymentModeId: string | undefined) => string;
+      paymentModeMeta: (
+        paymentModeId: string | undefined,
+      ) => { iconSrc: string; label: string } | null;
+      paymentModes: { set: (records: PaymentMode[]) => void };
+    };
+
+    app.paymentModes.set([
+      {
+        id: 'pm-gpay',
+        type: 'upi',
+        provider: 'Google Pay',
+        name: 'Personal Google Pay',
+      },
+      {
+        id: 'pm-old-card',
+        type: 'credit-card',
+        name: 'Old card',
+        lastFour: '1234',
+        archivedDate: '2026-06-01T00:00:00.000Z',
+      },
+    ]);
+
+    expect(app.paymentModeLabel('pm-old-card')).toBe('Old card');
+    expect(app.paymentModeMeta('pm-old-card')).toEqual(
+      expect.objectContaining({
+        iconSrc: '/payment-icons/cards_default.svg',
+        label: 'Old card',
+      }),
+    );
+    expect(app.paymentModeMeta('payment-mode-cash')).toEqual(
+      expect.objectContaining({
+        iconSrc: '/payment-icons/cash.svg',
+        label: 'Cash',
+      }),
+    );
+    expect(app.paymentModeLabel(undefined)).toBe('');
+    expect(app.activePaymentModes()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'payment-mode-cash' }),
+        expect.objectContaining({ id: 'pm-gpay' }),
+      ]),
+    );
+  });
+
+  it('should total selected-month payment mode usage across expenses investments and loan EMIs', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      expenses: { set: (records: unknown[]) => void };
+      investments: { set: (records: unknown[]) => void };
+      loans: { set: (records: unknown[]) => void };
+      paymentModeCards: () => Array<{ id: string; recordCount: number; usageAmount: number }>;
+      paymentModes: { set: (records: PaymentMode[]) => void };
+      selectedMonth: { set: (month: string) => void };
+    };
+
+    app.selectedMonth.set('2026-06');
+    app.paymentModes.set([
+      { id: 'pm-gpay', type: 'upi', provider: 'Google Pay', name: 'Personal Google Pay' },
+    ]);
+    app.expenses.set([
+      {
+        id: 'expense-food',
+        month: '2026-06',
+        date: '2026-06-05',
+        name: 'Food',
+        categoryId: 'category-food',
+        amount: 1000,
+        type: 'one-time',
+        note: '',
+        paymentModeId: 'pm-gpay',
+      },
+    ]);
+    app.investments.set([
+      {
+        id: 'investment-gold',
+        name: 'Gold',
+        amount: 2000,
+        categoryId: 'category-invest',
+        frequency: 'one-time',
+        date: '2026-06-08',
+        notes: '',
+        paymentModeId: 'pm-gpay',
+      },
+    ]);
+    app.loans.set([
+      {
+        id: 'loan-bike',
+        lender: 'Bank',
+        loanType: 'Bike',
+        principal: 100000,
+        outstanding: 90000,
+        annualRate: 9,
+        emi: 3000,
+        startDate: '2026-01-01',
+        endDate: '2026-12-31',
+        notes: '',
+        paymentModeId: 'pm-gpay',
+      },
+    ]);
+
+    expect(app.paymentModeCards().find((paymentMode) => paymentMode.id === 'pm-gpay')).toEqual(
+      expect.objectContaining({ recordCount: 3, usageAmount: 6000 }),
+    );
+  });
+
+  it('should total selected-month usage at payment account level', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      expenses: { set: (records: unknown[]) => void };
+      paymentAccountCards: () => Array<{
+        id: string;
+        mappedModeCount: number;
+        recordCount: number;
+        usageAmount: number;
+      }>;
+      paymentAccounts: { set: (records: PaymentAccount[]) => void };
+      paymentModeCards: () => Array<{ bankIconSrc?: string; id: string; iconSrc: string }>;
+      paymentModes: { set: (records: PaymentMode[]) => void };
+      selectedMonth: { set: (month: string) => void };
+    };
+
+    app.selectedMonth.set('2026-06');
+    app.paymentAccounts.set([
+      {
+        id: 'pa-hdfc',
+        name: 'Salary account',
+        bankName: 'HDFC',
+        lastFour: '4321',
+      },
+    ]);
+    app.paymentModes.set([
+      {
+        id: 'pm-upi',
+        type: 'upi',
+        provider: 'Google Pay',
+        name: 'GPay',
+        paymentAccountId: 'pa-hdfc',
+      },
+      {
+        id: 'pm-netbanking',
+        type: 'internet-banking',
+        name: 'HDFC NetBanking',
+        bankName: 'HDFC',
+        paymentAccountId: 'pa-hdfc',
+      },
+    ]);
+    app.expenses.set([
+      {
+        id: 'expense-food',
+        month: '2026-06',
+        date: '2026-06-05',
+        name: 'Food',
+        categoryId: 'category-food',
+        amount: 1000,
+        type: 'one-time',
+        note: '',
+        paymentModeId: 'pm-upi',
+      },
+      {
+        id: 'expense-tax',
+        month: '2026-06',
+        date: '2026-06-06',
+        name: 'Tax',
+        categoryId: 'category-tax',
+        amount: 2500,
+        type: 'one-time',
+        note: '',
+        paymentModeId: 'pm-netbanking',
+      },
+    ]);
+
+    expect(app.paymentAccountCards().find((account) => account.id === 'pa-hdfc')).toEqual(
+      expect.objectContaining({ mappedModeCount: 2, recordCount: 2, usageAmount: 3500 }),
+    );
+    expect(app.paymentModeCards().find((paymentMode) => paymentMode.id === 'pm-upi')).toEqual(
+      expect.objectContaining({
+        bankIconSrc: '/bank-icons/HDFC Bank Symbol SVG.svg',
+        iconSrc: '/payment-icons/google-pay.svg',
+      }),
+    );
+    expect(
+      app.paymentModeCards().find((paymentMode) => paymentMode.id === 'pm-netbanking'),
+    ).toEqual(
+      expect.objectContaining({
+        iconSrc: '/bank-icons/HDFC Bank Symbol SVG.svg',
+      }),
+    );
+  });
+
+  it('should block archiving payment accounts that still have active mapped modes', async () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      archivePaymentAccount: (paymentAccountId: string) => Promise<boolean>;
+      canArchivePaymentAccount: (paymentAccountId: string) => boolean;
+      paymentAccounts: { set: (records: PaymentAccount[]) => void };
+      paymentModes: { set: (records: PaymentMode[]) => void };
+    };
+
+    app.paymentAccounts.set([
+      {
+        id: 'pa-axis',
+        name: 'Bills account',
+        bankName: 'Axis',
+        lastFour: '9999',
+      },
+    ]);
+    app.paymentModes.set([
+      {
+        id: 'pm-axis-upi',
+        type: 'upi',
+        provider: 'Google Pay',
+        name: 'Bills UPI',
+        paymentAccountId: 'pa-axis',
+      },
+    ]);
+
+    expect(app.canArchivePaymentAccount('pa-axis')).toBe(false);
+    await expect(app.archivePaymentAccount('pa-axis')).resolves.toBe(false);
+  });
+
+  it('should restore archived payment modes and accounts', async () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      activePaymentAccounts: () => PaymentAccount[];
+      activePaymentModes: () => PaymentMode[];
+      archivedPaymentAccounts: () => PaymentAccount[];
+      archivedPaymentModes: () => PaymentMode[];
+      firebase: { mode: string };
+      paymentAccounts: { set: (records: PaymentAccount[]) => void };
+      paymentModes: { set: (records: PaymentMode[]) => void };
+      restorePaymentAccount: (paymentAccountId: string) => Promise<boolean>;
+      restorePaymentMode: (paymentModeId: string) => Promise<boolean>;
+    };
+
+    app.firebase.mode = 'local';
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    app.paymentModes.set([
+      {
+        id: 'pm-old-upi',
+        type: 'upi',
+        provider: 'Google Pay',
+        name: 'Old UPI',
+        archivedDate: '2026-06-01T00:00:00.000Z',
+      },
+    ]);
+    app.paymentAccounts.set([
+      {
+        id: 'pa-old',
+        name: 'Old account',
+        bankName: 'HDFC',
+        lastFour: '4321',
+        archivedDate: '2026-06-01T00:00:00.000Z',
+      },
+    ]);
+
+    expect(app.archivedPaymentModes()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'pm-old-upi' })]),
+    );
+    expect(app.archivedPaymentAccounts()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'pa-old' })]),
+    );
+
+    await expect(app.restorePaymentMode('pm-old-upi')).resolves.toBe(true);
+    await expect(app.restorePaymentAccount('pa-old')).resolves.toBe(true);
+
+    expect(app.activePaymentModes()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'pm-old-upi' })]),
+    );
+    expect(app.activePaymentAccounts()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'pa-old' })]),
+    );
+    expect(app.archivedPaymentModes()).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'pm-old-upi' })]),
+    );
+    expect(app.archivedPaymentAccounts()).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'pa-old' })]),
+    );
+  });
+
+  it('should expose icon and label metadata for tagged financial rows', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      expenseRows: () => Array<{ paymentModeMeta?: { iconSrc: string; label: string } | null }>;
+      expenses: { set: (records: unknown[]) => void };
+      investments: { set: (records: unknown[]) => void };
+      loans: { set: (records: unknown[]) => void };
+      loanRepaymentRows: () => Array<{
+        paymentModeMeta?: { iconSrc: string; label: string } | null;
+      }>;
+      paymentModes: { set: (records: PaymentMode[]) => void };
+      portfolioRows: () => Array<{ paymentModeMeta?: { iconSrc: string; label: string } | null }>;
+      selectedMonth: { set: (month: string) => void };
+    };
+
+    app.selectedMonth.set('2026-06');
+    app.paymentModes.set([
+      { id: 'pm-paytm', type: 'wallet', provider: 'Paytm', name: 'Paytm Wallet' },
+    ]);
+    app.expenses.set([
+      {
+        id: 'expense-food',
+        month: '2026-06',
+        date: '2026-06-05',
+        name: 'Food',
+        categoryId: 'category-food',
+        amount: 1000,
+        type: 'one-time',
+        note: '',
+        paymentModeId: 'pm-paytm',
+      },
+    ]);
+    app.investments.set([
+      {
+        id: 'investment-sip',
+        name: 'SIP',
+        amount: 2000,
+        categoryId: 'category-invest',
+        frequency: 'monthly',
+        startDate: '2026-01-01',
+        notes: '',
+        paymentModeId: 'pm-paytm',
+      },
+    ]);
+    app.loans.set([
+      {
+        id: 'loan-bike',
+        lender: 'Bank',
+        loanType: 'Bike',
+        principal: 100000,
+        outstanding: 90000,
+        annualRate: 9,
+        emi: 3000,
+        startDate: '2026-01-01',
+        endDate: '2026-12-31',
+        notes: '',
+        paymentModeId: 'pm-paytm',
+      },
+    ]);
+
+    const expected = { iconSrc: '/payment-icons/paytm.svg', label: 'Paytm Wallet' };
+    expect(app.expenseRows()[0].paymentModeMeta).toEqual(expect.objectContaining(expected));
+    expect(app.portfolioRows()[0].paymentModeMeta).toEqual(expect.objectContaining(expected));
+    expect(app.loanRepaymentRows()[0].paymentModeMeta).toEqual(expect.objectContaining(expected));
+  });
+
   it('should materialize past recurring expenses while current months wait for review', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 5, 11));
@@ -850,10 +1772,349 @@ describe('App', () => {
   });
 });
 
+describe('PaymentModesPage', () => {
+  let store: ReturnType<typeof createPaymentModeStore>;
+  let bottomSheetOpen: ReturnType<typeof vi.fn>;
+  let breakpointObserver: {
+    isMatched: ReturnType<typeof vi.fn>;
+    observe: ReturnType<typeof vi.fn>;
+  };
+
+  beforeEach(async () => {
+    store = createPaymentModeStore();
+    bottomSheetOpen = vi.fn();
+    breakpointObserver = {
+      isMatched: vi.fn(() => false),
+      observe: vi.fn(() => of({ matches: false, breakpoints: {} })),
+    };
+    await TestBed.configureTestingModule({
+      imports: [PaymentModesPage],
+      providers: [
+        { provide: BudgetStore, useValue: store },
+        { provide: BreakpointObserver, useValue: breakpointObserver },
+      ],
+    })
+      .overrideProvider(MatBottomSheet, { useValue: { open: bottomSheetOpen } })
+      .compileComponents();
+  });
+
+  it('should validate required fields and save UPI providers', async () => {
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    const page = fixture.componentInstance;
+    fixture.detectChanges();
+
+    page.savePaymentMode();
+
+    expect(page.validationError()).toBe('Display name is required.');
+    expect(store.savePaymentMode).not.toHaveBeenCalled();
+
+    page.form.patchValue({ name: 'Personal Google Pay', provider: 'Google Pay' });
+    page.savePaymentMode();
+    await Promise.resolve();
+
+    expect(store.savePaymentMode).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'upi',
+        name: 'Personal Google Pay',
+        provider: 'Google Pay',
+        lastFour: undefined,
+      }),
+    );
+  });
+
+  it('should require card last four digits before saving card modes', async () => {
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    const page = fixture.componentInstance;
+    fixture.detectChanges();
+
+    page.setFormType('credit-card');
+    page.form.patchValue({ name: 'Visa Credit', lastFour: '12' });
+    page.savePaymentMode();
+
+    expect(page.validationError()).toBe('Card modes need exactly 4 digits.');
+
+    page.form.patchValue({ cardType: 'visa', lastFour: '9876' });
+    page.savePaymentMode();
+    await Promise.resolve();
+
+    expect(store.savePaymentMode).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'credit-card',
+        name: 'Visa Credit',
+        provider: undefined,
+        cardType: 'visa',
+        lastFour: '9876',
+      }),
+    );
+  });
+
+  it('should save internet banking modes with bank and mapped account data', async () => {
+    store.paymentAccounts.set([
+      {
+        id: 'pa-hdfc',
+        name: 'Salary account',
+        bankName: 'HDFC',
+        lastFour: '4321',
+      },
+    ]);
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    const page = fixture.componentInstance;
+    fixture.detectChanges();
+
+    page.setFormType('internet-banking');
+    page.form.patchValue({
+      name: 'HDFC NetBanking',
+      bankName: 'HDFC',
+      paymentAccountId: 'pa-hdfc',
+    });
+    page.savePaymentMode();
+    await Promise.resolve();
+
+    expect(store.savePaymentMode).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'internet-banking',
+        name: 'HDFC NetBanking',
+        bankName: 'HDFC',
+        paymentAccountId: 'pa-hdfc',
+        provider: undefined,
+      }),
+    );
+  });
+
+  it('should render the payment accounts tab and save account records', async () => {
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    const page = fixture.componentInstance;
+    fixture.detectChanges();
+
+    page.selectedTabIndex.set(1);
+    page.savePaymentAccount();
+
+    expect(page.accountValidationError()).toBe('Account name is required.');
+    expect(store.savePaymentAccount).not.toHaveBeenCalled();
+
+    page.accountForm.patchValue({
+      name: 'Salary account',
+      bankName: 'HDFC',
+      lastFour: '4321',
+    });
+    page.savePaymentAccount();
+    await Promise.resolve();
+    fixture.detectChanges();
+
+    expect(store.savePaymentAccount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Salary account',
+        bankName: 'HDFC',
+        lastFour: '4321',
+      }),
+    );
+  });
+
+  it('should hide mapped payment modes until an account is selected on desktop', () => {
+    store.paymentAccounts.set([
+      {
+        id: 'pa-hdfc',
+        name: 'Salary account',
+        bankName: 'HDFC',
+        lastFour: '4321',
+      },
+    ]);
+    store.paymentModes.set([
+      {
+        id: 'pm-upi',
+        type: 'upi',
+        provider: 'Google Pay',
+        name: 'GPay',
+        paymentAccountId: 'pa-hdfc',
+      },
+    ]);
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    const page = fixture.componentInstance;
+    page.selectedTabIndex.set(1);
+    fixture.detectChanges();
+
+    const element = fixture.nativeElement as HTMLElement;
+    expect(page.selectedPaymentAccountCard()).toBeNull();
+    expect(element.querySelector('.account-detail-panel')).toBeNull();
+
+    page.selectPaymentAccount('pa-hdfc');
+    fixture.detectChanges();
+
+    expect(page.selectedPaymentAccountCard()).toEqual(expect.objectContaining({ id: 'pa-hdfc' }));
+    expect(element.querySelector('.account-detail-panel')?.textContent ?? '').toContain('GPay');
+  });
+
+  it('should show mapped payment modes in a bottom sheet on mobile account clicks', () => {
+    breakpointObserver.isMatched.mockReturnValue(true);
+    store.paymentAccounts.set([
+      {
+        id: 'pa-hdfc',
+        name: 'Salary account',
+        bankName: 'HDFC',
+        lastFour: '4321',
+      },
+    ]);
+    store.paymentModes.set([
+      {
+        id: 'pm-upi',
+        type: 'upi',
+        provider: 'Google Pay',
+        name: 'GPay',
+        paymentAccountId: 'pa-hdfc',
+      },
+    ]);
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    const page = fixture.componentInstance;
+    page.selectedTabIndex.set(1);
+    fixture.detectChanges();
+
+    const cardBody = (fixture.nativeElement as HTMLElement).querySelector(
+      '.payment-account-card .category-card-body',
+    ) as HTMLElement;
+    cardBody.click();
+
+    expect(page.selectedPaymentAccountCard()).toBeNull();
+    expect(bottomSheetOpen).toHaveBeenCalledWith(
+      PaymentAccountModesSheet,
+      expect.objectContaining({
+        ariaLabel: 'Salary account mapped payment modes',
+        data: expect.objectContaining({
+          mappedModes: [expect.objectContaining({ id: 'pm-upi' })],
+          paymentAccount: expect.objectContaining({ id: 'pa-hdfc' }),
+        }),
+      }),
+    );
+  });
+
+  it('should render card modes with masked virtual card numbers', () => {
+    store.paymentModes.set([
+      {
+        id: 'pm-card',
+        type: 'credit-card',
+        name: 'Visa Credit',
+        cardType: 'visa',
+        lastFour: '9002',
+      },
+    ]);
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    fixture.detectChanges();
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('xxxx xxxx xxxx 9002');
+    expect(text).not.toContain('ending 9002');
+  });
+
+  it('should update and archive existing payment modes', async () => {
+    const existing: PaymentMode = {
+      id: 'pm-card',
+      type: 'debit-card',
+      name: 'Old debit',
+      lastFour: '1111',
+    };
+    store.paymentModes.set([existing]);
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    const page = fixture.componentInstance;
+    fixture.detectChanges();
+
+    page.editPaymentMode(existing);
+    page.form.patchValue({ name: 'Salary debit', lastFour: '2222' });
+    page.savePaymentMode();
+    await Promise.resolve();
+    page.archivePaymentMode('pm-card');
+
+    expect(store.savePaymentMode).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'pm-card',
+        name: 'Salary debit',
+        lastFour: '2222',
+      }),
+    );
+    expect(store.archivePaymentMode).toHaveBeenCalledWith('pm-card');
+  });
+
+  it('should open a bottom sheet for adding payment modes on mobile', () => {
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    const page = fixture.componentInstance;
+    fixture.detectChanges();
+
+    page.openMobilePaymentModeForm();
+
+    expect(bottomSheetOpen).toHaveBeenCalledWith(
+      PaymentModeFormSheet,
+      expect.objectContaining({
+        data: { paymentMode: undefined },
+        ariaLabel: 'Add payment mode',
+        viewContainerRef: expect.anything(),
+      }),
+    );
+  });
+
+  it('should open a bottom sheet with existing payment mode data for mobile edits', () => {
+    const existing: PaymentMode = {
+      id: 'pm-gpay',
+      type: 'upi',
+      provider: 'Google Pay',
+      name: 'Personal Google Pay',
+    };
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    const page = fixture.componentInstance;
+    fixture.detectChanges();
+
+    page.openMobilePaymentModeForm(existing);
+
+    expect(bottomSheetOpen).toHaveBeenCalledWith(
+      PaymentModeFormSheet,
+      expect.objectContaining({
+        data: { paymentMode: existing },
+        ariaLabel: 'Edit payment mode',
+        viewContainerRef: expect.anything(),
+      }),
+    );
+  });
+
+  it('should open a bottom sheet for adding payment accounts on mobile', () => {
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    const page = fixture.componentInstance;
+    fixture.detectChanges();
+
+    page.openMobilePaymentAccountForm();
+
+    expect(bottomSheetOpen).toHaveBeenCalledWith(
+      PaymentAccountFormSheet,
+      expect.objectContaining({
+        data: { paymentAccount: undefined },
+        ariaLabel: 'Add payment account',
+        viewContainerRef: expect.anything(),
+      }),
+    );
+  });
+
+  it('should keep the inline form for payment modes on desktop', () => {
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    const page = fixture.componentInstance;
+    fixture.detectChanges();
+
+    page.openPaymentModeForm();
+
+    expect(bottomSheetOpen).not.toHaveBeenCalled();
+    expect(page.editingId()).toBeNull();
+  });
+});
+
 describe('BulkEditorDialog', () => {
   const dialogData: BulkEditorData = {
     scope: 'monthly',
     selectedMonth: '2026-05',
+    paymentModes: [
+      { id: 'pm-gpay', type: 'upi', provider: 'Google Pay', name: 'Personal Google Pay' },
+      {
+        id: 'pm-card',
+        type: 'credit-card',
+        name: 'Visa Credit',
+        cardType: 'visa',
+        lastFour: '1234',
+      },
+    ],
     categories: [{ id: 'category-home', name: 'Home', monthlyBudget: 35000, color: '#1f7a8c' }],
     incomes: [
       { id: 'income-salary', source: 'Salary', amount: 120000, cadence: 'monthly', notes: '' },
@@ -930,6 +2191,68 @@ describe('BulkEditorDialog', () => {
     expect(compiled.textContent).not.toContain('Income');
     expect(compiled.textContent).not.toContain('Loans');
   });
+
+  it('should expose the redesigned bulk editor shell controls', async () => {
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    expect(compiled.textContent).toContain('Bulk edit monthly expenses and entries');
+    expect(compiled.textContent).toContain('Visible rows:');
+    expect(compiled.textContent).toContain('Active rows:');
+    expect(compiled.textContent).toContain('Marked delete:');
+    expect(compiled.textContent).toContain('Add Row');
+    expect(compiled.textContent).toContain('Apply Changes');
+    expect(compiled.querySelector('button[aria-label="Close bulk editor"]')).toBeTruthy();
+    expect(compiled.querySelector('button[aria-label="Edit expense row"]')).toBeTruthy();
+  });
+
+  it('should keep existing desktop rows read-only until the edit action is clicked', async () => {
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const getExpenseNameInput = () =>
+      compiled.querySelector<HTMLInputElement>('input[aria-label="Expense name"]');
+
+    expect(getExpenseNameInput()).toBeNull();
+    expect(compiled.querySelector('.cell-value')?.textContent).toContain('Rent');
+
+    compiled.querySelector<HTMLButtonElement>('button[aria-label="Edit expense row"]')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getExpenseNameInput()?.disabled).toBe(false);
+  });
+
+  it('should render mobile cards as read-only display content before editing', async () => {
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const mobileCard = compiled.querySelector('.mobile-row-card');
+
+    expect(mobileCard?.querySelector('.mobile-row-title')?.textContent).toContain('Rent');
+    expect(mobileCard?.querySelector('.mobile-card-money-row')?.textContent).toContain('Home');
+    expect(mobileCard?.querySelector('.mobile-card-money-row')?.textContent).toContain('₹25,000');
+    expect(mobileCard?.querySelector('.mobile-card-note')?.textContent).toContain(
+      'Prepopulated from recurring plan',
+    );
+    expect(mobileCard?.querySelector('input[aria-label="Expense name"]')).toBeNull();
+  });
+
+  it('should pass axe checks for the bulk editor dialog', async () => {
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const results = await runAxe(fixture.nativeElement);
+
+    expect(results.violations).toEqual([]);
+  }, 12000);
 
   it('should suggest previous one-time expenses that are not already in the selected month', () => {
     TestBed.overrideProvider(MAT_DIALOG_DATA, {
@@ -1030,6 +2353,61 @@ describe('BulkEditorDialog', () => {
     expect(
       result.expenses.find((expense: { name: string }) => expense.name === 'Snacks')?.type,
     ).toBe('one-time');
+  });
+
+  it('should include selected payment modes in edited financial rows', () => {
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialogRef = TestBed.inject(MatDialogRef) as unknown as {
+      close: ReturnType<typeof vi.fn>;
+    };
+    const dialog = fixture.componentInstance as unknown as {
+      apply: () => void;
+      expenses: () => Array<{ paymentModeId?: string }>;
+      investments: () => Array<{ paymentModeId?: string }>;
+      loans: () => Array<{ paymentModeId?: string }>;
+      templates: () => Array<{ paymentModeId?: string }>;
+    };
+
+    dialog.expenses()[0].paymentModeId = 'pm-gpay';
+    dialog.templates()[0].paymentModeId = 'pm-card';
+    dialog.investments()[0].paymentModeId = 'pm-gpay';
+    dialog.loans()[0].paymentModeId = 'pm-card';
+    dialog.apply();
+
+    const result = dialogRef.close.mock.calls[0][0];
+    expect(result.expenses[0]).toEqual(expect.objectContaining({ paymentModeId: 'pm-gpay' }));
+    expect(result.templates[0]).toEqual(expect.objectContaining({ paymentModeId: 'pm-card' }));
+    expect(result.investments[0]).toEqual(expect.objectContaining({ paymentModeId: 'pm-gpay' }));
+    expect(result.loans[0]).toEqual(expect.objectContaining({ paymentModeId: 'pm-card' }));
+  });
+
+  it('should resolve archived payment mode labels without offering archived modes in selectors', () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        paymentModes: [
+          ...(dialogData.paymentModes ?? []),
+          {
+            id: 'pm-old-wallet',
+            type: 'wallet',
+            provider: 'Paytm',
+            name: 'Old Paytm Wallet',
+            archivedDate: '2026-05-01T00:00:00.000Z',
+          },
+        ],
+        expenses: [{ ...dialogData.expenses[0], paymentModeId: 'pm-old-wallet' }],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      activePaymentModes: PaymentMode[];
+      paymentModeName: (paymentModeId?: string) => string;
+    };
+
+    expect(dialog.paymentModeName('pm-old-wallet')).toBe('Old Paytm Wallet');
+    expect(
+      dialog.activePaymentModes.some((paymentMode) => paymentMode.id === 'pm-old-wallet'),
+    ).toBe(false);
   });
 
   it('should not persist untouched suggested one-time expense rows', () => {
@@ -1416,6 +2794,100 @@ describe('BulkEditorDialog', () => {
   });
 });
 
+describe('BudgetStore bulk editor launcher', () => {
+  it('should open the bulk editor as a Material bottom sheet on mobile', async () => {
+    const bottomSheetOpen = vi.fn(() => ({ afterDismissed: () => of(undefined) }));
+    const dialogOpen = vi.fn(() => ({ afterClosed: () => of(undefined) }));
+    const breakpointObserver = {
+      isMatched: vi.fn(() => true),
+      observe: vi.fn(() => of({ matches: true, breakpoints: {} })),
+    };
+
+    await TestBed.configureTestingModule({
+      imports: [App],
+      providers: [provideRouter(routes)],
+    })
+      .overrideProvider(BreakpointObserver, { useValue: breakpointObserver })
+      .overrideProvider(MatBottomSheet, { useValue: { open: bottomSheetOpen } })
+      .overrideProvider(MatDialog, { useValue: { open: dialogOpen } })
+      .compileComponents();
+
+    const fixture = TestBed.createComponent(App);
+
+    fixture.componentInstance.openBulkEditor('monthly');
+
+    expect(bottomSheetOpen).toHaveBeenCalled();
+    expect(dialogOpen).not.toHaveBeenCalled();
+  });
+});
+
+describe('App accessibility', () => {
+  beforeEach(async () => {
+    vi.useRealTimers();
+    await TestBed.configureTestingModule({
+      imports: [App],
+      providers: [provideRouter(routes)],
+    }).compileComponents();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('should pass axe checks on the login screen', async () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      firebase: { mode: string };
+      isSessionChecking: { set: (checking: boolean) => void };
+      workspaceId: { set: (workspaceId: string | null) => void };
+    };
+
+    app.firebase.mode = 'firebase';
+    app.isSessionChecking.set(false);
+    app.workspaceId.set(null);
+    fixture.detectChanges();
+    await Promise.resolve();
+
+    const results = await runAxe(fixture.nativeElement);
+
+    expect(results.violations).toEqual([]);
+  }, 12000);
+
+  it.each([
+    '/dashboard',
+    '/expenses',
+    '/planning',
+    '/investments',
+    '/loans',
+    '/categories',
+    '/payment-modes',
+    '/import-export',
+    '/workspace',
+    '/settings',
+  ])(
+    'should pass axe checks for %s',
+    async (path) => {
+      const fixture = TestBed.createComponent(App);
+      const router = TestBed.inject(Router);
+      const app = fixture.componentInstance as unknown as {
+        firebase: { mode: string };
+        isSessionChecking: { set: (checking: boolean) => void };
+      };
+
+      app.firebase.mode = 'local';
+      app.isSessionChecking.set(false);
+      await router.navigateByUrl(path);
+      fixture.detectChanges();
+      await Promise.resolve();
+
+      const results = await runAxe(fixture.nativeElement);
+
+      expect(results.violations).toEqual([]);
+    },
+    12000,
+  );
+});
+
 describe('budget import helpers', () => {
   it('should generate a template with import status output columns', () => {
     const template = createBudgetImportTemplateCsv();
@@ -1506,6 +2978,34 @@ describe('budget import helpers', () => {
     expect(parsed.rows[2].status).toBe('error');
     expect(parsed.rows[2].comments.join(' ')).toContain('amount must be a number');
     expect(parsed.rows[2].comments.join(' ')).toContain('categoryName "Unknown" was not found');
+  });
+
+  it('should validate imported member emails for financial rows', () => {
+    const csv = [
+      'recordType,name,categoryName,monthlyBudget,color,amount,month,date,memberEmail',
+      'category,Food,,15000,#1f7a8c,,,,',
+      'expense,Groceries,Food,,,1200,2026-06,2026-06-04,a@example.com',
+      'expense,Unknown user,Food,,,900,2026-06,2026-06-05,missing@example.com',
+    ].join('\n');
+
+    const parsed = parseBudgetImportCsv(
+      csv,
+      [],
+      [
+        {
+          email: 'a@example.com',
+          displayName: 'A',
+          role: 'editor',
+          createdDate: '2026-06-01T00:00:00.000Z',
+        },
+      ],
+    );
+
+    expect(parsed.rows[1].record).toEqual(
+      expect.objectContaining({ memberEmail: 'a@example.com' }),
+    );
+    expect(parsed.rows[2].status).toBe('error');
+    expect(parsed.rows[2].comments.join(' ')).toContain('missing@example.com');
   });
 
   it('should reject unsupported investment import frequencies', () => {

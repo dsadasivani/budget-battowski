@@ -1,6 +1,7 @@
-import { CommonModule } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
+import { CommonModule, NgOptimizedImage } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { MAT_BOTTOM_SHEET_DATA, MatBottomSheetRef } from '@angular/material/bottom-sheet';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -12,6 +13,7 @@ import { MatTabsModule } from '@angular/material/tabs';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { provideNativeDateAdapter } from '@angular/material/core';
 
+import { PAYMENT_BANK_OPTIONS } from './budget.models';
 import type {
   BudgetCategory,
   Cadence,
@@ -26,9 +28,17 @@ import type {
   InvestmentFrequency,
   Loan,
   LoanAuditVersion,
+  PaymentMode,
+  WorkspaceMember,
 } from './budget.models';
 
 type DraftRow<T extends { id: string }> = T & { isNew?: boolean; pendingDelete?: boolean };
+type EditableDraftRow = {
+  id: string;
+  isNew?: boolean;
+  isSuggested?: boolean;
+  pendingDelete?: boolean;
+};
 type DraftExpense = DraftRow<ExpenseEntry> & {
   endDate?: string;
   isSuggested?: boolean;
@@ -56,12 +66,19 @@ type AuditDisplayRow = {
   recordedDate?: string;
   startDate?: string;
 };
+type PaymentModeMeta = {
+  iconSrc: string;
+  label: string;
+};
 export type BulkEditorScope = 'monthly' | 'planning' | 'loans';
 
 export interface BulkEditorData {
   scope: BulkEditorScope;
   initialTabIndex?: number;
   selectedMonth: string;
+  members?: WorkspaceMember[];
+  selectedMemberEmail?: string;
+  paymentModes?: PaymentMode[];
   categories: BudgetCategory[];
   incomes: IncomeSource[];
   templates: ExpenseTemplate[];
@@ -172,11 +189,36 @@ function isOneTimeInvestment(investment: Pick<InvestmentEntry, 'frequency'>): bo
   return investment.frequency === 'one-time';
 }
 
+const PAYMENT_PROVIDER_ICONS: Record<string, string> = {
+  PhonePe: '/payment-icons/phonepe.svg',
+  'Apple Pay': '/payment-icons/apple-pay.svg',
+  'Samsung Pay': '/payment-icons/samsung-pay.svg',
+  SamsungPay: '/payment-icons/samsung-pay.svg',
+  'Google Pay': '/payment-icons/google-pay.svg',
+  GPay: '/payment-icons/google-pay.svg',
+  Paytm: '/payment-icons/paytm.svg',
+  BHIM: '/payment-icons/bhim.svg',
+};
+const PAYMENT_CARD_ICONS: Record<string, string> = {
+  rupay: '/payment-icons/cards_rupay.svg',
+  maestro: '/payment-icons/cards_maestro.svg',
+  'diners-club': '/payment-icons/cards_diners-club.svg',
+  'master-card': '/payment-icons/cards_master-card.svg',
+  'american-express': '/payment-icons/cards_american-express.svg',
+  visa: '/payment-icons/cards_visa.svg',
+};
+const DEFAULT_CARD_ICON = '/payment-icons/cards_default.svg';
+const DEFAULT_BANK_ICON = '/bank-icons/bank-building-icon.svg';
+const PAYMENT_BANK_ICON_BY_NAME = new Map(
+  PAYMENT_BANK_OPTIONS.map((bank) => [bank.name, bank.iconSrc] as const),
+);
+
 @Component({
   selector: 'app-bulk-editor-dialog',
   imports: [
     CommonModule,
     FormsModule,
+    NgOptimizedImage,
     MatButtonModule,
     MatDatepickerModule,
     MatDialogModule,
@@ -190,11 +232,24 @@ function isOneTimeInvestment(investment: Pick<InvestmentEntry, 'frequency'>): bo
   providers: [provideNativeDateAdapter()],
   templateUrl: './bulk-editor-dialog.html',
   styleUrl: './bulk-editor-dialog.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class BulkEditorDialog {
-  private readonly dialogRef =
-    inject<MatDialogRef<BulkEditorDialog, BulkEditorResult>>(MatDialogRef);
-  protected readonly data = inject<BulkEditorData>(MAT_DIALOG_DATA);
+  private readonly dialogRef = inject<MatDialogRef<BulkEditorDialog, BulkEditorResult>>(
+    MatDialogRef,
+    { optional: true },
+  );
+  private readonly bottomSheetRef = inject<MatBottomSheetRef<BulkEditorDialog, BulkEditorResult>>(
+    MatBottomSheetRef,
+    {
+      optional: true,
+    },
+  );
+  private readonly dialogData = inject<BulkEditorData>(MAT_DIALOG_DATA, { optional: true });
+  private readonly bottomSheetData = inject<BulkEditorData>(MAT_BOTTOM_SHEET_DATA, {
+    optional: true,
+  });
+  protected readonly data = this.resolveData();
 
   protected readonly incomeCadences: Cadence[] = [
     'daily',
@@ -216,6 +271,11 @@ export class BulkEditorDialog {
   ];
   protected readonly recurringFrequencies: InvestmentFrequency[] = this.investmentFrequencies;
   protected readonly categoryTypes: CategoryType[] = ['Income', 'Investments', 'Expenses'];
+  protected readonly members = this.data.members ?? [];
+  protected readonly paymentModes = this.data.paymentModes ?? [];
+  protected readonly activePaymentModes = this.paymentModes.filter(
+    (paymentMode) => !paymentMode.archivedDate,
+  );
 
   private readonly sourceTemplates = cloneRows(this.data.templates);
   private readonly originalIncomesById = new Map(
@@ -263,6 +323,7 @@ export class BulkEditorDialog {
     })),
   );
   protected readonly loans = signal<Array<DraftRow<Loan>>>(cloneRows(this.data.loans));
+  protected readonly editingRowIds = signal(this.initialEditingRowIds());
   protected readonly title = computed(() =>
     this.data.scope === 'monthly'
       ? 'Monthly Entry Editor'
@@ -270,10 +331,28 @@ export class BulkEditorDialog {
         ? 'Income & Budget Editor'
         : 'Loans & EMI Editor',
   );
+  protected readonly subtitle = computed(() =>
+    this.data.scope === 'monthly'
+      ? 'Bulk edit monthly expenses and entries'
+      : this.data.scope === 'planning'
+        ? 'Planning scope · bulk edit spreadsheet'
+        : 'Bulk edit loan accounts and repayment schedules',
+  );
+  protected readonly scopeIcon = computed(() =>
+    this.data.scope === 'loans'
+      ? 'account_balance'
+      : this.data.scope === 'planning'
+        ? 'grid_view'
+        : 'dashboard',
+  );
+  protected readonly selectedMonthLabel = computed(() =>
+    this.auditMonthLabel(monthStartDate(this.data.selectedMonth), this.data.selectedMonth),
+  );
   protected readonly showMonthlyTables = computed(() => this.data.scope === 'monthly');
   protected readonly showPlanningTables = computed(() => this.data.scope === 'planning');
   protected readonly showLoanTables = computed(() => this.data.scope === 'loans');
   protected readonly initialTabIndex = computed(() => this.data.initialTabIndex ?? 0);
+  protected readonly memberLocked = computed(() => this.isMemberLocked());
   protected readonly expandedTemplateIds = signal(new Set<string>());
   protected readonly expandedAuditIds = signal(new Set<string>());
   protected readonly validationError = signal('');
@@ -324,6 +403,8 @@ export class BulkEditorDialog {
         amount: undefined as unknown as number,
         type: 'one-time',
         note: '',
+        memberEmail: this.defaultMemberEmail(),
+        paymentModeId: '',
         isSuggested: true,
         suggestionMonth: expenseMonth,
       });
@@ -343,6 +424,8 @@ export class BulkEditorDialog {
         amount: undefined as unknown as number,
         type: 'one-time',
         note: '',
+        memberEmail: this.defaultMemberEmail(),
+        paymentModeId: '',
         isNew: true,
       },
       ...expenses,
@@ -362,6 +445,8 @@ export class BulkEditorDialog {
         startDate: currentMonthStartDate(),
         endDate: '',
         skippedMonths: [],
+        memberEmail: this.defaultMemberEmail(),
+        paymentModeId: '',
         isNew: true,
       },
       ...templates,
@@ -381,6 +466,7 @@ export class BulkEditorDialog {
         createdDate: todayDate(),
         startDate: '',
         endDate: '',
+        memberEmail: this.defaultMemberEmail(),
         isNew: true,
       },
       ...incomes,
@@ -414,6 +500,8 @@ export class BulkEditorDialog {
         startDate: '',
         endDate: '',
         notes: '',
+        memberEmail: this.defaultMemberEmail(),
+        paymentModeId: '',
         isNew: true,
       },
       ...loans,
@@ -433,6 +521,8 @@ export class BulkEditorDialog {
         endDate: '',
         notes: '',
         createdDate: todayDate(),
+        memberEmail: this.defaultMemberEmail(),
+        paymentModeId: '',
         isNew: true,
       },
       ...investments,
@@ -457,7 +547,76 @@ export class BulkEditorDialog {
 
   protected toggleDelete(row: DraftRow<{ id: string }>): void {
     row.pendingDelete = !row.pendingDelete;
+    if (row.pendingDelete) {
+      this.editingRowIds.update((ids) => {
+        const next = new Set(ids);
+        next.delete(row.id);
+        return next;
+      });
+    }
     this.refreshRows();
+  }
+
+  protected isRowEditing(row: EditableDraftRow): boolean {
+    return (
+      !row.pendingDelete && !!(row.isNew || row.isSuggested || this.editingRowIds().has(row.id))
+    );
+  }
+
+  protected toggleRowEditing(row: EditableDraftRow, event: Event): void {
+    if (row.pendingDelete) {
+      return;
+    }
+
+    if (row.isNew || row.isSuggested) {
+      this.focusEditableRow(event);
+      return;
+    }
+
+    let shouldFocus = false;
+    this.editingRowIds.update((ids) => {
+      const next = new Set(ids);
+      if (next.has(row.id)) {
+        next.delete(row.id);
+      } else {
+        next.add(row.id);
+        shouldFocus = true;
+      }
+      return next;
+    });
+
+    if (shouldFocus) {
+      this.focusEditableRow(event);
+    }
+  }
+
+  protected toggleRowEditingFromEvent(event: Event): void {
+    const trigger = event.currentTarget;
+    if (!(trigger instanceof HTMLElement)) {
+      return;
+    }
+
+    const container = trigger.closest<HTMLElement>('[data-row-id]');
+    const rowId = container?.dataset['rowId'];
+    if (!container || !rowId || container.classList.contains('marked-delete')) {
+      return;
+    }
+
+    const isExplicitlyEditing = this.editingRowIds().has(rowId);
+    if (container.classList.contains('row-editing') && !isExplicitlyEditing) {
+      this.focusEditableRow(event);
+      return;
+    }
+
+    this.editingRowIds.update((ids) => {
+      const next = new Set(ids);
+      next.has(rowId) ? next.delete(rowId) : next.add(rowId);
+      return next;
+    });
+
+    if (!isExplicitlyEditing) {
+      this.focusEditableRow(event);
+    }
   }
 
   private refreshRows(): void {
@@ -553,7 +712,7 @@ export class BulkEditorDialog {
       .sort((a, b) => (b.startDate ?? '').localeCompare(a.startDate ?? ''));
   }
 
-  protected categoryName(categoryId: string): string {
+  protected categoryName(categoryId: string | undefined): string {
     return (
       this.categories().find((category) => category.id === categoryId)?.name ?? 'Uncategorized'
     );
@@ -561,6 +720,169 @@ export class BulkEditorDialog {
 
   protected categoriesByType(type: CategoryType): Array<DraftRow<BudgetCategory>> {
     return this.categories().filter((category) => (category.type ?? 'Expenses') === type);
+  }
+
+  protected memberName(email: string | undefined): string {
+    if (!email) {
+      return 'Unassigned';
+    }
+
+    return this.members.find((member) => member.email === email)?.displayName || email;
+  }
+
+  protected paymentModeName(paymentModeId: string | undefined): string {
+    if (!paymentModeId) {
+      return 'Not set';
+    }
+
+    return (
+      this.paymentModes.find((paymentMode) => paymentMode.id === paymentModeId)?.name ??
+      'Saved payment mode'
+    );
+  }
+
+  protected paymentModeIconSrc(paymentMode: PaymentMode): string {
+    if (paymentMode.type === 'internet-banking') {
+      return PAYMENT_BANK_ICON_BY_NAME.get(paymentMode.bankName ?? 'Default') ?? DEFAULT_BANK_ICON;
+    }
+
+    if (paymentMode.type === 'cash') {
+      return '/payment-icons/cash.svg';
+    }
+
+    if (paymentMode.provider) {
+      return PAYMENT_PROVIDER_ICONS[paymentMode.provider] ?? '/payment-icons/cash.svg';
+    }
+
+    if (paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card') {
+      return paymentMode.cardType
+        ? (PAYMENT_CARD_ICONS[paymentMode.cardType] ?? DEFAULT_CARD_ICON)
+        : DEFAULT_CARD_ICON;
+    }
+
+    return DEFAULT_CARD_ICON;
+  }
+
+  protected paymentModeMeta(paymentModeId: string | undefined): PaymentModeMeta | null {
+    if (!paymentModeId) {
+      return null;
+    }
+
+    const paymentMode = this.paymentModes.find((mode) => mode.id === paymentModeId);
+    if (!paymentMode) {
+      return {
+        iconSrc: DEFAULT_CARD_ICON,
+        label: 'Saved payment mode',
+      };
+    }
+
+    return {
+      iconSrc: this.paymentModeIconSrc(paymentMode),
+      label: paymentMode.name,
+    };
+  }
+
+  protected memberDisplayName(member: WorkspaceMember): string {
+    return member.displayName || member.email;
+  }
+
+  protected amountLabel(value: unknown): string {
+    return new Intl.NumberFormat('en-IN', {
+      maximumFractionDigits: 0,
+      style: 'currency',
+      currency: 'INR',
+    }).format(toNumber(value));
+  }
+
+  protected dateLabel(value: unknown, fallback = '-'): string {
+    const date = dateValue(value);
+    if (!date) {
+      return fallback;
+    }
+
+    const [year, month, day] = date.split('-').map(Number);
+    if (!year || !month || !day) {
+      return fallback;
+    }
+
+    return new Intl.DateTimeFormat('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    }).format(new Date(year, month - 1, day));
+  }
+
+  protected monthLabel(value: unknown, fallback = '-'): string {
+    const month = dateMonthKey(dateValue(value) ?? (typeof value === 'string' ? value : undefined));
+    if (!month) {
+      return fallback;
+    }
+
+    return this.auditMonthLabel(`${month}-01`, fallback);
+  }
+
+  protected typeLabel(value: string | undefined, fallback = 'one-time'): string {
+    return value || fallback;
+  }
+
+  protected noteLabel(value: string | undefined, fallback = 'No note'): string {
+    return value?.trim() || fallback;
+  }
+
+  protected colorLabel(value: string | undefined): string {
+    return value || '#1f7a8c';
+  }
+
+  protected focusEditableRow(event: Event): void {
+    const trigger = event.currentTarget;
+    if (!(trigger instanceof HTMLElement)) {
+      return;
+    }
+
+    const container = trigger.closest('.mobile-row-card, tr');
+    setTimeout(() => {
+      const target = container?.querySelector<HTMLElement>(
+        'input:not([disabled]), textarea:not([disabled]), .mat-mdc-select:not(.mat-mdc-select-disabled)',
+      );
+
+      target?.focus();
+    });
+  }
+
+  protected loanDateInvalid(value: unknown): boolean {
+    return this.validationError().includes('loan') && !dateValue(value);
+  }
+
+  protected expenseRowLabel(expense: DraftExpense, rowIndex: number): string {
+    return this.rowLabel('Expense', expense.name, rowIndex, expense);
+  }
+
+  protected templateRowLabel(template: DraftTemplate, rowIndex: number): string {
+    return this.rowLabel('Recurring expense', template.name, rowIndex, template);
+  }
+
+  protected incomeRowLabel(income: DraftRow<IncomeSource>, rowIndex: number): string {
+    return this.rowLabel('Income', income.source, rowIndex, income);
+  }
+
+  protected categoryRowLabel(category: DraftRow<BudgetCategory>, rowIndex: number): string {
+    return this.rowLabel('Category', category.name, rowIndex, category);
+  }
+
+  protected loanRowLabel(loan: DraftRow<Loan>, rowIndex: number): string {
+    return this.rowLabel('Loan', `${loan.lender} ${loan.loanType}`.trim(), rowIndex, loan);
+  }
+
+  protected investmentRowLabel(investment: DraftRow<InvestmentEntry>, rowIndex: number): string {
+    return this.rowLabel('Investment', investment.name, rowIndex, investment);
+  }
+
+  protected defaultMemberEmail(): string | undefined {
+    return this.isMemberLocked() ? this.data.selectedMemberEmail : undefined;
+  }
+
+  protected userFieldDisabled(row: { pendingDelete?: boolean }): boolean {
+    return !!row.pendingDelete || this.isMemberLocked();
   }
 
   protected auditMonthLabel(date: string | undefined, fallback: string): string {
@@ -607,6 +929,12 @@ export class BulkEditorDialog {
       return;
     }
 
+    const memberValidationError = this.memberValidationError();
+    if (memberValidationError) {
+      this.validationError.set(memberValidationError);
+      return;
+    }
+
     const createdDate = todayDate();
     const expenseRows = this.activeExpenseRows();
     const templates = this.templates()
@@ -630,6 +958,8 @@ export class BulkEditorDialog {
           endDate: optionalDate(template.endDate),
           skippedMonths: template.skippedMonths ?? [],
           archivedDate: template.archivedDate,
+          memberEmail: this.recordMemberEmail(template),
+          paymentModeId: template.paymentModeId || undefined,
           auditTrail: template.auditTrail ?? [],
         };
       });
@@ -649,10 +979,12 @@ export class BulkEditorDialog {
               : ('one-time' as const),
           note: expense.note ?? '',
           templateId: expense.templateId || undefined,
+          memberEmail: this.recordMemberEmail(expense),
+          paymentModeId: expense.paymentModeId || undefined,
         }))
       : this.data.expenses;
 
-    this.dialogRef.close({
+    this.close({
       scope: this.data.scope,
       categories: this.activeRows(this.categories()).map((category) => ({
         id: category.id,
@@ -679,6 +1011,7 @@ export class BulkEditorDialog {
           startDate: optionalDate(income.startDate),
           endDate: optionalDate(income.endDate),
           auditTrail: income.auditTrail ?? [],
+          memberEmail: this.recordMemberEmail(income),
         })),
       templates,
       expenses,
@@ -704,6 +1037,8 @@ export class BulkEditorDialog {
           skippedMonths: investment.skippedMonths ?? [],
           sourceInvestmentId: investment.sourceInvestmentId,
           auditTrail: investment.auditTrail ?? [],
+          memberEmail: this.recordMemberEmail(investment),
+          paymentModeId: investment.paymentModeId || undefined,
         })),
       loans: this.loans()
         .filter((loan) => !loan.pendingDelete)
@@ -722,6 +1057,8 @@ export class BulkEditorDialog {
           startDate: requiredDate(loan.startDate),
           endDate: requiredDate(loan.endDate),
           notes: loan.notes ?? '',
+          memberEmail: this.recordMemberEmail(loan),
+          paymentModeId: loan.paymentModeId || undefined,
           auditTrail: loan.auditTrail ?? [],
         })),
       deleted: {
@@ -741,6 +1078,43 @@ export class BulkEditorDialog {
     );
   }
 
+  protected cancel(): void {
+    this.close();
+  }
+
+  private close(result?: BulkEditorResult): void {
+    if (this.bottomSheetRef) {
+      this.bottomSheetRef.dismiss(result);
+      return;
+    }
+
+    this.dialogRef?.close(result);
+  }
+
+  private resolveData(): BulkEditorData {
+    const data = this.dialogData ?? this.bottomSheetData;
+    if (!data) {
+      throw new Error('Bulk editor dialog data is required.');
+    }
+
+    return data;
+  }
+
+  private initialEditingRowIds(): Set<string> {
+    return new Set(
+      [
+        ...this.expenses(),
+        ...this.templates(),
+        ...this.incomes(),
+        ...this.categories(),
+        ...this.loans(),
+        ...this.investments(),
+      ]
+        .filter((row) => row.isNew || ('isSuggested' in row && row.isSuggested))
+        .map((row) => row.id),
+    );
+  }
+
   private visibleRows(): Array<DraftRow<{ id: string }>> {
     if (this.showMonthlyTables()) {
       return [...this.expenses(), ...this.templates()];
@@ -751,6 +1125,32 @@ export class BulkEditorDialog {
     }
 
     return this.loans();
+  }
+
+  private rowLabel(
+    label: string,
+    name: string | undefined,
+    rowIndex: number,
+    row: { isNew?: boolean; isSuggested?: boolean; pendingDelete?: boolean },
+  ): string {
+    const parts = [`${label} row ${rowIndex + 1}`];
+    const trimmedName = name?.trim();
+
+    if (trimmedName) {
+      parts.push(trimmedName);
+    }
+
+    if (row.isNew) {
+      parts.push('new row');
+    } else if (row.isSuggested) {
+      parts.push('suggested row');
+    }
+
+    if (row.pendingDelete) {
+      parts.push('marked for deletion');
+    }
+
+    return parts.join(', ');
   }
 
   private activeRows<T extends { id: string }>(rows: Array<DraftRow<T>>): T[] {
@@ -814,6 +1214,35 @@ export class BulkEditorDialog {
     return '';
   }
 
+  private memberValidationError(): string {
+    if (this.isMemberLocked() || !this.members.length) {
+      return '';
+    }
+
+    const newFinancialRows = [
+      ...this.expenses().filter(
+        (row) =>
+          !row.pendingDelete && (row.isNew || row.isSuggested) && this.isSuggestedExpenseReady(row),
+      ),
+      ...this.templates().filter((row) => !row.pendingDelete && row.isNew),
+      ...this.incomes().filter((row) => !row.pendingDelete && row.isNew),
+      ...this.investments().filter((row) => !row.pendingDelete && row.isNew),
+      ...this.loans().filter((row) => !row.pendingDelete && row.isNew),
+    ];
+
+    return newFinancialRows.some((row) => !row.memberEmail)
+      ? 'Choose a user for every new financial row when viewing all members.'
+      : '';
+  }
+
+  private recordMemberEmail(record: { memberEmail?: string }): string | undefined {
+    return this.isMemberLocked() ? this.data.selectedMemberEmail! : record.memberEmail || undefined;
+  }
+
+  private isMemberLocked(): boolean {
+    return !!this.data.selectedMemberEmail && this.data.selectedMemberEmail !== 'ALL';
+  }
+
   private isRecurringDraftChanged(template: DraftTemplate, original: ExpenseTemplate): boolean {
     const currentStartDate = currentMonthStartDate();
 
@@ -822,7 +1251,8 @@ export class BulkEditorDialog {
       (template.frequency || 'monthly') !== (original.frequency || 'monthly') ||
       (optionalDate(template.startDate) || currentStartDate) !==
         (optionalDate(original.startDate) || currentStartDate) ||
-      (optionalDate(template.endDate) || '') !== (optionalDate(original.endDate) || '')
+      (optionalDate(template.endDate) || '') !== (optionalDate(original.endDate) || '') ||
+      (template.paymentModeId || '') !== (original.paymentModeId || '')
     );
   }
 
