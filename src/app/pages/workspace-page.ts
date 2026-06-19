@@ -22,29 +22,6 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
       <app-page-skeleton variant="utility" />
     } @else {
     <section class="page narrow mobile-workspace-page">
-      <header class="mobile-page-hero compact-hero workspace-hero">
-        <div class="mobile-title-row">
-          <div class="mobile-title-with-icon">
-            <span class="mobile-page-mark" aria-hidden="true">
-              <mat-icon>group</mat-icon>
-            </span>
-            <div>
-              <h1>Workspace</h1>
-              <p>Members and shared budget spaces</p>
-            </div>
-          </div>
-          <button
-            mat-flat-button
-            type="button"
-            (click)="store.createWorkspace()"
-            [disabled]="!store.userEmail() || store.isSyncing()"
-          >
-            <mat-icon aria-hidden="true">add_business</mat-icon>
-            Create
-          </button>
-        </div>
-      </header>
-
       <header class="page-header desktop-page-header">
         <div>
           <h1>Workspace</h1>
@@ -63,9 +40,22 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 
       <section class="content-grid even">
         <article class="panel-card">
-          <header class="panel-heading">
-            <h2>Workspaces</h2>
-            <p>Select which budget space is active.</p>
+          <header class="panel-heading mobile-panel-heading-with-action">
+            <div>
+              <h2>Workspaces</h2>
+              <p>Select which budget space is active.</p>
+            </div>
+            <button
+              class="mobile-panel-add-button"
+              mat-icon-button
+              type="button"
+              aria-label="Create workspace"
+              matTooltip="Create workspace"
+              (click)="store.createWorkspace()"
+              [disabled]="!store.userEmail() || store.isSyncing()"
+            >
+              <mat-icon aria-hidden="true">add_business</mat-icon>
+            </button>
           </header>
           <div class="soft-list">
             @for (workspace of store.activeWorkspaces(); track workspace.id) {

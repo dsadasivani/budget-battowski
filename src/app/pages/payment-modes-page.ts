@@ -1021,23 +1021,6 @@ export class PaymentAccountModesSheet {
       <app-page-skeleton variant="paymentModes" />
     } @else {
       <section class="page mobile-payment-modes-page">
-        <header class="mobile-page-hero compact-hero">
-          <div class="mobile-title-row">
-            <h1>Payment Modes</h1>
-            <button
-              mat-flat-button
-              type="button"
-              (click)="openPrimaryForm()"
-              [disabled]="!store.canWrite()"
-            >
-              <mat-icon aria-hidden="true">{{
-                selectedTabIndex() === 0 ? 'add_card' : 'add'
-              }}</mat-icon>
-              {{ selectedTabIndex() === 0 ? 'Add Mode' : 'Add Account' }}
-            </button>
-          </div>
-        </header>
-
         <header class="page-header desktop-page-header">
           <div>
             <h1>Payment Modes</h1>
@@ -1086,6 +1069,19 @@ export class PaymentAccountModesSheet {
 
               <section class="payment-mode-layout">
                 <section class="payment-list-panel" aria-label="Saved payment modes">
+                  <div class="mobile-payment-panel-actions">
+                    <button
+                      class="mobile-panel-add-button"
+                      mat-icon-button
+                      type="button"
+                      aria-label="Add payment mode"
+                      matTooltip="Add payment mode"
+                      (click)="openPaymentModeForm()"
+                      [disabled]="!store.canWrite()"
+                    >
+                      <mat-icon aria-hidden="true">add_card</mat-icon>
+                    </button>
+                  </div>
                   <div class="payment-filter-row" aria-label="Filter payment modes">
                     @for (filter of filterOptions; track filter.value) {
                       <button
@@ -1352,6 +1348,19 @@ export class PaymentAccountModesSheet {
 
               <section class="payment-mode-layout">
                 <section class="payment-list-panel" aria-label="Saved payment accounts">
+                  <div class="mobile-payment-panel-actions">
+                    <button
+                      class="mobile-panel-add-button"
+                      mat-icon-button
+                      type="button"
+                      aria-label="Add payment account"
+                      matTooltip="Add payment account"
+                      (click)="openPaymentAccountForm()"
+                      [disabled]="!store.canWrite()"
+                    >
+                      <mat-icon aria-hidden="true">add</mat-icon>
+                    </button>
+                  </div>
                   <div class="payment-mode-grid">
                     @for (account of store.paymentAccountCards(); track account.id) {
                       <article
@@ -1777,6 +1786,11 @@ export class PaymentAccountModesSheet {
         min-width: 0;
       }
 
+      .mobile-payment-panel-actions {
+        display: none;
+        justify-content: flex-end;
+      }
+
       .payment-mode-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -2166,6 +2180,14 @@ export class PaymentAccountModesSheet {
         .payment-mode-layout {
           grid-template-columns: 1fr;
           gap: 10px;
+        }
+
+        .payment-list-panel {
+          gap: 8px;
+        }
+
+        .mobile-payment-panel-actions {
+          display: flex;
         }
 
         .payment-form-card {

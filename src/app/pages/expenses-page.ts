@@ -2,11 +2,9 @@ import { CommonModule, NgOptimizedImage } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
-  ElementRef,
   computed,
   inject,
   signal,
-  viewChild,
 } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -34,25 +32,6 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
       <app-page-skeleton variant="expenses" />
     } @else {
       <section class="page mobile-expenses-page">
-        <header class="mobile-page-hero expenses-hero">
-          <div class="mobile-title-row">
-            <span class="mobile-page-mark" aria-hidden="true">
-              <mat-icon>credit_card</mat-icon>
-            </span>
-            <h1>Monthly Expenses</h1>
-            <button
-              class="mobile-filter-button"
-              mat-icon-button
-              type="button"
-              aria-label="Focus expense search"
-              (click)="focusSearch()"
-            >
-              <mat-icon aria-hidden="true">tune</mat-icon>
-            </button>
-          </div>
-          <app-month-member-controls />
-        </header>
-
         <header class="page-header desktop-page-header">
           <div>
             <h1>Monthly Expenses</h1>
@@ -62,6 +41,20 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
             <app-month-member-controls />
           </div>
         </header>
+
+        <div class="mobile-page-controls mobile-filter-strip">
+          <app-month-member-controls />
+          <label class="search-box mobile-search-box">
+            <mat-icon aria-hidden="true">search</mat-icon>
+            <span class="sr-only">Search expenses</span>
+            <input
+              type="search"
+              placeholder="Search expenses"
+              [value]="query()"
+              (input)="setQuery($event)"
+            />
+          </label>
+        </div>
 
         <section
           class="stat-grid"
@@ -118,11 +111,10 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                 <p>Search, review, and manage monthly transactions</p>
               </div>
               <div class="table-actions">
-                <label class="search-box">
+                <label class="search-box desktop-search-box">
                   <mat-icon aria-hidden="true">search</mat-icon>
                   <span class="sr-only">Search expenses</span>
                   <input
-                    #expenseSearchInput
                     type="search"
                     placeholder="Search expenses"
                     [value]="query()"
@@ -315,7 +307,6 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 })
 export class ExpensesPage {
   readonly store = inject(BudgetStore);
-  readonly expenseSearchInput = viewChild<ElementRef<HTMLInputElement>>('expenseSearchInput');
   readonly query = signal('');
   readonly showAllRows = signal(false);
   readonly filteredRows = computed(() => {
@@ -339,10 +330,6 @@ export class ExpensesPage {
 
   setQuery(event: Event): void {
     this.query.set((event.target as HTMLInputElement).value);
-  }
-
-  focusSearch(): void {
-    this.expenseSearchInput()?.nativeElement.focus();
   }
 
   toggleExpenseRows(): void {

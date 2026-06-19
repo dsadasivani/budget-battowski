@@ -262,12 +262,7 @@
       </mat-menu>
 
       <nav class="side-nav">
-        <button
-          class="guided-tour-button"
-          type="button"
-          matTooltip="Open a plain-English walkthrough of the app"
-          (click)="openOnboarding()"
-        >
+        <button class="guided-tour-button" type="button" (click)="openOnboarding()">
           <mat-icon aria-hidden="true">tips_and_updates</mat-icon>
           <span>Guided tour</span>
         </button>
@@ -317,6 +312,50 @@
     ></button>
 
     <main class="content-shell" id="main-content">
+      <header class="mobile-app-bar" aria-label="Current page">
+        <div class="mobile-app-title">
+          <span class="mobile-app-mark" aria-hidden="true">
+            <mat-icon>{{ activeMobileNavItem().icon }}</mat-icon>
+          </span>
+          <h1>{{ activeMobileNavItem().label }}</h1>
+        </div>
+        <button
+          class="mobile-utility-trigger"
+          type="button"
+          aria-label="Open account and utility menu"
+          matTooltip="Account and utilities"
+          [matMenuTriggerFor]="mobileUtilityMenu"
+        >
+          @if (userPhoto(); as photo) {
+            <img [src]="photo" alt="" referrerpolicy="no-referrer" />
+          } @else {
+            {{ memberInitial(userEmail() || undefined) }}
+          }
+        </button>
+
+        <mat-menu #mobileUtilityMenu="matMenu" class="mobile-utility-menu">
+          @for (item of utilityMobileNavItems; track item.path) {
+            <a mat-menu-item [routerLink]="item.path">
+              <mat-icon aria-hidden="true">{{ item.icon }}</mat-icon>
+              <span>{{ item.label }}</span>
+            </a>
+          }
+          <button mat-menu-item type="button" (click)="openOnboarding()">
+            <mat-icon aria-hidden="true">tips_and_updates</mat-icon>
+            <span>Guided tour</span>
+          </button>
+          <button
+            mat-menu-item
+            type="button"
+            (click)="logout()"
+            [disabled]="firebase.mode !== 'firebase' || isSyncing()"
+          >
+            <mat-icon aria-hidden="true">logout</mat-icon>
+            <span>Log out</span>
+          </button>
+        </mat-menu>
+      </header>
+
       <router-outlet></router-outlet>
     </main>
 

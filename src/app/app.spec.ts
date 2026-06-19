@@ -160,6 +160,24 @@ function createPaymentModeStore(
 
     return paymentModeTypeLabel(paymentMode.type);
   };
+  const paymentModeDetail = (paymentMode: PaymentMode) => {
+    if (paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card') {
+      return paymentMode.lastFour ? `xxxx xxxx xxxx ${paymentMode.lastFour}` : 'xxxx xxxx xxxx ----';
+    }
+
+    if (paymentMode.type === 'cash') {
+      return 'Cash';
+    }
+
+    if (paymentMode.type === 'internet-banking') {
+      const paymentAccount = paymentMode.paymentAccountId
+        ? activePaymentAccounts().find((account) => account.id === paymentMode.paymentAccountId)
+        : undefined;
+      return paymentAccount ? paymentAccountDetail(paymentAccount) : (paymentMode.bankName ?? 'Default');
+    }
+
+    return paymentMode.provider ?? paymentModeTypeLabel(paymentMode.type);
+  };
   const paymentModeShortLabel = (paymentMode: PaymentMode) => {
     const paymentAccount = paymentMode.paymentAccountId
       ? activePaymentAccounts().find((account) => account.id === paymentMode.paymentAccountId)
@@ -220,12 +238,7 @@ function createPaymentModeStore(
   const paymentModeCards = computed(() =>
     activePaymentModes().map((paymentMode) => ({
       ...paymentMode,
-      detail:
-        paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card'
-          ? `xxxx xxxx xxxx ${paymentMode.lastFour}`
-          : paymentMode.type === 'internet-banking'
-            ? paymentMode.bankName
-            : paymentMode.provider,
+      detail: paymentModeDetail(paymentMode),
       displayName: paymentModeDisplayLabel(paymentMode),
       icon: paymentMode.type === 'upi' ? 'qr_code_2' : 'credit_card',
       iconSrc: modeIconSrc(paymentMode),
@@ -315,7 +328,9 @@ function createPaymentModeStore(
     paymentAccountIconSrc,
     paymentAccountLabel,
     paymentModeDisplayLabel,
+    paymentModeDetail,
     paymentModeShortLabel,
+    paymentModeTypeLabel,
     paymentModeOwnerTag: (paymentMode: PaymentMode) => {
       const paymentAccount = paymentMode.paymentAccountId
         ? activePaymentAccounts().find((account) => account.id === paymentMode.paymentAccountId)
@@ -468,7 +483,7 @@ describe('App', () => {
     expect(menuText).toContain('Log out');
   });
 
-  it('should keep the mobile profile trigger on dashboard only', async () => {
+  it('should keep the mobile profile trigger available across authenticated routes', async () => {
     const fixture = TestBed.createComponent(App);
     const router = TestBed.inject(Router);
     const app = fixture.componentInstance as unknown as {
@@ -492,7 +507,38 @@ describe('App', () => {
 
     expect(
       (fixture.nativeElement as HTMLElement).querySelector('.mobile-utility-trigger'),
-    ).toBeNull();
+    ).toBeTruthy();
+  });
+
+  it.each([
+    ['/dashboard', 'dashboard', 'Dashboard'],
+    ['/expenses', 'credit_card', 'Monthly Expenses'],
+    ['/planning', 'calendar_month', 'Planning'],
+    ['/investments', 'trending_up', 'Investments'],
+    ['/loans', 'account_balance', 'Loans'],
+    ['/categories', 'sell', 'Categories'],
+    ['/payment-modes', 'payments', 'Payment Modes'],
+    ['/import-export', 'upload_file', 'Import/Export'],
+    ['/workspace', 'group', 'Workspace'],
+    ['/settings', 'settings', 'Settings'],
+  ])('should render the mobile app bar for %s', async (path, icon, label) => {
+    const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const app = fixture.componentInstance as unknown as {
+      firebase: { mode: string };
+      isSessionChecking: { set: (checking: boolean) => void };
+    };
+
+    app.firebase.mode = 'local';
+    app.isSessionChecking.set(false);
+    await router.navigateByUrl(path);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const header = (fixture.nativeElement as HTMLElement).querySelector('.mobile-app-bar');
+
+    expect(header?.querySelector('mat-icon')?.textContent?.trim()).toBe(icon);
+    expect(header?.querySelector('h1')?.textContent?.trim()).toBe(label);
   });
 
   it('should keep secondary mobile destinations in the utility menu model', () => {
@@ -2021,7 +2067,7 @@ describe('PaymentModesPage', () => {
     fixture.detectChanges();
 
     expect(page.selectedPaymentAccountCard()).toEqual(expect.objectContaining({ id: 'pa-hdfc' }));
-    expect(element.querySelector('.account-detail-panel')?.textContent ?? '').toContain('GPay');
+    expect(element.querySelector('.account-detail-panel')?.textContent ?? '').toContain('Google Pay');
   });
 
   it('should show mapped payment modes in a bottom sheet on mobile account clicks', () => {
@@ -2057,7 +2103,7 @@ describe('PaymentModesPage', () => {
     expect(bottomSheetOpen).toHaveBeenCalledWith(
       PaymentAccountModesSheet,
       expect.objectContaining({
-        ariaLabel: 'Salary account mapped payment modes',
+        ariaLabel: 'HDFC mapped payment modes',
         data: expect.objectContaining({
           mappedModes: [expect.objectContaining({ id: 'pm-upi' })],
           paymentAccount: expect.objectContaining({ id: 'pa-hdfc' }),
@@ -2097,7 +2143,7 @@ describe('PaymentModesPage', () => {
     fixture.detectChanges();
 
     page.editPaymentMode(existing);
-    page.form.patchValue({ name: 'Salary debit', lastFour: '2222' });
+    page.form.patchValue({ lastFour: '2222' });
     page.savePaymentMode();
     await Promise.resolve();
     page.archivePaymentMode('pm-card');
@@ -2105,7 +2151,7 @@ describe('PaymentModesPage', () => {
     expect(store.savePaymentMode).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'pm-card',
-        name: 'Salary debit',
+        name: 'Old debit',
         lastFour: '2222',
       }),
     );
@@ -2484,7 +2530,7 @@ describe('BulkEditorDialog', () => {
       paymentModeName: (paymentModeId?: string) => string;
     };
 
-    expect(dialog.paymentModeName('pm-old-wallet')).toBe('Old Paytm Wallet');
+    expect(dialog.paymentModeName('pm-old-wallet')).toBe('Paytm Legacy');
     expect(
       dialog.activePaymentModes.some((paymentMode) => paymentMode.id === 'pm-old-wallet'),
     ).toBe(false);

@@ -90,6 +90,9 @@ a {
 
 .mobile-home-header,
 .mobile-workspace-card,
+.mobile-page-controls,
+.mobile-panel-add-button,
+.mobile-payment-panel-actions,
 .mobile-dashboard-filters,
 .mobile-page-hero,
 .mobile-centered-controls,
@@ -614,6 +617,13 @@ a {
     font-weight: 600;
     text-decoration: none;
   }
+}
+
+.mobile-heading-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .panel-icon {
@@ -4711,6 +4721,54 @@ a {
       white-space: nowrap;
     }
   }
+
+  .mobile-home-header,
+  .mobile-page-hero {
+    display: none !important;
+  }
+
+  .mobile-page-controls {
+    display: grid;
+    min-width: 0;
+    gap: 8px;
+  }
+
+  .mobile-page-controls > *,
+  .mobile-page-controls > app-month-member-controls {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .mobile-page-controls > app-month-member-controls {
+    display: block;
+    width: 100%;
+  }
+
+  .mobile-filter-strip,
+  .mobile-action-strip {
+    align-items: start;
+  }
+
+  .mobile-action-strip > button,
+  .mobile-action-strip > .mat-mdc-unelevated-button {
+    justify-self: start;
+    max-width: 100%;
+    min-height: 40px;
+    padding-inline: 12px;
+    overflow: hidden;
+    font-size: 0.74rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-search-box {
+    width: 100%;
+  }
+
+  .mobile-expenses-page .desktop-search-box {
+    display: none;
+  }
 }
 
 .cdk-overlay-pane.bulk-editor-panel {
@@ -4828,6 +4886,98 @@ a {
   .year-grid button {
     min-height: 31px;
     font-size: 0.66rem;
+  }
+}
+
+@media (max-width: 780px) {
+  .page {
+    padding-top: 10px;
+  }
+
+  .mobile-heading-actions {
+    gap: 7px;
+    min-width: 0;
+  }
+
+  .mobile-panel-heading-with-action {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 8px;
+  }
+
+  .mobile-search-action-strip {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .mobile-search-action-strip .mobile-search-box {
+    width: 100%;
+  }
+
+  button.mobile-panel-add-button.mat-mdc-icon-button {
+    --mat-icon-button-state-layer-size: 36px;
+    display: inline-grid;
+    width: 36px;
+    min-width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+    place-items: center;
+    padding: 0;
+    border: 1px solid #1d4ed8;
+    border-radius: 999px;
+    background: #1d4ed8;
+    color: #fff;
+    box-shadow: 0 8px 16px rgba(29, 78, 216, 0.2);
+
+    mat-icon {
+      width: 19px;
+      height: 19px;
+      font-size: 19px;
+      line-height: 19px;
+    }
+
+    &:hover:not(:disabled) {
+      background: #1e40af;
+      color: #fff;
+    }
+
+    &:focus-visible {
+      outline: 3px solid rgba(47, 128, 237, 0.32);
+      outline-offset: 2px;
+    }
+
+    &:disabled {
+      border-color: #d7e2f0;
+      background: #d7e2f0;
+      color: #6f8097;
+      box-shadow: none;
+    }
+  }
+
+  .mobile-investments-page .table-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .mobile-investments-page .table-actions .search-box {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .mobile-investments-page .table-actions button.mobile-panel-add-button {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+  }
+
+  .mobile-payment-panel-actions {
+    display: flex;
+    justify-content: flex-end;
   }
 }
 

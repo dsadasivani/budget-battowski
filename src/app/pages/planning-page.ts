@@ -25,25 +25,6 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
       <app-page-skeleton variant="planning" />
     } @else {
     <section class="page mobile-planning-page">
-      <header class="mobile-page-hero compact-hero">
-        <div class="mobile-title-row">
-          <h1>Planning</h1>
-          <button
-            mat-flat-button
-            type="button"
-            (click)="store.openBulkEditor('monthly', 1)"
-            [disabled]="!store.canWrite()"
-          >
-            <mat-icon aria-hidden="true">add</mat-icon>
-            Add Plan
-          </button>
-        </div>
-      </header>
-
-      <div class="mobile-centered-controls">
-        <app-month-member-controls />
-      </div>
-
       <header class="page-header desktop-page-header">
         <div>
           <h1>Planning</h1>
@@ -62,6 +43,10 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
           </button>
         </div>
       </header>
+
+      <div class="mobile-page-controls mobile-filter-strip">
+        <app-month-member-controls />
+      </div>
 
       <section class="stat-grid" [class.three]="!store.hasMonthlyReviewRows()">
         @if (store.hasMonthlyReviewRows()) {
@@ -106,7 +91,20 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                 <h2>Recurring Plans</h2>
                 <p>Monthly and weekly commitments</p>
               </div>
-              <span class="badge neutral">{{ store.recurringPlanRows().length }} active</span>
+              <div class="mobile-heading-actions">
+                <span class="badge neutral">{{ store.recurringPlanRows().length }} active</span>
+                <button
+                  class="mobile-panel-add-button"
+                  mat-icon-button
+                  type="button"
+                  aria-label="Add plan"
+                  matTooltip="Add plan"
+                  (click)="store.openBulkEditor('monthly', 1)"
+                  [disabled]="!store.canWrite()"
+                >
+                  <mat-icon aria-hidden="true">add</mat-icon>
+                </button>
+              </div>
             </header>
             <div class="soft-list">
               @for (plan of store.recurringPlanRows(); track plan.id) {

@@ -10,10 +10,6 @@ import { BudgetStore } from '../budget.store';
 import { MonthMemberControls } from '../shared/month-member-controls';
 import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 
-type TourCapableStore = BudgetStore & {
-  openOnboarding: () => void;
-};
-
 @Component({
   selector: 'app-dashboard-page',
   imports: [
@@ -31,50 +27,6 @@ type TourCapableStore = BudgetStore & {
       <app-page-skeleton variant="dashboard" />
     } @else {
       <section class="page mobile-dashboard-page">
-        <header class="mobile-home-header">
-          <div class="mobile-brand-row">
-            <span class="mobile-page-mark" aria-hidden="true">
-              <mat-icon>account_balance_wallet</mat-icon>
-            </span>
-            <strong>Budget Battowski</strong>
-            <h1 class="sr-only">Dashboard</h1>
-          </div>
-          <button
-            class="mobile-utility-trigger"
-            type="button"
-            aria-label="Open utility menu"
-            [matMenuTriggerFor]="mobileUtilityMenu"
-          >
-            @if (store.userPhoto(); as photo) {
-              <img [src]="photo" alt="" referrerpolicy="no-referrer" />
-            } @else {
-              {{ store.memberInitial(store.userEmail() || undefined) }}
-            }
-          </button>
-
-          <mat-menu #mobileUtilityMenu="matMenu" class="mobile-utility-menu">
-            @for (item of utilityMobileNavItems; track item.path) {
-              <a mat-menu-item [routerLink]="item.path">
-                <mat-icon aria-hidden="true">{{ item.icon }}</mat-icon>
-                <span>{{ item.label }}</span>
-              </a>
-            }
-            <button mat-menu-item type="button" (click)="store.openOnboarding()">
-              <mat-icon aria-hidden="true">tips_and_updates</mat-icon>
-              <span>Guided tour</span>
-            </button>
-            <button
-              mat-menu-item
-              type="button"
-              (click)="store.logout()"
-              [disabled]="store.firebase.mode !== 'firebase' || store.isSyncing()"
-            >
-              <mat-icon aria-hidden="true">logout</mat-icon>
-              <span>Log out</span>
-            </button>
-          </mat-menu>
-        </header>
-
         <button
           class="mobile-workspace-card"
           type="button"
@@ -115,7 +67,7 @@ type TourCapableStore = BudgetStore & {
           </div>
         </header>
 
-        <div class="mobile-dashboard-filters">
+        <div class="mobile-page-controls mobile-filter-strip mobile-dashboard-filters">
           <app-month-member-controls />
         </div>
 
@@ -277,12 +229,5 @@ type TourCapableStore = BudgetStore & {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class DashboardPage {
-  readonly store = inject(BudgetStore) as TourCapableStore;
-  readonly utilityMobileNavItems = [
-    { label: 'Categories', icon: 'sell', path: '/categories' },
-    { label: 'Payment Modes', icon: 'payments', path: '/payment-modes' },
-    { label: 'Import/Export', icon: 'upload_file', path: '/import-export' },
-    { label: 'Workspace', icon: 'group', path: '/workspace' },
-    { label: 'Settings', icon: 'settings', path: '/settings' },
-  ];
+  readonly store = inject(BudgetStore);
 }

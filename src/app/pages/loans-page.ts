@@ -24,26 +24,6 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
       <app-page-skeleton variant="loans" />
     } @else {
     <section class="page mobile-loans-page">
-      <header class="mobile-page-hero compact-hero">
-        <div class="mobile-title-row">
-          <div class="mobile-title-with-icon">
-            <span class="mobile-page-mark" aria-hidden="true">
-              <mat-icon>account_balance</mat-icon>
-            </span>
-            <h1>Loans</h1>
-          </div>
-          <button
-            mat-flat-button
-            type="button"
-            (click)="store.openBulkEditor('loans')"
-            [disabled]="!store.canWrite()"
-          >
-            <mat-icon aria-hidden="true">add</mat-icon>
-            Add Loan
-          </button>
-        </div>
-      </header>
-
       <header class="page-header desktop-page-header">
         <div>
           <h1>Loans</h1>
@@ -85,9 +65,22 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 
       <section class="content-grid two-one">
         <article class="panel-card">
-          <header class="panel-heading">
-            <h2>Loan Accounts</h2>
-            <p>Track principal, outstanding balance, and repayment progress</p>
+          <header class="panel-heading mobile-panel-heading-with-action">
+            <div>
+              <h2>Loan Accounts</h2>
+              <p>Track principal, outstanding balance, and repayment progress</p>
+            </div>
+            <button
+              class="mobile-panel-add-button"
+              mat-icon-button
+              type="button"
+              aria-label="Add loan"
+              matTooltip="Add loan"
+              (click)="store.openBulkEditor('loans')"
+              [disabled]="!store.canWrite()"
+            >
+              <mat-icon aria-hidden="true">add</mat-icon>
+            </button>
           </header>
           <div class="loan-list">
             @for (loan of store.loanRepaymentRows(); track loan.id) {

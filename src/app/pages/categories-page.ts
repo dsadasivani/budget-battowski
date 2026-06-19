@@ -23,21 +23,6 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
       <app-page-skeleton variant="categories" />
     } @else {
     <section class="page mobile-categories-page">
-      <header class="mobile-page-hero compact-hero">
-        <div class="mobile-title-row">
-          <h1>Categories</h1>
-          <button
-            mat-flat-button
-            type="button"
-            (click)="store.openBulkEditor('planning', 1)"
-            [disabled]="!store.canWrite()"
-          >
-            <mat-icon aria-hidden="true">add</mat-icon>
-            Add Category
-          </button>
-        </div>
-      </header>
-
       <header class="page-header desktop-page-header">
         <div>
           <h1>Categories</h1>
@@ -65,6 +50,30 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
           </button>
         </div>
       </header>
+
+      <div class="mobile-page-controls mobile-search-action-strip">
+        <label class="search-box mobile-search-box">
+          <mat-icon aria-hidden="true">search</mat-icon>
+          <span class="sr-only">Search categories</span>
+          <input
+            type="search"
+            placeholder="Search categories..."
+            [value]="query()"
+            (input)="setQuery($event)"
+          />
+        </label>
+        <button
+          class="mobile-panel-add-button"
+          mat-icon-button
+          type="button"
+          aria-label="Add category"
+          matTooltip="Add category"
+          (click)="store.openBulkEditor('planning', 1)"
+          [disabled]="!store.canWrite()"
+        >
+          <mat-icon aria-hidden="true">add</mat-icon>
+        </button>
+      </div>
 
       <aside class="category-stat-tags" aria-label="Category summary">
         <span class="category-stat-tag blue">

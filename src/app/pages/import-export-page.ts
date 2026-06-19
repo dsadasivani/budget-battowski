@@ -14,18 +14,6 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
       <app-page-skeleton variant="utility" />
     } @else {
     <section class="page narrow mobile-import-export-page">
-      <header class="mobile-page-hero compact-hero import-export-hero">
-        <div class="mobile-title-with-icon">
-          <span class="mobile-page-mark" aria-hidden="true">
-            <mat-icon>upload_file</mat-icon>
-          </span>
-          <div>
-            <h1>Import/Export</h1>
-            <p>Validated Excel workflow</p>
-          </div>
-        </div>
-      </header>
-
       <header class="page-header desktop-page-header">
         <div>
           <h1>Import/Export</h1>

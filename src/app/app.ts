@@ -1,5 +1,14 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, forwardRef, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  computed,
+  forwardRef,
+  inject,
+  signal,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatBottomSheetModule } from '@angular/material/bottom-sheet';
@@ -7,7 +16,8 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { filter } from 'rxjs';
 
 import { appEnvironment } from '../environments/environment';
 import { BudgetStore } from './budget.store';
@@ -66,8 +76,11 @@ type LoginFeature = {
 })
 export class App extends BudgetStore {
   private static readonly onboardingStorageKey = 'budget-battowski-onboarding-v1';
+  private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
   private loginCarouselTimer: ReturnType<typeof setInterval> | null = null;
 
+  readonly activeRoutePath = signal('/dashboard');
   readonly navOpen = signal(false);
   readonly onboardingOpen = signal(false);
   readonly onboardingIndex = signal(0);
@@ -222,10 +235,26 @@ export class App extends BudgetStore {
   ];
   readonly primaryMobileNavItems = this.navItems.slice(0, 5);
   readonly utilityMobileNavItems = this.navItems.slice(5);
+  readonly activeMobileNavItem = computed(() => {
+    const path = this.activeRoutePath();
+    return (
+      this.navItems.find((item) => path === item.path || path.startsWith(`${item.path}/`)) ??
+      this.navItems[0]
+    );
+  });
   readonly accountLabel = computed(() => this.userName() || this.userEmail() || 'Signed in');
 
   constructor() {
     super();
+    this.activeRoutePath.set(this.normalizedRoutePath(this.router.url));
+    this.router.events
+      .pipe(
+        filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((event) => {
+        this.activeRoutePath.set(this.normalizedRoutePath(event.urlAfterRedirects));
+      });
     this.startLoginCarousel();
     this.openOnboardingForFirstVisit();
   }
@@ -293,6 +322,11 @@ export class App extends BudgetStore {
 
   private markOnboardingSeen(): void {
     globalThis.localStorage?.setItem(App.onboardingStorageKey, 'seen');
+  }
+
+  private normalizedRoutePath(url: string): string {
+    const path = url.split(/[?#]/)[0];
+    return path && path !== '/' ? path : '/dashboard';
   }
 
   toggleNav(): void {

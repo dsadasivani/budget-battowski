@@ -26,28 +26,6 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
       <app-page-skeleton variant="investments" />
     } @else {
       <section class="page mobile-investments-page">
-        <header class="mobile-page-hero investments-hero">
-          <div class="mobile-title-row">
-            <div>
-              <h1>Investments</h1>
-              <p>Track SIPs, mutual funds, and long-term wealth</p>
-            </div>
-            <button
-              mat-flat-button
-              type="button"
-              (click)="store.openBulkEditor('planning', 2)"
-              [disabled]="!store.canWrite()"
-            >
-              <mat-icon aria-hidden="true">add</mat-icon>
-              Add Investment
-            </button>
-          </div>
-        </header>
-
-        <div class="mobile-member-tabs">
-          <app-month-member-controls />
-        </div>
-
         <header class="page-header desktop-page-header">
           <div>
             <h1>Investments</h1>
@@ -57,6 +35,10 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
             <app-month-member-controls />
           </div>
         </header>
+
+        <div class="mobile-page-controls mobile-filter-strip">
+          <app-month-member-controls />
+        </div>
 
         <section class="stat-grid" [class.three]="!store.hasMonthlyReviewRows()">
           @if (store.hasMonthlyReviewRows()) {
@@ -108,6 +90,17 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                 <p>All active SIPs and investments</p>
               </div>
               <div class="table-actions">
+                <button
+                  class="mobile-panel-add-button"
+                  mat-icon-button
+                  type="button"
+                  aria-label="Add investment"
+                  matTooltip="Add investment"
+                  (click)="store.openBulkEditor('planning', 2)"
+                  [disabled]="!store.canWrite()"
+                >
+                  <mat-icon aria-hidden="true">add</mat-icon>
+                </button>
                 <label class="search-box">
                   <mat-icon aria-hidden="true">search</mat-icon>
                   <span class="sr-only">Search investments</span>
@@ -119,6 +112,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                   />
                 </label>
                 <button
+                  class="desktop-panel-action"
                   mat-flat-button
                   type="button"
                   (click)="store.openBulkEditor('planning', 2)"
