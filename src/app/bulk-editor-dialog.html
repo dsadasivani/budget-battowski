@@ -34,6 +34,205 @@
     </div>
   </section>
 
+  <ng-template #bulkActionBar let-table="table">
+    <div
+      class="bulk-action-bar desktop-bulk-only"
+      [class.header-editing]="bulkHeaderEditActive(table)"
+      [attr.aria-label]="bulkActionLabel(table)"
+    >
+      <span class="selection-count" aria-live="polite">{{ selectionSummary(table) }}</span>
+      <button
+        mat-stroked-button
+        type="button"
+        [disabled]="selectedCount(table) === 0"
+        (click)="clearSelection(table)"
+      >
+        Clear
+      </button>
+      <button
+        mat-stroked-button
+        type="button"
+        [disabled]="selectedCount(table) === 0"
+        (click)="markSelectedForDelete(table)"
+      >
+        <mat-icon aria-hidden="true">delete</mat-icon>
+        Mark Delete
+      </button>
+      <button
+        mat-stroked-button
+        type="button"
+        [disabled]="selectedCount(table) === 0"
+        (click)="keepSelectedRows(table)"
+      >
+        <mat-icon aria-hidden="true">undo</mat-icon>
+        Keep
+      </button>
+      @if (bulkHeaderEditActive(table)) {
+        <span class="bulk-header-hint">Edit headers, then apply.</span>
+      }
+      <button
+        mat-flat-button
+        type="button"
+        class="bulk-apply-button"
+        [disabled]="!canApplyBulkHeaderEdit(table)"
+        (click)="applyBulkHeaderEdit(table)"
+      >
+        <mat-icon aria-hidden="true">done_all</mat-icon>
+        Apply
+      </button>
+      @if (bulkHeaderResult(table)) {
+        <span class="bulk-result" aria-live="polite">{{ bulkHeaderResult(table) }}</span>
+      }
+    </div>
+  </ng-template>
+
+  <ng-template
+    #bulkHeaderCell
+    let-table="table"
+    let-field="field"
+    let-label="label"
+    let-sortColumn="sortColumn"
+  >
+    <th
+      scope="col"
+      [class.bulk-header-edit-col]="showBulkHeaderEditor(table, field)"
+      [attr.aria-sort]="showBulkHeaderEditor(table, field) ? null : sortAria(table, sortColumn)"
+    >
+      @if (showBulkHeaderEditor(table, field)) {
+        <div
+          class="bulk-header-editor"
+          [class.has-value]="isBulkHeaderFieldTouched(table, field)"
+          [class.invalid]="isBulkHeaderFieldInvalid(table, field)"
+        >
+          <span class="header-edit-label">{{ label }}</span>
+          @switch (bulkHeaderValueKind(table, field)) {
+            @case ('category') {
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <mat-select
+                  [attr.aria-label]="bulkHeaderInputLabel(table, label)"
+                  [placeholder]="label"
+                  [value]="bulkHeaderValue(table, field)"
+                  (selectionChange)="setBulkHeaderValue(table, field, $event.value)"
+                >
+                  @for (option of bulkHeaderValueOptions(table, field); track option.value) {
+                    <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            }
+            @case ('paymentMode') {
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <mat-select
+                  [attr.aria-label]="bulkHeaderInputLabel(table, label)"
+                  [placeholder]="label"
+                  [value]="bulkHeaderValue(table, field)"
+                  (selectionChange)="setBulkHeaderValue(table, field, $event.value)"
+                >
+                  @for (option of bulkHeaderValueOptions(table, field); track option.value) {
+                    <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            }
+            @case ('categoryType') {
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <mat-select
+                  [attr.aria-label]="bulkHeaderInputLabel(table, label)"
+                  [placeholder]="label"
+                  [value]="bulkHeaderValue(table, field)"
+                  (selectionChange)="setBulkHeaderValue(table, field, $event.value)"
+                >
+                  @for (option of bulkHeaderValueOptions(table, field); track option.value) {
+                    <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            }
+            @case ('select') {
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <mat-select
+                  [attr.aria-label]="bulkHeaderInputLabel(table, label)"
+                  [placeholder]="label"
+                  [value]="bulkHeaderValue(table, field)"
+                  (selectionChange)="setBulkHeaderValue(table, field, $event.value)"
+                >
+                  @for (option of bulkHeaderValueOptions(table, field); track option.value) {
+                    <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            }
+            @case ('date') {
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <input
+                  matInput
+                  [attr.aria-label]="bulkHeaderInputLabel(table, label)"
+                  [matDatepicker]="bulkHeaderDatePicker"
+                  [placeholder]="label"
+                  [value]="bulkHeaderValue(table, field)"
+                  (input)="setBulkHeaderValueFromEvent(table, field, $event)"
+                  (dateInput)="setBulkHeaderDateValue(table, field, $event.value)"
+                  (dateChange)="setBulkHeaderDateValue(table, field, $event.value)"
+                />
+                <mat-datepicker-toggle
+                  matIconSuffix
+                  [for]="bulkHeaderDatePicker"
+                ></mat-datepicker-toggle>
+                <mat-datepicker #bulkHeaderDatePicker></mat-datepicker>
+              </mat-form-field>
+            }
+            @case ('number') {
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <input
+                  matInput
+                  [attr.aria-label]="bulkHeaderInputLabel(table, label)"
+                  type="number"
+                  min="0"
+                  [placeholder]="label"
+                  [value]="bulkHeaderValue(table, field)"
+                  (input)="setBulkHeaderValueFromEvent(table, field, $event)"
+                />
+              </mat-form-field>
+            }
+            @case ('color') {
+              <label class="bulk-header-color-control">
+                <span class="sr-only">{{ bulkHeaderInputLabel(table, label) }}</span>
+                <input
+                  type="color"
+                  [value]="bulkHeaderValue(table, field) || '#1f7a8c'"
+                  (input)="setBulkHeaderValueFromEvent(table, field, $event)"
+                />
+                <span>{{ bulkHeaderValue(table, field) || '#1f7a8c' }}</span>
+              </label>
+            }
+            @default {
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <input
+                  matInput
+                  [attr.aria-label]="bulkHeaderInputLabel(table, label)"
+                  [placeholder]="label"
+                  [value]="bulkHeaderValue(table, field)"
+                  (input)="setBulkHeaderValueFromEvent(table, field, $event)"
+                />
+              </mat-form-field>
+            }
+          }
+        </div>
+      } @else {
+        <button
+          class="sort-header-button"
+          type="button"
+          [class.active]="isSorted(table, sortColumn)"
+          [attr.aria-label]="sortButtonLabel(table, label, sortColumn)"
+          (click)="toggleSort(table, sortColumn)"
+        >
+          {{ label }}
+          <mat-icon aria-hidden="true">{{ sortIcon(table, sortColumn) }}</mat-icon>
+        </button>
+      }
+    </th>
+  </ng-template>
+
   <mat-tab-group
     class="bulk-tabs"
     [selectedIndex]="initialTabIndex()"
@@ -145,6 +344,11 @@
             </button>
           </div>
 
+          <ng-container
+            [ngTemplateOutlet]="bulkActionBar"
+            [ngTemplateOutletContext]="{ table: 'expenses' }"
+          ></ng-container>
+
           <div class="table-wrap desktop-table-region">
             <table class="bulk-table">
               <caption>
@@ -152,55 +356,60 @@
               </caption>
               <thead>
                 <tr>
+                  <th class="row-select-col desktop-bulk-only" scope="col">
+                    <input
+                      class="row-select-input"
+                      type="checkbox"
+                      aria-label="Select all filtered expenses"
+                      [checked]="allFilteredRowsSelected('expenses')"
+                      [indeterminate]="someFilteredRowsSelected('expenses')"
+                      [attr.aria-checked]="
+                        someFilteredRowsSelected('expenses')
+                          ? 'mixed'
+                          : allFilteredRowsSelected('expenses')
+                            ? 'true'
+                            : 'false'
+                      "
+                      (change)="toggleFilteredRowsSelection('expenses', $event)"
+                    />
+                  </th>
                   <th class="row-number-col" scope="col">#</th>
-                  <th scope="col" [attr.aria-sort]="sortAria('expenses', 'name')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('expenses', 'name')"
-                      [attr.aria-label]="sortButtonLabel('expenses', 'Name', 'name')"
-                      (click)="toggleSort('expenses', 'name')"
-                    >
-                      Name
-                      <mat-icon aria-hidden="true">{{ sortIcon('expenses', 'name') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('expenses', 'date')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('expenses', 'date')"
-                      [attr.aria-label]="sortButtonLabel('expenses', 'Date', 'date')"
-                      (click)="toggleSort('expenses', 'date')"
-                    >
-                      Date
-                      <mat-icon aria-hidden="true">{{ sortIcon('expenses', 'date') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('expenses', 'category')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('expenses', 'category')"
-                      [attr.aria-label]="sortButtonLabel('expenses', 'Category', 'category')"
-                      (click)="toggleSort('expenses', 'category')"
-                    >
-                      Category
-                      <mat-icon aria-hidden="true">{{ sortIcon('expenses', 'category') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('expenses', 'amount')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('expenses', 'amount')"
-                      [attr.aria-label]="sortButtonLabel('expenses', 'Amount', 'amount')"
-                      (click)="toggleSort('expenses', 'amount')"
-                    >
-                      Amount
-                      <mat-icon aria-hidden="true">{{ sortIcon('expenses', 'amount') }}</mat-icon>
-                    </button>
-                  </th>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'expenses',
+                      field: 'name',
+                      label: 'Name',
+                      sortColumn: 'name',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'expenses',
+                      field: 'date',
+                      label: 'Date',
+                      sortColumn: 'date',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'expenses',
+                      field: 'categoryId',
+                      label: 'Category',
+                      sortColumn: 'category',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'expenses',
+                      field: 'amount',
+                      label: 'Amount',
+                      sortColumn: 'amount',
+                    }"
+                  ></ng-container>
                   <th scope="col" [attr.aria-sort]="sortAria('expenses', 'type')">
                     <button
                       class="sort-header-button"
@@ -213,32 +422,24 @@
                       <mat-icon aria-hidden="true">{{ sortIcon('expenses', 'type') }}</mat-icon>
                     </button>
                   </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('expenses', 'note')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('expenses', 'note')"
-                      [attr.aria-label]="sortButtonLabel('expenses', 'Note', 'note')"
-                      (click)="toggleSort('expenses', 'note')"
-                    >
-                      Note
-                      <mat-icon aria-hidden="true">{{ sortIcon('expenses', 'note') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('expenses', 'paymentMode')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('expenses', 'paymentMode')"
-                      [attr.aria-label]="sortButtonLabel('expenses', 'Paid via', 'paymentMode')"
-                      (click)="toggleSort('expenses', 'paymentMode')"
-                    >
-                      Paid via
-                      <mat-icon aria-hidden="true">{{
-                        sortIcon('expenses', 'paymentMode')
-                      }}</mat-icon>
-                    </button>
-                  </th>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'expenses',
+                      field: 'note',
+                      label: 'Note',
+                      sortColumn: 'note',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'expenses',
+                      field: 'paymentModeId',
+                      label: 'Paid via',
+                      sortColumn: 'paymentMode',
+                    }"
+                  ></ng-container>
                   <th scope="col">Actions</th>
                 </tr>
               </thead>
@@ -248,9 +449,19 @@
                     [attr.data-row-id]="expense.id"
                     [class.row-editing]="isRowEditing(expense)"
                     [class.marked-delete]="expense.pendingDelete"
+                    [class.modified-row]="isRowModified('expenses', expense)"
                     [class.new-row]="expense.isNew"
                     [class.suggested-row]="expense.isSuggested"
                   >
+                    <td class="row-select desktop-bulk-only">
+                      <input
+                        class="row-select-input"
+                        type="checkbox"
+                        [checked]="isRowSelected('expenses', expense.id)"
+                        [attr.aria-label]="'Select expense row ' + (expense.name || 'Expense')"
+                        (change)="toggleRowSelection('expenses', expense.id, $event)"
+                      />
+                    </td>
                     <td class="row-number">
                       @if (expense.isNew) {
                         <span class="row-status">New</span>
@@ -260,7 +471,7 @@
                         {{ rowIndex + 1 }}
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('expenses', expense, 'name')">
                       @if (isRowEditing(expense)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -280,7 +491,7 @@
                         </small>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('expenses', expense, 'date')">
                       @if (isRowEditing(expense)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -301,7 +512,7 @@
                         <span class="cell-muted">{{ dateLabel(expense.date) }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('expenses', expense, 'categoryId')">
                       @if (isRowEditing(expense)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <mat-select
@@ -322,7 +533,7 @@
                         }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('expenses', expense, 'amount')">
                       @if (isRowEditing(expense)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -344,7 +555,7 @@
                         {{ expense.type === 'recurring' ? 'recurring' : 'one-time' }}
                       </span>
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('expenses', expense, 'note')">
                       @if (isRowEditing(expense)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -359,7 +570,9 @@
                         <span class="cell-note">{{ noteLabel(expense.note) }}</span>
                       }
                     </td>
-                    <td>
+                    <td
+                      [class.modified-cell]="isFieldModified('expenses', expense, 'paymentModeId')"
+                    >
                       @if (isRowEditing(expense)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <mat-select
@@ -436,7 +649,7 @@
                   </tr>
                 } @empty {
                   <tr>
-                    <td colspan="9">
+                    <td colspan="10">
                       <div class="empty-state">{{ emptyTableMessage('expenses') }}</div>
                     </td>
                   </tr>
@@ -759,6 +972,11 @@
             </button>
           </div>
 
+          <ng-container
+            [ngTemplateOutlet]="bulkActionBar"
+            [ngTemplateOutletContext]="{ table: 'templates' }"
+          ></ng-container>
+
           <div class="table-wrap desktop-table-region">
             <table class="bulk-table recurring-table">
               <caption>
@@ -766,99 +984,87 @@
               </caption>
               <thead>
                 <tr>
+                  <th class="row-select-col desktop-bulk-only" scope="col">
+                    <input
+                      class="row-select-input"
+                      type="checkbox"
+                      aria-label="Select all filtered recurring expenses"
+                      [checked]="allFilteredRowsSelected('templates')"
+                      [indeterminate]="someFilteredRowsSelected('templates')"
+                      [attr.aria-checked]="
+                        someFilteredRowsSelected('templates')
+                          ? 'mixed'
+                          : allFilteredRowsSelected('templates')
+                            ? 'true'
+                            : 'false'
+                      "
+                      (change)="toggleFilteredRowsSelection('templates', $event)"
+                    />
+                  </th>
                   <th class="row-number-col" scope="col">#</th>
-                  <th scope="col" [attr.aria-sort]="sortAria('templates', 'name')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('templates', 'name')"
-                      [attr.aria-label]="sortButtonLabel('templates', 'Name', 'name')"
-                      (click)="toggleSort('templates', 'name')"
-                    >
-                      Name
-                      <mat-icon aria-hidden="true">{{ sortIcon('templates', 'name') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('templates', 'category')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('templates', 'category')"
-                      [attr.aria-label]="sortButtonLabel('templates', 'Category', 'category')"
-                      (click)="toggleSort('templates', 'category')"
-                    >
-                      Category
-                      <mat-icon aria-hidden="true">{{
-                        sortIcon('templates', 'category')
-                      }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('templates', 'amount')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('templates', 'amount')"
-                      [attr.aria-label]="sortButtonLabel('templates', 'Amount', 'amount')"
-                      (click)="toggleSort('templates', 'amount')"
-                    >
-                      Amount
-                      <mat-icon aria-hidden="true">{{ sortIcon('templates', 'amount') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('templates', 'frequency')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('templates', 'frequency')"
-                      [attr.aria-label]="sortButtonLabel('templates', 'Frequency', 'frequency')"
-                      (click)="toggleSort('templates', 'frequency')"
-                    >
-                      Frequency
-                      <mat-icon aria-hidden="true">{{
-                        sortIcon('templates', 'frequency')
-                      }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('templates', 'startDate')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('templates', 'startDate')"
-                      [attr.aria-label]="sortButtonLabel('templates', 'Start', 'startDate')"
-                      (click)="toggleSort('templates', 'startDate')"
-                    >
-                      Start
-                      <mat-icon aria-hidden="true">{{
-                        sortIcon('templates', 'startDate')
-                      }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('templates', 'endDate')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('templates', 'endDate')"
-                      [attr.aria-label]="sortButtonLabel('templates', 'End optional', 'endDate')"
-                      (click)="toggleSort('templates', 'endDate')"
-                    >
-                      End optional
-                      <mat-icon aria-hidden="true">{{ sortIcon('templates', 'endDate') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('templates', 'paymentMode')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('templates', 'paymentMode')"
-                      [attr.aria-label]="sortButtonLabel('templates', 'Paid via', 'paymentMode')"
-                      (click)="toggleSort('templates', 'paymentMode')"
-                    >
-                      Paid via
-                      <mat-icon aria-hidden="true">{{
-                        sortIcon('templates', 'paymentMode')
-                      }}</mat-icon>
-                    </button>
-                  </th>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'templates',
+                      field: 'name',
+                      label: 'Name',
+                      sortColumn: 'name',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'templates',
+                      field: 'categoryId',
+                      label: 'Category',
+                      sortColumn: 'category',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'templates',
+                      field: 'amount',
+                      label: 'Amount',
+                      sortColumn: 'amount',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'templates',
+                      field: 'frequency',
+                      label: 'Frequency',
+                      sortColumn: 'frequency',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'templates',
+                      field: 'startDate',
+                      label: 'Start',
+                      sortColumn: 'startDate',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'templates',
+                      field: 'endDate',
+                      label: 'End optional',
+                      sortColumn: 'endDate',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'templates',
+                      field: 'paymentModeId',
+                      label: 'Paid via',
+                      sortColumn: 'paymentMode',
+                    }"
+                  ></ng-container>
                   <th scope="col">Actions</th>
                 </tr>
               </thead>
@@ -868,8 +1074,20 @@
                     [attr.data-row-id]="template.id"
                     [class.row-editing]="isRowEditing(template)"
                     [class.marked-delete]="template.pendingDelete"
+                    [class.modified-row]="isRowModified('templates', template)"
                     [class.new-row]="template.isNew"
                   >
+                    <td class="row-select desktop-bulk-only">
+                      <input
+                        class="row-select-input"
+                        type="checkbox"
+                        [checked]="isRowSelected('templates', template.id)"
+                        [attr.aria-label]="
+                          'Select recurring expense row ' + (template.name || 'Recurring expense')
+                        "
+                        (change)="toggleRowSelection('templates', template.id, $event)"
+                      />
+                    </td>
                     <td class="row-number">
                       @if (template.isNew) {
                         <span class="row-status">New</span>
@@ -877,7 +1095,7 @@
                         {{ rowIndex + 1 }}
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('templates', template, 'name')">
                       @if (isRowEditing(template)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -894,7 +1112,9 @@
                         }}</span>
                       }
                     </td>
-                    <td>
+                    <td
+                      [class.modified-cell]="isFieldModified('templates', template, 'categoryId')"
+                    >
                       @if (isRowEditing(template)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <mat-select
@@ -915,7 +1135,7 @@
                         }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('templates', template, 'amount')">
                       @if (isRowEditing(template)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -932,7 +1152,7 @@
                         <span class="cell-amount">{{ amountLabel(template.amount) }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('templates', template, 'frequency')">
                       @if (isRowEditing(template)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <mat-select
@@ -952,7 +1172,7 @@
                         }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('templates', template, 'startDate')">
                       @if (isRowEditing(template)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -973,7 +1193,7 @@
                         <span class="cell-muted">{{ dateLabel(template.startDate) }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('templates', template, 'endDate')">
                       @if (isRowEditing(template)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -994,7 +1214,11 @@
                         <span class="cell-muted">{{ dateLabel(template.endDate, 'Future') }}</span>
                       }
                     </td>
-                    <td>
+                    <td
+                      [class.modified-cell]="
+                        isFieldModified('templates', template, 'paymentModeId')
+                      "
+                    >
                       @if (isRowEditing(template)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <mat-select
@@ -1092,7 +1316,7 @@
                     isTemplateAuditExpanded(template.id) && recurringAuditRows(template).length
                   ) {
                     <tr class="audit-row">
-                      <td colspan="9">
+                      <td colspan="10">
                         <div class="audit-panel" aria-label="Recurring audit history">
                           <header>
                             <strong>Audit History</strong>
@@ -1118,7 +1342,7 @@
                   }
                 } @empty {
                   <tr>
-                    <td colspan="9">
+                    <td colspan="10">
                       <div class="empty-state">{{ emptyTableMessage('templates') }}</div>
                     </td>
                   </tr>
@@ -1461,6 +1685,11 @@
             </button>
           </div>
 
+          <ng-container
+            [ngTemplateOutlet]="bulkActionBar"
+            [ngTemplateOutletContext]="{ table: 'incomes' }"
+          ></ng-container>
+
           <div class="table-wrap desktop-table-region">
             <table class="bulk-table">
               <caption>
@@ -1468,79 +1697,78 @@
               </caption>
               <thead>
                 <tr>
+                  <th class="row-select-col desktop-bulk-only" scope="col">
+                    <input
+                      class="row-select-input"
+                      type="checkbox"
+                      aria-label="Select all filtered income rows"
+                      [checked]="allFilteredRowsSelected('incomes')"
+                      [indeterminate]="someFilteredRowsSelected('incomes')"
+                      [attr.aria-checked]="
+                        someFilteredRowsSelected('incomes')
+                          ? 'mixed'
+                          : allFilteredRowsSelected('incomes')
+                            ? 'true'
+                            : 'false'
+                      "
+                      (change)="toggleFilteredRowsSelection('incomes', $event)"
+                    />
+                  </th>
                   <th class="row-number-col" scope="col">#</th>
-                  <th scope="col" [attr.aria-sort]="sortAria('incomes', 'source')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('incomes', 'source')"
-                      [attr.aria-label]="sortButtonLabel('incomes', 'Source', 'source')"
-                      (click)="toggleSort('incomes', 'source')"
-                    >
-                      Source
-                      <mat-icon aria-hidden="true">{{ sortIcon('incomes', 'source') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('incomes', 'amount')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('incomes', 'amount')"
-                      [attr.aria-label]="sortButtonLabel('incomes', 'Amount', 'amount')"
-                      (click)="toggleSort('incomes', 'amount')"
-                    >
-                      Amount
-                      <mat-icon aria-hidden="true">{{ sortIcon('incomes', 'amount') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('incomes', 'category')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('incomes', 'category')"
-                      [attr.aria-label]="sortButtonLabel('incomes', 'Category', 'category')"
-                      (click)="toggleSort('incomes', 'category')"
-                    >
-                      Category
-                      <mat-icon aria-hidden="true">{{ sortIcon('incomes', 'category') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('incomes', 'cadence')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('incomes', 'cadence')"
-                      [attr.aria-label]="sortButtonLabel('incomes', 'Cadence', 'cadence')"
-                      (click)="toggleSort('incomes', 'cadence')"
-                    >
-                      Cadence
-                      <mat-icon aria-hidden="true">{{ sortIcon('incomes', 'cadence') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('incomes', 'month')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('incomes', 'month')"
-                      [attr.aria-label]="sortButtonLabel('incomes', 'Month', 'month')"
-                      (click)="toggleSort('incomes', 'month')"
-                    >
-                      Month
-                      <mat-icon aria-hidden="true">{{ sortIcon('incomes', 'month') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('incomes', 'note')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('incomes', 'note')"
-                      [attr.aria-label]="sortButtonLabel('incomes', 'Notes', 'note')"
-                      (click)="toggleSort('incomes', 'note')"
-                    >
-                      Notes
-                      <mat-icon aria-hidden="true">{{ sortIcon('incomes', 'note') }}</mat-icon>
-                    </button>
-                  </th>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'incomes',
+                      field: 'source',
+                      label: 'Source',
+                      sortColumn: 'source',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'incomes',
+                      field: 'amount',
+                      label: 'Amount',
+                      sortColumn: 'amount',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'incomes',
+                      field: 'categoryId',
+                      label: 'Category',
+                      sortColumn: 'category',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'incomes',
+                      field: 'cadence',
+                      label: 'Cadence',
+                      sortColumn: 'cadence',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'incomes',
+                      field: 'month',
+                      label: 'Month',
+                      sortColumn: 'month',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'incomes',
+                      field: 'notes',
+                      label: 'Notes',
+                      sortColumn: 'note',
+                    }"
+                  ></ng-container>
                   <th scope="col">Actions</th>
                 </tr>
               </thead>
@@ -1550,8 +1778,18 @@
                     [attr.data-row-id]="income.id"
                     [class.row-editing]="isRowEditing(income)"
                     [class.marked-delete]="income.pendingDelete"
+                    [class.modified-row]="isRowModified('incomes', income)"
                     [class.new-row]="income.isNew"
                   >
+                    <td class="row-select desktop-bulk-only">
+                      <input
+                        class="row-select-input"
+                        type="checkbox"
+                        [checked]="isRowSelected('incomes', income.id)"
+                        [attr.aria-label]="'Select income row ' + (income.source || 'Income')"
+                        (change)="toggleRowSelection('incomes', income.id, $event)"
+                      />
+                    </td>
                     <td class="row-number">
                       @if (income.isNew) {
                         <span class="row-status">New</span>
@@ -1559,7 +1797,7 @@
                         {{ rowIndex + 1 }}
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('incomes', income, 'source')">
                       @if (isRowEditing(income) && income.isNew) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -1574,7 +1812,7 @@
                         <span class="cell-value cell-strong">{{ income.source || 'Income' }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('incomes', income, 'amount')">
                       @if (isRowEditing(income)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -1591,7 +1829,7 @@
                         <span class="cell-amount">{{ amountLabel(income.amount) }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('incomes', income, 'categoryId')">
                       @if (isRowEditing(income)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <mat-select
@@ -1612,7 +1850,7 @@
                         }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('incomes', income, 'cadence')">
                       @if (isRowEditing(income) && income.isNew) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <mat-select
@@ -1632,7 +1870,7 @@
                         }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('incomes', income, 'month')">
                       @if (isRowEditing(income)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -1655,7 +1893,7 @@
                         }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('incomes', income, 'notes')">
                       @if (isRowEditing(income)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -1726,7 +1964,7 @@
                   </tr>
                   @if (isAuditExpanded(income.id) && incomeAuditRows(income).length) {
                     <tr class="audit-row">
-                      <td colspan="8">
+                      <td colspan="9">
                         <div class="audit-panel" aria-label="Income audit history">
                           <header>
                             <strong>Audit History</strong>
@@ -1752,7 +1990,7 @@
                   }
                 } @empty {
                   <tr>
-                    <td colspan="8">
+                    <td colspan="9">
                       <div class="empty-state">{{ emptyTableMessage('incomes') }}</div>
                     </td>
                   </tr>
@@ -2022,6 +2260,11 @@
             </button>
           </div>
 
+          <ng-container
+            [ngTemplateOutlet]="bulkActionBar"
+            [ngTemplateOutletContext]="{ table: 'categories' }"
+          ></ng-container>
+
           <div class="table-wrap desktop-table-region">
             <table class="bulk-table categories-table">
               <caption>
@@ -2029,59 +2272,60 @@
               </caption>
               <thead>
                 <tr>
-                  <th class="row-number-col" scope="col">#</th>
-                  <th scope="col" [attr.aria-sort]="sortAria('categories', 'name')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('categories', 'name')"
-                      [attr.aria-label]="sortButtonLabel('categories', 'Name', 'name')"
-                      (click)="toggleSort('categories', 'name')"
-                    >
-                      Name
-                      <mat-icon aria-hidden="true">{{ sortIcon('categories', 'name') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('categories', 'type')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('categories', 'type')"
-                      [attr.aria-label]="sortButtonLabel('categories', 'Type', 'type')"
-                      (click)="toggleSort('categories', 'type')"
-                    >
-                      Type
-                      <mat-icon aria-hidden="true">{{ sortIcon('categories', 'type') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('categories', 'monthlyBudget')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('categories', 'monthlyBudget')"
-                      [attr.aria-label]="
-                        sortButtonLabel('categories', 'Monthly Budget', 'monthlyBudget')
+                  <th class="row-select-col desktop-bulk-only" scope="col">
+                    <input
+                      class="row-select-input"
+                      type="checkbox"
+                      aria-label="Select all filtered categories"
+                      [checked]="allFilteredRowsSelected('categories')"
+                      [indeterminate]="someFilteredRowsSelected('categories')"
+                      [attr.aria-checked]="
+                        someFilteredRowsSelected('categories')
+                          ? 'mixed'
+                          : allFilteredRowsSelected('categories')
+                            ? 'true'
+                            : 'false'
                       "
-                      (click)="toggleSort('categories', 'monthlyBudget')"
-                    >
-                      Monthly Budget
-                      <mat-icon aria-hidden="true">{{
-                        sortIcon('categories', 'monthlyBudget')
-                      }}</mat-icon>
-                    </button>
+                      (change)="toggleFilteredRowsSelection('categories', $event)"
+                    />
                   </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('categories', 'color')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('categories', 'color')"
-                      [attr.aria-label]="sortButtonLabel('categories', 'Color', 'color')"
-                      (click)="toggleSort('categories', 'color')"
-                    >
-                      Color
-                      <mat-icon aria-hidden="true">{{ sortIcon('categories', 'color') }}</mat-icon>
-                    </button>
-                  </th>
+                  <th class="row-number-col" scope="col">#</th>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'categories',
+                      field: 'name',
+                      label: 'Name',
+                      sortColumn: 'name',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'categories',
+                      field: 'type',
+                      label: 'Type',
+                      sortColumn: 'type',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'categories',
+                      field: 'monthlyBudget',
+                      label: 'Monthly Budget',
+                      sortColumn: 'monthlyBudget',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'categories',
+                      field: 'color',
+                      label: 'Color',
+                      sortColumn: 'color',
+                    }"
+                  ></ng-container>
                   <th scope="col">Actions</th>
                 </tr>
               </thead>
@@ -2091,8 +2335,18 @@
                     [attr.data-row-id]="category.id"
                     [class.row-editing]="isRowEditing(category)"
                     [class.marked-delete]="category.pendingDelete"
+                    [class.modified-row]="isRowModified('categories', category)"
                     [class.new-row]="category.isNew"
                   >
+                    <td class="row-select desktop-bulk-only">
+                      <input
+                        class="row-select-input"
+                        type="checkbox"
+                        [checked]="isRowSelected('categories', category.id)"
+                        [attr.aria-label]="'Select category row ' + (category.name || 'Category')"
+                        (change)="toggleRowSelection('categories', category.id, $event)"
+                      />
+                    </td>
                     <td class="row-number">
                       @if (category.isNew) {
                         <span class="row-status">New</span>
@@ -2100,7 +2354,7 @@
                         {{ rowIndex + 1 }}
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('categories', category, 'name')">
                       @if (isRowEditing(category)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -2117,7 +2371,7 @@
                         }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('categories', category, 'type')">
                       @if (isRowEditing(category)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <mat-select
@@ -2140,7 +2394,11 @@
                         >
                       }
                     </td>
-                    <td>
+                    <td
+                      [class.modified-cell]="
+                        isFieldModified('categories', category, 'monthlyBudget')
+                      "
+                    >
                       @if (isRowEditing(category)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -2157,7 +2415,7 @@
                         <span class="cell-amount">{{ amountLabel(category.monthlyBudget) }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('categories', category, 'color')">
                       @if (isRowEditing(category)) {
                         <div class="color-control">
                           <input
@@ -2222,7 +2480,7 @@
                   </tr>
                 } @empty {
                   <tr>
-                    <td colspan="6">
+                    <td colspan="7">
                       <div class="empty-state">{{ emptyTableMessage('categories') }}</div>
                     </td>
                   </tr>
@@ -2456,6 +2714,11 @@
             </button>
           </div>
 
+          <ng-container
+            [ngTemplateOutlet]="bulkActionBar"
+            [ngTemplateOutletContext]="{ table: 'loans' }"
+          ></ng-container>
+
           <div class="table-wrap desktop-table-region">
             <table class="bulk-table loan-table wide-table">
               <caption>
@@ -2463,127 +2726,114 @@
               </caption>
               <thead>
                 <tr>
+                  <th class="row-select-col desktop-bulk-only" scope="col">
+                    <input
+                      class="row-select-input"
+                      type="checkbox"
+                      aria-label="Select all filtered loans"
+                      [checked]="allFilteredRowsSelected('loans')"
+                      [indeterminate]="someFilteredRowsSelected('loans')"
+                      [attr.aria-checked]="
+                        someFilteredRowsSelected('loans')
+                          ? 'mixed'
+                          : allFilteredRowsSelected('loans')
+                            ? 'true'
+                            : 'false'
+                      "
+                      (change)="toggleFilteredRowsSelection('loans', $event)"
+                    />
+                  </th>
                   <th class="row-number-col" scope="col">#</th>
-                  <th scope="col" [attr.aria-sort]="sortAria('loans', 'lender')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('loans', 'lender')"
-                      [attr.aria-label]="sortButtonLabel('loans', 'Lender', 'lender')"
-                      (click)="toggleSort('loans', 'lender')"
-                    >
-                      Lender
-                      <mat-icon aria-hidden="true">{{ sortIcon('loans', 'lender') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('loans', 'loanType')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('loans', 'loanType')"
-                      [attr.aria-label]="sortButtonLabel('loans', 'Type', 'loanType')"
-                      (click)="toggleSort('loans', 'loanType')"
-                    >
-                      Type
-                      <mat-icon aria-hidden="true">{{ sortIcon('loans', 'loanType') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('loans', 'principal')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('loans', 'principal')"
-                      [attr.aria-label]="sortButtonLabel('loans', 'Principal', 'principal')"
-                      (click)="toggleSort('loans', 'principal')"
-                    >
-                      Principal
-                      <mat-icon aria-hidden="true">{{ sortIcon('loans', 'principal') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('loans', 'outstanding')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('loans', 'outstanding')"
-                      [attr.aria-label]="sortButtonLabel('loans', 'Outstanding', 'outstanding')"
-                      (click)="toggleSort('loans', 'outstanding')"
-                    >
-                      Outstanding
-                      <mat-icon aria-hidden="true">{{ sortIcon('loans', 'outstanding') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('loans', 'annualRate')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('loans', 'annualRate')"
-                      [attr.aria-label]="sortButtonLabel('loans', 'Rate', 'annualRate')"
-                      (click)="toggleSort('loans', 'annualRate')"
-                    >
-                      Rate
-                      <mat-icon aria-hidden="true">{{ sortIcon('loans', 'annualRate') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('loans', 'emi')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('loans', 'emi')"
-                      [attr.aria-label]="sortButtonLabel('loans', 'EMI', 'emi')"
-                      (click)="toggleSort('loans', 'emi')"
-                    >
-                      EMI
-                      <mat-icon aria-hidden="true">{{ sortIcon('loans', 'emi') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('loans', 'startDate')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('loans', 'startDate')"
-                      [attr.aria-label]="sortButtonLabel('loans', 'Start', 'startDate')"
-                      (click)="toggleSort('loans', 'startDate')"
-                    >
-                      Start
-                      <mat-icon aria-hidden="true">{{ sortIcon('loans', 'startDate') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('loans', 'endDate')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('loans', 'endDate')"
-                      [attr.aria-label]="sortButtonLabel('loans', 'End', 'endDate')"
-                      (click)="toggleSort('loans', 'endDate')"
-                    >
-                      End
-                      <mat-icon aria-hidden="true">{{ sortIcon('loans', 'endDate') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('loans', 'note')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('loans', 'note')"
-                      [attr.aria-label]="sortButtonLabel('loans', 'Notes', 'note')"
-                      (click)="toggleSort('loans', 'note')"
-                    >
-                      Notes
-                      <mat-icon aria-hidden="true">{{ sortIcon('loans', 'note') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('loans', 'paymentMode')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('loans', 'paymentMode')"
-                      [attr.aria-label]="sortButtonLabel('loans', 'EMI paid via', 'paymentMode')"
-                      (click)="toggleSort('loans', 'paymentMode')"
-                    >
-                      EMI paid via
-                      <mat-icon aria-hidden="true">{{ sortIcon('loans', 'paymentMode') }}</mat-icon>
-                    </button>
-                  </th>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'loans',
+                      field: 'lender',
+                      label: 'Lender',
+                      sortColumn: 'lender',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'loans',
+                      field: 'loanType',
+                      label: 'Type',
+                      sortColumn: 'loanType',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'loans',
+                      field: 'principal',
+                      label: 'Principal',
+                      sortColumn: 'principal',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'loans',
+                      field: 'outstanding',
+                      label: 'Outstanding',
+                      sortColumn: 'outstanding',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'loans',
+                      field: 'annualRate',
+                      label: 'Rate',
+                      sortColumn: 'annualRate',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'loans',
+                      field: 'emi',
+                      label: 'EMI',
+                      sortColumn: 'emi',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'loans',
+                      field: 'startDate',
+                      label: 'Start',
+                      sortColumn: 'startDate',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'loans',
+                      field: 'endDate',
+                      label: 'End',
+                      sortColumn: 'endDate',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'loans',
+                      field: 'notes',
+                      label: 'Notes',
+                      sortColumn: 'note',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'loans',
+                      field: 'paymentModeId',
+                      label: 'EMI paid via',
+                      sortColumn: 'paymentMode',
+                    }"
+                  ></ng-container>
                   <th scope="col">Actions</th>
                 </tr>
               </thead>
@@ -2593,8 +2843,21 @@
                     [attr.data-row-id]="loan.id"
                     [class.row-editing]="isRowEditing(loan)"
                     [class.marked-delete]="loan.pendingDelete"
+                    [class.modified-row]="isRowModified('loans', loan)"
                     [class.new-row]="loan.isNew"
                   >
+                    <td class="row-select desktop-bulk-only">
+                      <input
+                        class="row-select-input"
+                        type="checkbox"
+                        [checked]="isRowSelected('loans', loan.id)"
+                        [attr.aria-label]="
+                          'Select loan row ' +
+                          ((loan.lender || '') + ' ' + (loan.loanType || '')).trim()
+                        "
+                        (change)="toggleRowSelection('loans', loan.id, $event)"
+                      />
+                    </td>
                     <td class="row-number">
                       @if (loan.isNew) {
                         <span class="row-status">New</span>
@@ -2602,7 +2865,7 @@
                         {{ rowIndex + 1 }}
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('loans', loan, 'lender')">
                       @if (isRowEditing(loan) && loan.isNew) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -2617,7 +2880,7 @@
                         <span class="cell-value cell-strong">{{ loan.lender || 'Lender' }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('loans', loan, 'loanType')">
                       @if (isRowEditing(loan) && loan.isNew) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -2632,7 +2895,7 @@
                         <span class="cell-pill investment-pill">{{ loan.loanType || 'Loan' }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('loans', loan, 'principal')">
                       @if (isRowEditing(loan)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -2649,7 +2912,7 @@
                         <span class="cell-amount">{{ amountLabel(loan.principal) }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('loans', loan, 'outstanding')">
                       @if (isRowEditing(loan)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -2666,7 +2929,7 @@
                         <span class="cell-amount">{{ amountLabel(loan.outstanding) }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('loans', loan, 'annualRate')">
                       @if (isRowEditing(loan)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -2683,7 +2946,7 @@
                         <span class="cell-value">{{ loan.annualRate || 0 }}%</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('loans', loan, 'emi')">
                       @if (isRowEditing(loan)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -2700,7 +2963,7 @@
                         <span class="cell-amount">{{ amountLabel(loan.emi) }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('loans', loan, 'startDate')">
                       @if (isRowEditing(loan)) {
                         <mat-form-field
                           appearance="outline"
@@ -2730,7 +2993,7 @@
                         >
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('loans', loan, 'endDate')">
                       @if (isRowEditing(loan)) {
                         <mat-form-field
                           appearance="outline"
@@ -2760,7 +3023,7 @@
                         >
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('loans', loan, 'notes')">
                       @if (isRowEditing(loan)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -2775,7 +3038,7 @@
                         <span class="cell-note">{{ noteLabel(loan.notes) }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('loans', loan, 'paymentModeId')">
                       @if (isRowEditing(loan)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <mat-select
@@ -2867,7 +3130,7 @@
                   </tr>
                   @if (isAuditExpanded(loan.id) && loanAuditRows(loan).length) {
                     <tr class="audit-row">
-                      <td colspan="12">
+                      <td colspan="13">
                         <div class="audit-panel" aria-label="Loan audit history">
                           <header>
                             <strong>Audit History</strong>
@@ -2893,7 +3156,7 @@
                   }
                 } @empty {
                   <tr>
-                    <td colspan="12">
+                    <td colspan="13">
                       <div class="empty-state">{{ emptyTableMessage('loans') }}</div>
                     </td>
                   </tr>
@@ -3284,6 +3547,11 @@
             </button>
           </div>
 
+          <ng-container
+            [ngTemplateOutlet]="bulkActionBar"
+            [ngTemplateOutletContext]="{ table: 'investments' }"
+          ></ng-container>
+
           <div class="table-wrap desktop-table-region">
             <table class="bulk-table wide-table">
               <caption>
@@ -3291,129 +3559,105 @@
               </caption>
               <thead>
                 <tr>
-                  <th class="row-number-col" scope="col">#</th>
-                  <th scope="col" [attr.aria-sort]="sortAria('investments', 'name')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('investments', 'name')"
-                      [attr.aria-label]="sortButtonLabel('investments', 'Name', 'name')"
-                      (click)="toggleSort('investments', 'name')"
-                    >
-                      Name
-                      <mat-icon aria-hidden="true">{{ sortIcon('investments', 'name') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('investments', 'amount')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('investments', 'amount')"
-                      [attr.aria-label]="sortButtonLabel('investments', 'Amount', 'amount')"
-                      (click)="toggleSort('investments', 'amount')"
-                    >
-                      Amount
-                      <mat-icon aria-hidden="true">{{
-                        sortIcon('investments', 'amount')
-                      }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('investments', 'category')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('investments', 'category')"
-                      [attr.aria-label]="sortButtonLabel('investments', 'Category', 'category')"
-                      (click)="toggleSort('investments', 'category')"
-                    >
-                      Category
-                      <mat-icon aria-hidden="true">{{
-                        sortIcon('investments', 'category')
-                      }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('investments', 'frequency')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('investments', 'frequency')"
-                      [attr.aria-label]="sortButtonLabel('investments', 'Frequency', 'frequency')"
-                      (click)="toggleSort('investments', 'frequency')"
-                    >
-                      Frequency
-                      <mat-icon aria-hidden="true">{{
-                        sortIcon('investments', 'frequency')
-                      }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('investments', 'date')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('investments', 'date')"
-                      [attr.aria-label]="sortButtonLabel('investments', 'Date', 'date')"
-                      (click)="toggleSort('investments', 'date')"
-                    >
-                      Date
-                      <mat-icon aria-hidden="true">{{ sortIcon('investments', 'date') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('investments', 'startDate')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('investments', 'startDate')"
-                      [attr.aria-label]="
-                        sortButtonLabel('investments', 'Start optional', 'startDate')
+                  <th class="row-select-col desktop-bulk-only" scope="col">
+                    <input
+                      class="row-select-input"
+                      type="checkbox"
+                      aria-label="Select all filtered investments"
+                      [checked]="allFilteredRowsSelected('investments')"
+                      [indeterminate]="someFilteredRowsSelected('investments')"
+                      [attr.aria-checked]="
+                        someFilteredRowsSelected('investments')
+                          ? 'mixed'
+                          : allFilteredRowsSelected('investments')
+                            ? 'true'
+                            : 'false'
                       "
-                      (click)="toggleSort('investments', 'startDate')"
-                    >
-                      Start optional
-                      <mat-icon aria-hidden="true">{{
-                        sortIcon('investments', 'startDate')
-                      }}</mat-icon>
-                    </button>
+                      (change)="toggleFilteredRowsSelection('investments', $event)"
+                    />
                   </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('investments', 'endDate')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('investments', 'endDate')"
-                      [attr.aria-label]="sortButtonLabel('investments', 'End optional', 'endDate')"
-                      (click)="toggleSort('investments', 'endDate')"
-                    >
-                      End optional
-                      <mat-icon aria-hidden="true">{{
-                        sortIcon('investments', 'endDate')
-                      }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('investments', 'note')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('investments', 'note')"
-                      [attr.aria-label]="sortButtonLabel('investments', 'Notes', 'note')"
-                      (click)="toggleSort('investments', 'note')"
-                    >
-                      Notes
-                      <mat-icon aria-hidden="true">{{ sortIcon('investments', 'note') }}</mat-icon>
-                    </button>
-                  </th>
-                  <th scope="col" [attr.aria-sort]="sortAria('investments', 'paymentMode')">
-                    <button
-                      class="sort-header-button"
-                      type="button"
-                      [class.active]="isSorted('investments', 'paymentMode')"
-                      [attr.aria-label]="sortButtonLabel('investments', 'Paid via', 'paymentMode')"
-                      (click)="toggleSort('investments', 'paymentMode')"
-                    >
-                      Paid via
-                      <mat-icon aria-hidden="true">{{
-                        sortIcon('investments', 'paymentMode')
-                      }}</mat-icon>
-                    </button>
-                  </th>
+                  <th class="row-number-col" scope="col">#</th>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'investments',
+                      field: 'name',
+                      label: 'Name',
+                      sortColumn: 'name',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'investments',
+                      field: 'amount',
+                      label: 'Amount',
+                      sortColumn: 'amount',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'investments',
+                      field: 'categoryId',
+                      label: 'Category',
+                      sortColumn: 'category',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'investments',
+                      field: 'frequency',
+                      label: 'Frequency',
+                      sortColumn: 'frequency',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'investments',
+                      field: 'date',
+                      label: 'Date',
+                      sortColumn: 'date',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'investments',
+                      field: 'startDate',
+                      label: 'Start optional',
+                      sortColumn: 'startDate',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'investments',
+                      field: 'endDate',
+                      label: 'End optional',
+                      sortColumn: 'endDate',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'investments',
+                      field: 'notes',
+                      label: 'Notes',
+                      sortColumn: 'note',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'investments',
+                      field: 'paymentModeId',
+                      label: 'Paid via',
+                      sortColumn: 'paymentMode',
+                    }"
+                  ></ng-container>
                   <th scope="col">Actions</th>
                 </tr>
               </thead>
@@ -3427,8 +3671,20 @@
                     [attr.data-row-id]="investment.id"
                     [class.row-editing]="isRowEditing(investment)"
                     [class.marked-delete]="investment.pendingDelete"
+                    [class.modified-row]="isRowModified('investments', investment)"
                     [class.new-row]="investment.isNew"
                   >
+                    <td class="row-select desktop-bulk-only">
+                      <input
+                        class="row-select-input"
+                        type="checkbox"
+                        [checked]="isRowSelected('investments', investment.id)"
+                        [attr.aria-label]="
+                          'Select investment row ' + (investment.name || 'Investment')
+                        "
+                        (change)="toggleRowSelection('investments', investment.id, $event)"
+                      />
+                    </td>
                     <td class="row-number">
                       @if (investment.isNew) {
                         <span class="row-status">New</span>
@@ -3436,7 +3692,7 @@
                         {{ rowIndex + 1 }}
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('investments', investment, 'name')">
                       @if (isRowEditing(investment) && investment.isNew) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -3453,7 +3709,9 @@
                         }}</span>
                       }
                     </td>
-                    <td>
+                    <td
+                      [class.modified-cell]="isFieldModified('investments', investment, 'amount')"
+                    >
                       @if (isRowEditing(investment)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -3470,7 +3728,11 @@
                         <span class="cell-amount">{{ amountLabel(investment.amount) }}</span>
                       }
                     </td>
-                    <td>
+                    <td
+                      [class.modified-cell]="
+                        isFieldModified('investments', investment, 'categoryId')
+                      "
+                    >
                       @if (isRowEditing(investment)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <mat-select
@@ -3491,7 +3753,11 @@
                         }}</span>
                       }
                     </td>
-                    <td>
+                    <td
+                      [class.modified-cell]="
+                        isFieldModified('investments', investment, 'frequency')
+                      "
+                    >
                       @if (isRowEditing(investment)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <mat-select
@@ -3513,7 +3779,7 @@
                         >
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('investments', investment, 'date')">
                       @if (isRowEditing(investment)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -3534,7 +3800,11 @@
                         <span class="cell-muted">{{ dateLabel(investment.date) }}</span>
                       }
                     </td>
-                    <td>
+                    <td
+                      [class.modified-cell]="
+                        isFieldModified('investments', investment, 'startDate')
+                      "
+                    >
                       @if (isRowEditing(investment)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -3555,7 +3825,9 @@
                         <span class="cell-muted">{{ dateLabel(investment.startDate, '—') }}</span>
                       }
                     </td>
-                    <td>
+                    <td
+                      [class.modified-cell]="isFieldModified('investments', investment, 'endDate')"
+                    >
                       @if (isRowEditing(investment)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -3578,7 +3850,7 @@
                         }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('investments', investment, 'notes')">
                       @if (isRowEditing(investment)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -3593,7 +3865,11 @@
                         <span class="cell-note">{{ noteLabel(investment.notes) }}</span>
                       }
                     </td>
-                    <td>
+                    <td
+                      [class.modified-cell]="
+                        isFieldModified('investments', investment, 'paymentModeId')
+                      "
+                    >
                       @if (isRowEditing(investment)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <mat-select
@@ -3689,7 +3965,7 @@
                   </tr>
                   @if (isAuditExpanded(investment.id) && investmentAuditRows(investment).length) {
                     <tr class="audit-row">
-                      <td colspan="11">
+                      <td colspan="12">
                         <div class="audit-panel" aria-label="Investment audit history">
                           <header>
                             <strong>Audit History</strong>
@@ -3715,7 +3991,7 @@
                   }
                 } @empty {
                   <tr>
-                    <td colspan="11">
+                    <td colspan="12">
                       <div class="empty-state">{{ emptyTableMessage('investments') }}</div>
                     </td>
                   </tr>

@@ -74,7 +74,7 @@ type PaymentModeMeta = {
 };
 type BulkTableKey = 'expenses' | 'templates' | 'incomes' | 'categories' | 'loans' | 'investments';
 type SortDirection = 'asc' | 'desc';
-type RowStatusFilter = 'all' | 'active' | 'new' | 'suggested' | 'marked-delete';
+type RowStatusFilter = 'all' | 'active' | 'new' | 'suggested' | 'marked-delete' | 'modified';
 type BulkSortColumn =
   | ''
   | 'amount'
@@ -126,6 +126,50 @@ type BulkTableSortState = {
   direction: SortDirection;
 };
 type SortOption = SelectOption<`${Exclude<BulkSortColumn, ''>}:${SortDirection}` | ''>;
+type BulkHeaderValueKind =
+  | 'category'
+  | 'categoryType'
+  | 'color'
+  | 'date'
+  | 'number'
+  | 'paymentMode'
+  | 'select'
+  | 'text';
+type BulkHeaderField =
+  | ''
+  | 'amount'
+  | 'annualRate'
+  | 'cadence'
+  | 'categoryId'
+  | 'color'
+  | 'date'
+  | 'emi'
+  | 'endDate'
+  | 'frequency'
+  | 'lender'
+  | 'loanType'
+  | 'monthlyBudget'
+  | 'month'
+  | 'name'
+  | 'note'
+  | 'notes'
+  | 'outstanding'
+  | 'paymentModeId'
+  | 'principal'
+  | 'source'
+  | 'startDate'
+  | 'type';
+type BulkHeaderEditableField = Exclude<BulkHeaderField, ''>;
+type BulkHeaderFieldOption = SelectOption<BulkHeaderEditableField> & {
+  categoryType?: CategoryType;
+  kind: BulkHeaderValueKind;
+  newRowsOnly?: boolean;
+};
+type BulkHeaderEditState = {
+  result: string;
+  touched: Partial<Record<BulkHeaderEditableField, boolean>>;
+  values: Partial<Record<BulkHeaderEditableField, string>>;
+};
 export type BulkEditorScope = 'monthly' | 'planning' | 'loans';
 
 export interface BulkEditorData {
@@ -202,6 +246,10 @@ function dateValue(value: unknown): string | undefined {
 
 function requiredDate(value: unknown): string {
   return dateValue(value) ?? '';
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value : String(value ?? '');
 }
 
 function todayDate(): string {
@@ -306,6 +354,7 @@ const STATUS_FILTER_OPTIONS: Record<
     { value: 'all', label: 'All statuses' },
     { value: 'active', label: 'Active' },
     { value: 'new', label: 'New' },
+    { value: 'modified', label: 'Modified' },
     { value: 'marked-delete', label: 'Marked delete' },
   ],
   suggested: [
@@ -313,6 +362,7 @@ const STATUS_FILTER_OPTIONS: Record<
     { value: 'active', label: 'Active' },
     { value: 'new', label: 'New' },
     { value: 'suggested', label: 'Suggested' },
+    { value: 'modified', label: 'Modified' },
     { value: 'marked-delete', label: 'Marked delete' },
   ],
 };
@@ -380,6 +430,68 @@ const TABLE_SORT_OPTIONS = {
     { value: 'paymentMode:asc', label: 'Paid via A-Z' },
   ],
 } satisfies Record<BulkTableKey, readonly SortOption[]>;
+const BULK_HEADER_FIELDS = {
+  expenses: [
+    { value: 'name', label: 'Name', kind: 'text' },
+    { value: 'date', label: 'Date', kind: 'date' },
+    { value: 'categoryId', label: 'Category', kind: 'category', categoryType: 'Expenses' },
+    { value: 'amount', label: 'Amount', kind: 'number' },
+    { value: 'note', label: 'Note', kind: 'text' },
+    { value: 'paymentModeId', label: 'Paid via', kind: 'paymentMode' },
+  ],
+  templates: [
+    { value: 'name', label: 'Name', kind: 'text', newRowsOnly: true },
+    {
+      value: 'categoryId',
+      label: 'Category',
+      kind: 'category',
+      categoryType: 'Expenses',
+      newRowsOnly: true,
+    },
+    { value: 'amount', label: 'Amount', kind: 'number' },
+    { value: 'frequency', label: 'Frequency', kind: 'select' },
+    { value: 'startDate', label: 'Start', kind: 'date' },
+    { value: 'endDate', label: 'End', kind: 'date' },
+    { value: 'paymentModeId', label: 'Paid via', kind: 'paymentMode' },
+  ],
+  incomes: [
+    { value: 'source', label: 'Source', kind: 'text', newRowsOnly: true },
+    { value: 'amount', label: 'Amount', kind: 'number' },
+    { value: 'categoryId', label: 'Category', kind: 'category', categoryType: 'Income' },
+    { value: 'cadence', label: 'Cadence', kind: 'select', newRowsOnly: true },
+    { value: 'month', label: 'Month', kind: 'date' },
+    { value: 'notes', label: 'Notes', kind: 'text' },
+  ],
+  categories: [
+    { value: 'name', label: 'Name', kind: 'text' },
+    { value: 'type', label: 'Type', kind: 'categoryType' },
+    { value: 'monthlyBudget', label: 'Monthly budget', kind: 'number' },
+    { value: 'color', label: 'Color', kind: 'color' },
+  ],
+  loans: [
+    { value: 'lender', label: 'Lender', kind: 'text', newRowsOnly: true },
+    { value: 'loanType', label: 'Type', kind: 'text', newRowsOnly: true },
+    { value: 'principal', label: 'Principal', kind: 'number' },
+    { value: 'outstanding', label: 'Outstanding', kind: 'number' },
+    { value: 'annualRate', label: 'Rate', kind: 'number' },
+    { value: 'emi', label: 'EMI', kind: 'number' },
+    { value: 'startDate', label: 'Start', kind: 'date' },
+    { value: 'endDate', label: 'End', kind: 'date' },
+    { value: 'notes', label: 'Notes', kind: 'text' },
+    { value: 'paymentModeId', label: 'EMI paid via', kind: 'paymentMode' },
+  ],
+  investments: [
+    { value: 'name', label: 'Name', kind: 'text', newRowsOnly: true },
+    { value: 'amount', label: 'Amount', kind: 'number' },
+    { value: 'categoryId', label: 'Category', kind: 'category', categoryType: 'Investments' },
+    { value: 'frequency', label: 'Frequency', kind: 'select' },
+    { value: 'date', label: 'Date', kind: 'date' },
+    { value: 'startDate', label: 'Start', kind: 'date' },
+    { value: 'endDate', label: 'End', kind: 'date' },
+    { value: 'notes', label: 'Notes', kind: 'text' },
+    { value: 'paymentModeId', label: 'Paid via', kind: 'paymentMode' },
+  ],
+} satisfies Record<BulkTableKey, readonly BulkHeaderFieldOption[]>;
 
 function isBulkSortColumn(value: string): value is BulkSortColumn {
   return BULK_SORT_COLUMNS.has(value);
@@ -417,6 +529,50 @@ function defaultTableSorts(): Record<BulkTableKey, BulkTableSortState> {
     categories: { column: '', direction: 'asc' },
     loans: { column: '', direction: 'asc' },
     investments: { column: '', direction: 'asc' },
+  };
+}
+
+function defaultTableSelections(): Record<BulkTableKey, Set<string>> {
+  return {
+    expenses: new Set<string>(),
+    templates: new Set<string>(),
+    incomes: new Set<string>(),
+    categories: new Set<string>(),
+    loans: new Set<string>(),
+    investments: new Set<string>(),
+  };
+}
+
+function defaultBulkHeaderEditState(): BulkHeaderEditState {
+  return {
+    result: '',
+    touched: {},
+    values: {},
+  };
+}
+
+function defaultBulkHeaderEditStates(): Record<BulkTableKey, BulkHeaderEditState> {
+  return {
+    expenses: defaultBulkHeaderEditState(),
+    templates: defaultBulkHeaderEditState(),
+    incomes: defaultBulkHeaderEditState(),
+    categories: defaultBulkHeaderEditState(),
+    loans: defaultBulkHeaderEditState(),
+    investments: defaultBulkHeaderEditState(),
+  };
+}
+
+function defaultModifiedCells(): Record<
+  BulkTableKey,
+  Record<string, Set<BulkHeaderEditableField>>
+> {
+  return {
+    expenses: {},
+    templates: {},
+    incomes: {},
+    categories: {},
+    loans: {},
+    investments: {},
   };
 }
 
@@ -487,6 +643,12 @@ export class BulkEditorDialog {
   );
 
   private readonly sourceTemplates = cloneRows(this.data.templates);
+  private readonly originalCategoriesById = new Map(
+    this.data.categories.map((category) => [category.id, { ...category }]),
+  );
+  private readonly originalExpensesById = new Map(
+    this.data.expenses.map((expense) => [expense.id, { ...expense }]),
+  );
   private readonly originalIncomesById = new Map(
     this.data.incomes.map((income) => [income.id, { ...income }]),
   );
@@ -567,6 +729,9 @@ export class BulkEditorDialog {
   protected readonly validationError = signal('');
   protected readonly tableFilters = signal(defaultTableFilters());
   protected readonly tableSorts = signal(defaultTableSorts());
+  protected readonly selectedRowIds = signal(defaultTableSelections());
+  protected readonly bulkHeaderEditState = signal(defaultBulkHeaderEditStates());
+  protected readonly modifiedCells = signal(defaultModifiedCells());
   protected readonly filteredExpenses = computed(() => this.tableRows('expenses', this.expenses()));
   protected readonly filteredTemplates = computed(() =>
     this.tableRows('templates', this.templates()),
@@ -752,6 +917,310 @@ export class BulkEditorDialog {
     ]);
   }
 
+  protected bulkActionLabel(table: BulkTableKey): string {
+    const labels: Record<BulkTableKey, string> = {
+      expenses: 'Expense bulk actions',
+      templates: 'Recurring expense bulk actions',
+      incomes: 'Income bulk actions',
+      categories: 'Category bulk actions',
+      loans: 'Loan bulk actions',
+      investments: 'Investment bulk actions',
+    };
+
+    return labels[table];
+  }
+
+  protected selectedCount(table: BulkTableKey): number {
+    return this.selectedRows(table).length;
+  }
+
+  protected selectionSummary(table: BulkTableKey): string {
+    const count = this.selectedCount(table);
+    return `${count} selected`;
+  }
+
+  protected isRowSelected(table: BulkTableKey, rowId: string): boolean {
+    return this.selectedRowIds()[table].has(rowId);
+  }
+
+  protected toggleRowSelection(table: BulkTableKey, rowId: string, event: Event): void {
+    const checked =
+      event.target instanceof HTMLInputElement
+        ? event.target.checked
+        : !this.isRowSelected(table, rowId);
+    this.setRowSelection(table, rowId, checked);
+  }
+
+  protected toggleFilteredRowsSelection(table: BulkTableKey, event: Event): void {
+    const checked = event.target instanceof HTMLInputElement ? event.target.checked : true;
+    const visibleRowIds = this.filteredRowsForTable(table).map((row) => row.id);
+
+    this.selectedRowIds.update((selections) => {
+      const nextSelection = new Set(selections[table]);
+      for (const rowId of visibleRowIds) {
+        checked ? nextSelection.add(rowId) : nextSelection.delete(rowId);
+      }
+
+      return {
+        ...selections,
+        [table]: nextSelection,
+      };
+    });
+    this.clearBulkResult(table);
+  }
+
+  protected allFilteredRowsSelected(table: BulkTableKey): boolean {
+    const rows = this.filteredRowsForTable(table);
+    const selectedIds = this.selectedRowIds()[table];
+
+    return rows.length > 0 && rows.every((row) => selectedIds.has(row.id));
+  }
+
+  protected someFilteredRowsSelected(table: BulkTableKey): boolean {
+    const rows = this.filteredRowsForTable(table);
+    const selectedIds = this.selectedRowIds()[table];
+
+    return rows.some((row) => selectedIds.has(row.id)) && !this.allFilteredRowsSelected(table);
+  }
+
+  protected clearSelection(table: BulkTableKey): void {
+    this.selectedRowIds.update((selections) => ({
+      ...selections,
+      [table]: new Set<string>(),
+    }));
+    this.clearBulkResult(table);
+  }
+
+  protected markSelectedForDelete(table: BulkTableKey): void {
+    const selectedRows = this.selectedRows(table);
+    if (!selectedRows.length) {
+      return;
+    }
+
+    const selectedIds = new Set(selectedRows.map((row) => row.id));
+    for (const row of selectedRows) {
+      row.pendingDelete = true;
+    }
+    this.editingRowIds.update((ids) => {
+      const next = new Set(ids);
+      for (const rowId of selectedIds) {
+        next.delete(rowId);
+      }
+      return next;
+    });
+    this.refreshRows();
+    this.pruneSelectionToFilteredRows(table);
+    this.setBulkHeaderResult(
+      table,
+      `Marked ${selectedRows.length} row${selectedRows.length === 1 ? '' : 's'} for delete.`,
+    );
+  }
+
+  protected keepSelectedRows(table: BulkTableKey): void {
+    const selectedRows = this.selectedRows(table);
+    if (!selectedRows.length) {
+      return;
+    }
+
+    for (const row of selectedRows) {
+      row.pendingDelete = false;
+    }
+    this.refreshRows();
+    this.pruneSelectionToFilteredRows(table);
+    this.setBulkHeaderResult(
+      table,
+      `Kept ${selectedRows.length} row${selectedRows.length === 1 ? '' : 's'}.`,
+    );
+  }
+
+  protected bulkHeaderEditActive(table: BulkTableKey): boolean {
+    return this.selectedCount(table) > 1;
+  }
+
+  protected showBulkHeaderEditor(table: BulkTableKey, field: BulkHeaderEditableField): boolean {
+    if (!this.bulkHeaderEditActive(table)) {
+      return false;
+    }
+
+    const option = this.bulkHeaderFieldOption(table, field);
+    if (!option) {
+      return false;
+    }
+
+    const selectedRows = this.selectedRows(table);
+    if (!selectedRows.length) {
+      return false;
+    }
+
+    return !option.newRowsOnly || selectedRows.every((row) => this.canBulkUpdateRow(row, option));
+  }
+
+  protected bulkHeaderInputLabel(table: BulkTableKey, label: string): string {
+    const tableLabels: Record<BulkTableKey, string> = {
+      expenses: 'selected expenses',
+      templates: 'selected recurring expenses',
+      incomes: 'selected income rows',
+      categories: 'selected categories',
+      loans: 'selected loans',
+      investments: 'selected investments',
+    };
+
+    return `Set ${label.toLowerCase()} for ${tableLabels[table]}`;
+  }
+
+  protected bulkHeaderValue(table: BulkTableKey, field: BulkHeaderEditableField): string {
+    return this.bulkHeaderEditState()[table].values[field] ?? '';
+  }
+
+  protected isBulkHeaderFieldTouched(table: BulkTableKey, field: BulkHeaderEditableField): boolean {
+    return !!this.bulkHeaderEditState()[table].touched[field];
+  }
+
+  protected isBulkHeaderFieldInvalid(table: BulkTableKey, field: BulkHeaderEditableField): boolean {
+    return (
+      this.isBulkHeaderFieldTouched(table, field) && !this.isBulkHeaderValueValid(table, field)
+    );
+  }
+
+  protected setBulkHeaderValue(
+    table: BulkTableKey,
+    field: BulkHeaderEditableField,
+    value: string,
+  ): void {
+    this.bulkHeaderEditState.update((state) => ({
+      ...state,
+      [table]: {
+        result: '',
+        touched: {
+          ...state[table].touched,
+          [field]: true,
+        },
+        values: {
+          ...state[table].values,
+          [field]: value,
+        },
+      },
+    }));
+  }
+
+  protected setBulkHeaderValueFromEvent(
+    table: BulkTableKey,
+    field: BulkHeaderEditableField,
+    event: Event,
+  ): void {
+    if (!(event.target instanceof HTMLInputElement)) {
+      return;
+    }
+
+    this.setBulkHeaderValue(table, field, event.target.value);
+  }
+
+  protected setBulkHeaderDateValue(
+    table: BulkTableKey,
+    field: BulkHeaderEditableField,
+    value: unknown,
+  ): void {
+    this.setBulkHeaderValue(table, field, dateValue(value) ?? '');
+  }
+
+  protected bulkHeaderValueKind(
+    table: BulkTableKey,
+    field: BulkHeaderEditableField,
+  ): BulkHeaderValueKind | '' {
+    return this.bulkHeaderFieldOption(table, field)?.kind ?? '';
+  }
+
+  protected bulkHeaderValueOptions(
+    table: BulkTableKey,
+    field: BulkHeaderEditableField,
+  ): readonly SelectOption[] {
+    const option = this.bulkHeaderFieldOption(table, field);
+    if (!option) {
+      return [];
+    }
+
+    return this.valueOptionsForBulkField(table, option);
+  }
+
+  protected bulkHeaderResult(table: BulkTableKey): string {
+    return this.bulkHeaderEditState()[table].result;
+  }
+
+  protected canApplyBulkHeaderEdit(table: BulkTableKey): boolean {
+    return this.bulkHeaderEditActive(table) && this.validStagedBulkHeaderOptions(table).length > 0;
+  }
+
+  protected applyBulkHeaderEdit(table: BulkTableKey): void {
+    const stagedOptions = this.validStagedBulkHeaderOptions(table);
+    const selectedRows = this.selectedRows(table);
+    if (!stagedOptions.length || selectedRows.length < 2) {
+      return;
+    }
+
+    const updatedRowIds = new Set<string>();
+    let updatedCellCount = 0;
+
+    for (const row of selectedRows) {
+      for (const option of stagedOptions) {
+        if (!this.canBulkUpdateRow(row, option)) {
+          continue;
+        }
+
+        const value = this.normalizedBulkValue(table, option);
+        const previousValue = this.readBulkFieldValue(row, option.value);
+        if (
+          this.comparableValue(option.value, previousValue) ===
+          this.comparableValue(option.value, value)
+        ) {
+          continue;
+        }
+
+        this.assignBulkValue(row, option.value, value);
+        this.trackModifiedCellIfNeeded(table, row, option.value);
+        updatedRowIds.add(row.id);
+        updatedCellCount += 1;
+      }
+    }
+
+    this.refreshRows();
+    this.setBulkHeaderResultAndClearValues(
+      table,
+      `Updated ${updatedCellCount} field${updatedCellCount === 1 ? '' : 's'} across ${updatedRowIds.size} of ${selectedRows.length} selected row${selectedRows.length === 1 ? '' : 's'}.`,
+    );
+  }
+
+  protected isRowModified(table: BulkTableKey, row: BulkDisplayRow): boolean {
+    return BULK_HEADER_FIELDS[table].some((option) =>
+      this.isFieldModified(table, row, option.value),
+    );
+  }
+
+  protected isFieldModified(
+    table: BulkTableKey,
+    row: BulkDisplayRow,
+    field: BulkHeaderEditableField,
+  ): boolean {
+    const trackedFields = this.modifiedCells()[table][row.id];
+    if (trackedFields?.has(field)) {
+      return true;
+    }
+
+    const option = this.bulkHeaderFieldOption(table, field);
+    if (option?.newRowsOnly && !row.isNew) {
+      return false;
+    }
+
+    const originalValue = this.originalBulkFieldValue(table, row, field);
+    if (originalValue === undefined) {
+      return false;
+    }
+
+    return (
+      this.comparableValue(field, this.readBulkFieldValue(row, field)) !==
+      this.comparableValue(field, originalValue)
+    );
+  }
+
   protected tableQuery(table: BulkTableKey): string {
     return this.tableFilters()[table].query;
   }
@@ -776,6 +1245,7 @@ export class BulkEditorDialog {
         [key]: value,
       } as BulkTableFilterState,
     }));
+    this.pruneSelectionToFilteredRows(table);
   }
 
   protected clearTableFilters(table: BulkTableKey): void {
@@ -783,6 +1253,7 @@ export class BulkEditorDialog {
       ...filters,
       [table]: defaultFilterState(),
     }));
+    this.pruneSelectionToFilteredRows(table);
   }
 
   protected hasActiveFilters(table: BulkTableKey): boolean {
@@ -982,6 +1453,323 @@ export class BulkEditorDialog {
     this.expenses.update((rows) => [...rows]);
     this.investments.update((rows) => [...rows]);
     this.loans.update((rows) => [...rows]);
+  }
+
+  private setRowSelection(table: BulkTableKey, rowId: string, checked: boolean): void {
+    this.selectedRowIds.update((selections) => {
+      const nextSelection = new Set(selections[table]);
+      checked ? nextSelection.add(rowId) : nextSelection.delete(rowId);
+
+      return {
+        ...selections,
+        [table]: nextSelection,
+      };
+    });
+    this.clearBulkResult(table);
+  }
+
+  private selectedRows(table: BulkTableKey): BulkDisplayRow[] {
+    const selectedIds = this.selectedRowIds()[table];
+    return this.rowsForTable(table).filter((row) => selectedIds.has(row.id));
+  }
+
+  private bulkHeaderFieldOption(
+    table: BulkTableKey,
+    field: BulkHeaderEditableField,
+  ): BulkHeaderFieldOption | undefined {
+    return BULK_HEADER_FIELDS[table].find((option) => option.value === field);
+  }
+
+  private validStagedBulkHeaderOptions(table: BulkTableKey): BulkHeaderFieldOption[] {
+    return BULK_HEADER_FIELDS[table].filter(
+      (option) =>
+        this.isBulkHeaderFieldTouched(table, option.value) &&
+        this.showBulkHeaderEditor(table, option.value) &&
+        this.isBulkHeaderValueValid(table, option.value),
+    );
+  }
+
+  private isBulkHeaderValueValid(table: BulkTableKey, field: BulkHeaderEditableField): boolean {
+    const option = this.bulkHeaderFieldOption(table, field);
+    if (!option) {
+      return false;
+    }
+
+    const value = this.bulkHeaderValue(table, field);
+    if (option.kind === 'number') {
+      const amount = Number(value);
+      return Number.isFinite(amount) && amount >= 0;
+    }
+
+    if (option.kind === 'date') {
+      return !!dateValue(value);
+    }
+
+    if (option.kind === 'color') {
+      return /^#[\da-f]{6}$/i.test(value);
+    }
+
+    if (
+      option.kind === 'category' ||
+      option.kind === 'categoryType' ||
+      option.kind === 'paymentMode' ||
+      option.kind === 'select'
+    ) {
+      return !!value;
+    }
+
+    return !!value.trim();
+  }
+
+  private normalizedBulkValue(
+    table: BulkTableKey,
+    option: BulkHeaderFieldOption,
+  ): number | string | undefined {
+    const value = this.bulkHeaderValue(table, option.value);
+
+    if (option.kind === 'number') {
+      return toNumber(value);
+    }
+
+    if (option.kind === 'date') {
+      return dateValue(value);
+    }
+
+    if (option.kind === 'category') {
+      return value === UNCATEGORIZED_FILTER_VALUE ? '' : value;
+    }
+
+    if (option.kind === 'paymentMode') {
+      return value === NO_PAYMENT_MODE_FILTER_VALUE ? '' : value;
+    }
+
+    return value;
+  }
+
+  private valueOptionsForBulkField(
+    table: BulkTableKey,
+    option: BulkHeaderFieldOption,
+  ): readonly SelectOption[] {
+    if (option.kind === 'category') {
+      return [
+        { value: UNCATEGORIZED_FILTER_VALUE, label: 'Uncategorized' },
+        ...this.categoriesByType(option.categoryType ?? 'Expenses').map((category) => ({
+          value: category.id,
+          label: category.name,
+        })),
+      ];
+    }
+
+    if (option.kind === 'paymentMode') {
+      return [
+        { value: NO_PAYMENT_MODE_FILTER_VALUE, label: 'Not set' },
+        ...this.activePaymentModes.map((paymentMode) => ({
+          value: paymentMode.id,
+          label: this.paymentModeShortLabel(paymentMode),
+        })),
+      ];
+    }
+
+    if (option.kind === 'categoryType') {
+      return this.categoryTypes.map((categoryType) => ({
+        value: categoryType,
+        label: categoryType,
+      }));
+    }
+
+    if (option.value === 'cadence') {
+      return this.incomeCadences.map((cadence) => ({ value: cadence, label: cadence }));
+    }
+
+    if (option.value === 'frequency') {
+      const frequencies =
+        table === 'templates' ? this.recurringFrequencies : this.investmentFrequencies;
+      return frequencies.map((frequency) => ({ value: frequency, label: frequency }));
+    }
+
+    return [];
+  }
+
+  private canBulkUpdateRow(row: BulkDisplayRow, option: BulkHeaderFieldOption): boolean {
+    if (row.pendingDelete) {
+      return false;
+    }
+
+    return !option.newRowsOnly || !!row.isNew;
+  }
+
+  private assignBulkValue(
+    row: BulkDisplayRow,
+    field: BulkHeaderEditableField,
+    value: number | string | undefined,
+  ): void {
+    (row as unknown as Record<string, number | string | undefined>)[field] = value;
+  }
+
+  private setBulkHeaderResult(table: BulkTableKey, result: string): void {
+    this.bulkHeaderEditState.update((state) => ({
+      ...state,
+      [table]: {
+        ...state[table],
+        result,
+      },
+    }));
+  }
+
+  private setBulkHeaderResultAndClearValues(table: BulkTableKey, result: string): void {
+    this.bulkHeaderEditState.update((state) => ({
+      ...state,
+      [table]: {
+        result,
+        touched: {},
+        values: {},
+      },
+    }));
+  }
+
+  private clearBulkResult(table: BulkTableKey): void {
+    this.setBulkHeaderResult(table, '');
+  }
+
+  private readBulkFieldValue(row: BulkDisplayRow, field: BulkHeaderEditableField): unknown {
+    return (row as unknown as Record<string, unknown>)[field];
+  }
+
+  private originalBulkFieldValue(
+    table: BulkTableKey,
+    row: BulkDisplayRow,
+    field: BulkHeaderEditableField,
+  ): unknown {
+    switch (table) {
+      case 'expenses': {
+        const original = this.originalExpensesById.get(row.id);
+        if (!original) {
+          return undefined;
+        }
+
+        if (field === 'date') {
+          return original.date || monthStartDate(original.month || this.data.selectedMonth);
+        }
+
+        return (original as unknown as Record<string, unknown>)[field];
+      }
+      case 'templates':
+        return (this.originalTemplatesById.get(row.id) as unknown as Record<string, unknown>)?.[
+          field
+        ];
+      case 'incomes':
+        return (this.originalIncomesById.get(row.id) as unknown as Record<string, unknown>)?.[
+          field
+        ];
+      case 'categories':
+        return (this.originalCategoriesById.get(row.id) as unknown as Record<string, unknown>)?.[
+          field
+        ];
+      case 'loans':
+        return (this.originalLoansById.get(row.id) as unknown as Record<string, unknown>)?.[field];
+      case 'investments':
+        return (this.originalInvestmentsById.get(row.id) as unknown as Record<string, unknown>)?.[
+          field
+        ];
+    }
+  }
+
+  private comparableValue(
+    field: BulkHeaderEditableField,
+    value: unknown,
+  ): number | string | undefined {
+    if (
+      field === 'amount' ||
+      field === 'annualRate' ||
+      field === 'emi' ||
+      field === 'monthlyBudget' ||
+      field === 'outstanding' ||
+      field === 'principal'
+    ) {
+      return toNumber(value);
+    }
+
+    if (field === 'date' || field === 'endDate' || field === 'startDate') {
+      return optionalDate(dateValue(value)) || '';
+    }
+
+    if (field === 'month') {
+      return dateMonthKey(dateValue(value)) || stringValue(value);
+    }
+
+    return stringValue(value);
+  }
+
+  private trackModifiedCellIfNeeded(
+    table: BulkTableKey,
+    row: BulkDisplayRow,
+    field: BulkHeaderEditableField,
+  ): void {
+    if (this.originalBulkFieldValue(table, row, field) !== undefined) {
+      return;
+    }
+
+    this.modifiedCells.update((state) => {
+      const tableCells = state[table];
+      const rowCells = new Set(tableCells[row.id] ?? []);
+      rowCells.add(field);
+
+      return {
+        ...state,
+        [table]: {
+          ...tableCells,
+          [row.id]: rowCells,
+        },
+      };
+    });
+  }
+
+  private rowsForTable(table: BulkTableKey): BulkDisplayRow[] {
+    switch (table) {
+      case 'expenses':
+        return this.expenses();
+      case 'templates':
+        return this.templates();
+      case 'incomes':
+        return this.incomes();
+      case 'categories':
+        return this.categories();
+      case 'loans':
+        return this.loans();
+      case 'investments':
+        return this.investments();
+    }
+  }
+
+  private filteredRowsForTable(table: BulkTableKey): BulkDisplayRow[] {
+    switch (table) {
+      case 'expenses':
+        return this.filteredExpenses();
+      case 'templates':
+        return this.filteredTemplates();
+      case 'incomes':
+        return this.filteredIncomes();
+      case 'categories':
+        return this.filteredCategories();
+      case 'loans':
+        return this.filteredLoans();
+      case 'investments':
+        return this.filteredInvestments();
+    }
+  }
+
+  private pruneSelectionToFilteredRows(table: BulkTableKey): void {
+    const filteredRowIds = new Set(this.filteredRowsForTable(table).map((row) => row.id));
+    this.selectedRowIds.update((selections) => {
+      const nextSelection = new Set(
+        [...selections[table]].filter((rowId) => filteredRowIds.has(rowId)),
+      );
+
+      return {
+        ...selections,
+        [table]: nextSelection,
+      };
+    });
   }
 
   protected toggleTemplateAudit(templateId: string): void {
@@ -1529,7 +2317,7 @@ export class BulkEditorDialog {
     const filters = this.tableFilters()[table];
     const filteredRows = rows.filter(
       (row) =>
-        this.matchesStatus(row, filters.status) &&
+        this.matchesStatus(table, row, filters.status) &&
         this.matchesQuery(table, row, filters.query) &&
         this.matchesCategory(table, row, filters.categoryId) &&
         this.matchesCategoryType(table, row, filters.categoryType) &&
@@ -1542,7 +2330,11 @@ export class BulkEditorDialog {
     return this.sortedRows(table, filteredRows);
   }
 
-  private matchesStatus(row: BulkDisplayRow, status: RowStatusFilter): boolean {
+  private matchesStatus(
+    table: BulkTableKey,
+    row: BulkDisplayRow,
+    status: RowStatusFilter,
+  ): boolean {
     if (status === 'all') {
       return true;
     }
@@ -1557,6 +2349,10 @@ export class BulkEditorDialog {
 
     if (status === 'suggested') {
       return 'isSuggested' in row && !!row.isSuggested;
+    }
+
+    if (status === 'modified') {
+      return this.isRowModified(table, row);
     }
 
     return !!row.pendingDelete;

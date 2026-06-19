@@ -2311,6 +2311,13 @@ describe('BulkEditorDialog', () => {
     }).compileComponents();
   });
 
+  const checkboxChangeEvent = (checked: boolean): Event => {
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = checked;
+    return { target: input } as unknown as Event;
+  };
+
   it('should render expenses and recurring parents in the scoped monthly editor', async () => {
     const fixture = TestBed.createComponent(BulkEditorDialog);
     fixture.detectChanges();
@@ -2378,11 +2385,25 @@ describe('BulkEditorDialog', () => {
 
   it('should pass axe checks for the bulk editor dialog', async () => {
     const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      addExpense: () => void;
+      setBulkHeaderValue: (table: string, field: string, value: string) => void;
+      toggleFilteredRowsSelection: (table: string, event: Event) => void;
+    };
+
+    dialog.addExpense();
+    dialog.toggleFilteredRowsSelection('expenses', checkboxChangeEvent(true));
+    dialog.setBulkHeaderValue('expenses', 'note', 'axe note');
     fixture.detectChanges();
     await fixture.whenStable();
 
     expect(
       (fixture.nativeElement as HTMLElement).querySelector('input[placeholder="Search expenses"]'),
+    ).toBeTruthy();
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector(
+        'input[aria-label="Set note for selected expenses"]',
+      ),
     ).toBeTruthy();
 
     const results = await runAxe(fixture.nativeElement);
@@ -2603,11 +2624,18 @@ describe('BulkEditorDialog', () => {
       close: ReturnType<typeof vi.fn>;
     };
     const dialog = fixture.componentInstance as unknown as {
+      applyBulkHeaderEdit: (table: string) => void;
       apply: () => void;
+      setBulkHeaderValue: (table: string, field: string, value: string) => void;
       setTableFilter: (table: string, key: string, value: string) => void;
       toggleSort: (table: string, column: string) => void;
+      toggleFilteredRowsSelection: (table: string, event: Event) => void;
     };
 
+    dialog.toggleFilteredRowsSelection('expenses', checkboxChangeEvent(true));
+    dialog.setBulkHeaderValue('expenses', 'note', 'reviewed');
+    dialog.applyBulkHeaderEdit('expenses');
+    dialog.setTableFilter('expenses', 'status', 'modified');
     dialog.setTableFilter('expenses', 'query', 'rent');
     dialog.toggleSort('expenses', 'amount');
     dialog.apply();
@@ -2617,6 +2645,422 @@ describe('BulkEditorDialog', () => {
       'Fuel',
       'Rent',
     ]);
+    expect(result.expenses.map((expense: { note: string }) => expense.note)).toEqual([
+      'reviewed',
+      'reviewed',
+    ]);
+  });
+
+  it('should select filtered desktop rows and clear selection', () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        expenses: [
+          dialogData.expenses[0],
+          {
+            id: 'expense-fuel',
+            month: '2026-05',
+            date: '2026-05-04',
+            name: 'Fuel',
+            categoryId: 'category-home',
+            amount: 2500,
+            type: 'one-time',
+            note: '',
+          },
+        ],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      clearSelection: (table: string) => void;
+      isRowSelected: (table: string, rowId: string) => boolean;
+      selectedCount: (table: string) => number;
+      setTableFilter: (table: string, key: string, value: string) => void;
+      toggleFilteredRowsSelection: (table: string, event: Event) => void;
+    };
+
+    dialog.setTableFilter('expenses', 'query', 'fuel');
+    dialog.toggleFilteredRowsSelection('expenses', checkboxChangeEvent(true));
+
+    expect(dialog.selectedCount('expenses')).toBe(1);
+    expect(dialog.isRowSelected('expenses', 'expense-fuel')).toBe(true);
+    expect(dialog.isRowSelected('expenses', 'expense-rent')).toBe(false);
+
+    dialog.clearSelection('expenses');
+
+    expect(dialog.selectedCount('expenses')).toBe(0);
+  });
+
+  it('should mark selected rows for delete and keep them from the desktop bulk action', () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        expenses: [
+          dialogData.expenses[0],
+          {
+            id: 'expense-fuel',
+            month: '2026-05',
+            date: '2026-05-04',
+            name: 'Fuel',
+            categoryId: 'category-home',
+            amount: 2500,
+            type: 'one-time',
+            note: '',
+          },
+        ],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      expenses: () => Array<{ pendingDelete?: boolean }>;
+      keepSelectedRows: (table: string) => void;
+      markSelectedForDelete: (table: string) => void;
+      toggleFilteredRowsSelection: (table: string, event: Event) => void;
+    };
+
+    dialog.toggleFilteredRowsSelection('expenses', checkboxChangeEvent(true));
+    dialog.markSelectedForDelete('expenses');
+
+    expect(dialog.expenses().every((expense) => expense.pendingDelete)).toBe(true);
+
+    dialog.keepSelectedRows('expenses');
+
+    expect(dialog.expenses().some((expense) => expense.pendingDelete)).toBe(false);
+  });
+
+  it('should show header bulk editors only after multiple desktop rows are selected', async () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        expenses: [
+          dialogData.expenses[0],
+          {
+            id: 'expense-fuel',
+            month: '2026-05',
+            date: '2026-05-04',
+            name: 'Fuel',
+            categoryId: 'category-home',
+            amount: 2500,
+            type: 'one-time',
+            note: '',
+          },
+        ],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      bulkHeaderEditActive: (table: string) => boolean;
+      showBulkHeaderEditor: (table: string, field: string) => boolean;
+      toggleRowSelection: (table: string, rowId: string, event: Event) => void;
+    };
+
+    dialog.toggleRowSelection('expenses', 'expense-rent', checkboxChangeEvent(true));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(dialog.bulkHeaderEditActive('expenses')).toBe(false);
+    expect(dialog.showBulkHeaderEditor('expenses', 'paymentModeId')).toBe(false);
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector(
+        'th.bulk-header-edit-col mat-select[aria-label="Set paid via for selected expenses"]',
+      ),
+    ).toBeNull();
+
+    dialog.toggleRowSelection('expenses', 'expense-fuel', checkboxChangeEvent(true));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(dialog.bulkHeaderEditActive('expenses')).toBe(true);
+    expect(dialog.showBulkHeaderEditor('expenses', 'paymentModeId')).toBe(true);
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('th.bulk-header-edit-col'),
+    ).toBeTruthy();
+  });
+
+  it('should apply staged expense header edits and mark changed rows', () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        expenses: [
+          { ...dialogData.expenses[0], paymentModeId: 'pm-card' },
+          {
+            id: 'expense-fuel',
+            month: '2026-05',
+            date: '2026-05-04',
+            name: 'Fuel',
+            categoryId: 'category-home',
+            amount: 2500,
+            type: 'one-time',
+            note: '',
+          },
+        ],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      applyBulkHeaderEdit: (table: string) => void;
+      bulkHeaderResult: (table: string) => string;
+      expenses: () => Array<{ note?: string; paymentModeId?: string }>;
+      isFieldModified: (table: string, row: unknown, field: string) => boolean;
+      isRowModified: (table: string, row: unknown) => boolean;
+      setBulkHeaderValue: (table: string, field: string, value: string) => void;
+      toggleFilteredRowsSelection: (table: string, event: Event) => void;
+    };
+
+    dialog.toggleFilteredRowsSelection('expenses', checkboxChangeEvent(true));
+    dialog.setBulkHeaderValue('expenses', 'paymentModeId', 'pm-gpay');
+    dialog.setBulkHeaderValue('expenses', 'note', 'future record');
+    dialog.applyBulkHeaderEdit('expenses');
+
+    expect(dialog.expenses().map((expense) => expense.paymentModeId)).toEqual([
+      'pm-gpay',
+      'pm-gpay',
+    ]);
+    expect(dialog.expenses().map((expense) => expense.note)).toEqual([
+      'future record',
+      'future record',
+    ]);
+    expect(dialog.expenses().every((expense) => dialog.isRowModified('expenses', expense))).toBe(
+      true,
+    );
+    expect(
+      dialog
+        .expenses()
+        .every((expense) => dialog.isFieldModified('expenses', expense, 'paymentModeId')),
+    ).toBe(true);
+    expect(dialog.bulkHeaderResult('expenses')).toContain('Updated 4 fields across 2 of 2');
+  });
+
+  it('should protect existing immutable investment fields and allow all-new selections', () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        scope: 'planning',
+        initialTabIndex: 2,
+        investments: [
+          {
+            id: 'investment-index',
+            name: 'Index SIP',
+            amount: 15000,
+            frequency: 'monthly',
+            date: '2026-05-01',
+            startDate: '2026-05-01',
+            notes: '',
+          },
+        ],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      addInvestment: () => void;
+      applyBulkHeaderEdit: (table: string) => void;
+      investments: () => Array<{ id: string; isNew?: boolean; name: string }>;
+      showBulkHeaderEditor: (table: string, field: string) => boolean;
+      setBulkHeaderValue: (table: string, field: string, value: string) => void;
+      toggleFilteredRowsSelection: (table: string, event: Event) => void;
+      toggleRowSelection: (table: string, rowId: string, event: Event) => void;
+      clearSelection: (table: string) => void;
+    };
+
+    dialog.addInvestment();
+    dialog.addInvestment();
+    dialog.toggleFilteredRowsSelection('investments', checkboxChangeEvent(true));
+
+    expect(dialog.showBulkHeaderEditor('investments', 'name')).toBe(false);
+
+    dialog.clearSelection('investments');
+    for (const investment of dialog.investments().filter((investment) => investment.isNew)) {
+      dialog.toggleRowSelection('investments', investment.id, checkboxChangeEvent(true));
+    }
+
+    expect(dialog.showBulkHeaderEditor('investments', 'name')).toBe(true);
+
+    dialog.setBulkHeaderValue('investments', 'name', 'Future SIP');
+    dialog.applyBulkHeaderEdit('investments');
+
+    expect(
+      dialog.investments().find((investment) => investment.id === 'investment-index')?.name,
+    ).toBe('Index SIP');
+    expect(
+      dialog
+        .investments()
+        .filter((investment) => investment.isNew)
+        .map((investment) => investment.name),
+    ).toEqual(['Future SIP', 'Future SIP']);
+  });
+
+  it('should apply staged investment header edits to selected rows', () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        scope: 'planning',
+        initialTabIndex: 2,
+        categories: [
+          {
+            id: 'category-equity',
+            name: 'Equity',
+            monthlyBudget: 0,
+            color: '#2563eb',
+            type: 'Investments',
+          },
+          {
+            id: 'category-gold',
+            name: 'Gold',
+            monthlyBudget: 0,
+            color: '#a16207',
+            type: 'Investments',
+          },
+        ],
+        investments: [
+          {
+            id: 'investment-index',
+            name: 'Index SIP',
+            amount: 15000,
+            categoryId: 'category-equity',
+            frequency: 'monthly',
+            date: '2026-05-01',
+            notes: '',
+          },
+          {
+            id: 'investment-gold',
+            name: 'Gold Fund',
+            amount: 5000,
+            categoryId: 'category-gold',
+            frequency: 'one-time',
+            date: '2026-05-05',
+            notes: '',
+          },
+          {
+            id: 'investment-debt',
+            name: 'Debt Fund',
+            amount: 7000,
+            categoryId: 'category-equity',
+            frequency: 'annual',
+            date: '2026-05-02',
+            notes: '',
+          },
+        ],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      applyBulkHeaderEdit: (table: string) => void;
+      investments: () => Array<{
+        categoryId?: string;
+        date?: string;
+        frequency?: string;
+        id: string;
+        name: string;
+      }>;
+      isRowModified: (table: string, row: unknown) => boolean;
+      setBulkHeaderValue: (table: string, field: string, value: string) => void;
+      toggleRowSelection: (table: string, rowId: string, event: Event) => void;
+    };
+
+    dialog.toggleRowSelection('investments', 'investment-index', checkboxChangeEvent(true));
+    dialog.toggleRowSelection('investments', 'investment-gold', checkboxChangeEvent(true));
+    dialog.setBulkHeaderValue('investments', 'categoryId', 'category-gold');
+    dialog.setBulkHeaderValue('investments', 'frequency', 'monthly');
+    dialog.setBulkHeaderValue('investments', 'date', '2026-06-01');
+    dialog.applyBulkHeaderEdit('investments');
+
+    expect(
+      dialog
+        .investments()
+        .filter((investment) => investment.id !== 'investment-debt')
+        .map((investment) => ({
+          categoryId: investment.categoryId,
+          date: investment.date,
+          frequency: investment.frequency,
+        })),
+    ).toEqual([
+      { categoryId: 'category-gold', date: '2026-06-01', frequency: 'monthly' },
+      { categoryId: 'category-gold', date: '2026-06-01', frequency: 'monthly' },
+    ]);
+    expect(
+      dialog.isRowModified(
+        'investments',
+        dialog.investments().find((investment) => investment.id === 'investment-index'),
+      ),
+    ).toBe(true);
+    expect(
+      dialog.investments().find((investment) => investment.id === 'investment-debt')?.date,
+    ).toBe('2026-05-02');
+  });
+
+  it('should filter modified rows without including new or delete-only rows', () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        expenses: [
+          dialogData.expenses[0],
+          {
+            id: 'expense-fuel',
+            month: '2026-05',
+            date: '2026-05-04',
+            name: 'Fuel',
+            categoryId: 'category-home',
+            amount: 2500,
+            type: 'one-time',
+            note: '',
+          },
+          {
+            id: 'expense-coffee',
+            month: '2026-05',
+            date: '2026-05-06',
+            name: 'Coffee',
+            categoryId: 'category-home',
+            amount: 300,
+            type: 'one-time',
+            note: '',
+          },
+        ],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      addExpense: () => void;
+      applyBulkHeaderEdit: (table: string) => void;
+      expenses: () => Array<{ id: string; name: string; pendingDelete?: boolean }>;
+      filteredExpenses: () => Array<{ id: string; name: string }>;
+      markSelectedForDelete: (table: string) => void;
+      setBulkHeaderValue: (table: string, field: string, value: string) => void;
+      setTableFilter: (table: string, key: string, value: string) => void;
+      toggleRowSelection: (table: string, rowId: string, event: Event) => void;
+    };
+
+    dialog.addExpense();
+    dialog.toggleRowSelection('expenses', 'expense-coffee', checkboxChangeEvent(true));
+    dialog.markSelectedForDelete('expenses');
+    dialog.setTableFilter('expenses', 'status', 'modified');
+
+    expect(dialog.filteredExpenses()).toEqual([]);
+
+    dialog.setTableFilter('expenses', 'status', 'all');
+    dialog.toggleRowSelection('expenses', 'expense-rent', checkboxChangeEvent(true));
+    dialog.toggleRowSelection('expenses', 'expense-fuel', checkboxChangeEvent(true));
+    dialog.setBulkHeaderValue('expenses', 'note', 'reviewed');
+    dialog.applyBulkHeaderEdit('expenses');
+    dialog.setTableFilter('expenses', 'status', 'modified');
+
+    expect(
+      dialog
+        .filteredExpenses()
+        .map((expense) => expense.name)
+        .sort(),
+    ).toEqual(['Fuel', 'Rent']);
+  });
+
+  it('should keep bulk selection controls out of mobile card markup', async () => {
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    expect(compiled.querySelector('.desktop-table-region .row-select-input')).toBeTruthy();
+    expect(compiled.querySelector('.mobile-card-list .row-select-input')).toBeNull();
+    expect(compiled.querySelector('.mobile-card-list .bulk-header-editor')).toBeNull();
   });
 
   it('should suggest previous one-time expenses that are not already in the selected month', () => {
