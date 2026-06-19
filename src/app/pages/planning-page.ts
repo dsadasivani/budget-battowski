@@ -116,10 +116,22 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                   </span>
                   <div>
                     <strong>{{ plan.name }}</strong>
-                    <small>{{ plan.memberName }} &middot; {{ store.investmentFrequencyLabel(plan) }}</small>
+                    <small>{{ store.investmentFrequencyLabel(plan) }}</small>
                   </div>
                   <b>{{ plan.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</b>
-                  <span class="badge success">ON</span>
+                  <span class="plan-row-actions">
+                    <span class="badge success">ON</span>
+                    <button
+                      mat-icon-button
+                      type="button"
+                      [attr.aria-label]="'Edit recurring plan ' + plan.name"
+                      matTooltip="Edit recurring plan"
+                      (click)="store.openBulkEditor('monthly', 1, plan.id)"
+                      [disabled]="!store.canWrite()"
+                    >
+                      <mat-icon aria-hidden="true">edit</mat-icon>
+                    </button>
+                  </span>
                 </article>
               } @empty {
                 <div class="empty-state">No recurring plans active for this month</div>
@@ -138,15 +150,23 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
             <div class="mobile-plan-list">
               @for (expense of store.oneTimePlannedRows(); track expense.id) {
                 <article class="mobile-plan-card">
-                  <span class="avatar mini">{{ store.memberInitial(expense.memberEmail) }}</span>
                   <div>
                     <small>{{ store.shortDateLabel(store.recordDate(expense)) }}</small>
                     <strong>{{ expense.name }}</strong>
-                    <small>{{ expense.memberName }}</small>
                   </div>
                   <span class="badge neutral">{{ expense.categoryName }}</span>
                   <b>{{ expense.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</b>
                   <span class="badge success">{{ expense.status }}</span>
+                  <button
+                    mat-icon-button
+                    type="button"
+                    [attr.aria-label]="'Edit planned expense ' + expense.name"
+                    matTooltip="Edit planned expense"
+                    (click)="store.openBulkEditor('monthly', 0, expense.id)"
+                    [disabled]="!store.canWrite()"
+                  >
+                    <mat-icon aria-hidden="true">edit</mat-icon>
+                  </button>
                 </article>
               } @empty {
                 <div class="empty-state">No one-time planned expenses</div>
@@ -160,9 +180,9 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                     <th>Date</th>
                     <th>Description</th>
                     <th>Category</th>
-                    <th>Member</th>
                     <th>Amount</th>
                     <th>Status</th>
+                    <th><span class="sr-only">Actions</span></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -171,9 +191,20 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                       <td>{{ store.shortDateLabel(store.recordDate(expense)) }}</td>
                       <td><strong>{{ expense.name }}</strong></td>
                       <td><span class="badge neutral">{{ expense.categoryName }}</span></td>
-                      <td>{{ expense.memberName }}</td>
                       <td><b>{{ expense.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</b></td>
                       <td><span class="badge success">{{ expense.status }}</span></td>
+                      <td>
+                        <button
+                          mat-icon-button
+                          type="button"
+                          [attr.aria-label]="'Edit planned expense ' + expense.name"
+                          matTooltip="Edit planned expense"
+                          (click)="store.openBulkEditor('monthly', 0, expense.id)"
+                          [disabled]="!store.canWrite()"
+                        >
+                          <mat-icon aria-hidden="true">edit</mat-icon>
+                        </button>
+                      </td>
                     </tr>
                   } @empty {
                     <tr>
@@ -235,6 +266,22 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
     </section>
     }
   `,
+  styles: [
+    `
+      .plan-row-actions {
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 6px;
+        min-width: 0;
+      }
+
+      .mobile-plan-card button,
+      .plan-row-actions button {
+        flex: 0 0 auto;
+      }
+    `,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PlanningPage {

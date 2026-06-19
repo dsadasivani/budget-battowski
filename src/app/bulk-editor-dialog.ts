@@ -28,6 +28,7 @@ import type {
   InvestmentFrequency,
   Loan,
   LoanAuditVersion,
+  PaymentAccount,
   PaymentMode,
   WorkspaceMember,
 } from './budget.models';
@@ -75,9 +76,12 @@ export type BulkEditorScope = 'monthly' | 'planning' | 'loans';
 export interface BulkEditorData {
   scope: BulkEditorScope;
   initialTabIndex?: number;
+  initialEditingRowId?: string;
   selectedMonth: string;
   members?: WorkspaceMember[];
   selectedMemberEmail?: string;
+  actingMemberEmail?: string;
+  paymentAccounts?: PaymentAccount[];
   paymentModes?: PaymentMode[];
   categories: BudgetCategory[];
   incomes: IncomeSource[];
@@ -272,6 +276,7 @@ export class BulkEditorDialog {
   protected readonly recurringFrequencies: InvestmentFrequency[] = this.investmentFrequencies;
   protected readonly categoryTypes: CategoryType[] = ['Income', 'Investments', 'Expenses'];
   protected readonly members = this.data.members ?? [];
+  protected readonly paymentAccounts = this.data.paymentAccounts ?? [];
   protected readonly paymentModes = this.data.paymentModes ?? [];
   protected readonly activePaymentModes = this.paymentModes.filter(
     (paymentMode) => !paymentMode.archivedDate,
@@ -735,15 +740,16 @@ export class BulkEditorDialog {
       return 'Not set';
     }
 
-    return (
-      this.paymentModes.find((paymentMode) => paymentMode.id === paymentModeId)?.name ??
-      'Saved payment mode'
-    );
+    const paymentMode = this.paymentModes.find((mode) => mode.id === paymentModeId);
+    return paymentMode ? this.paymentModeDisplayLabel(paymentMode) : 'Saved payment mode';
   }
 
   protected paymentModeIconSrc(paymentMode: PaymentMode): string {
     if (paymentMode.type === 'internet-banking') {
-      return PAYMENT_BANK_ICON_BY_NAME.get(paymentMode.bankName ?? 'Default') ?? DEFAULT_BANK_ICON;
+      const account = this.paymentAccountForMode(paymentMode);
+      return account
+        ? this.paymentAccountIconSrc(account)
+        : PAYMENT_BANK_ICON_BY_NAME.get(paymentMode.bankName ?? 'Default') ?? DEFAULT_BANK_ICON;
     }
 
     if (paymentMode.type === 'cash') {
@@ -778,8 +784,54 @@ export class BulkEditorDialog {
 
     return {
       iconSrc: this.paymentModeIconSrc(paymentMode),
-      label: paymentMode.name,
+      label: this.paymentModeShortLabel(paymentMode),
     };
+  }
+
+  protected paymentModeDisplayLabel(paymentMode: PaymentMode): string {
+    if (paymentMode.type === 'cash') {
+      return 'Cash';
+    }
+
+    const account = this.paymentAccountForMode(paymentMode);
+    const ownerTag = this.memberTag(paymentMode.memberEmail ?? account?.memberEmail);
+
+    if (paymentMode.type === 'upi' || paymentMode.type === 'wallet') {
+      return `${this.paymentProviderLabel(paymentMode.provider) ?? paymentMode.type} ${ownerTag}`;
+    }
+
+    if (paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card') {
+      return `${ownerTag} ${this.lastFourLabel(paymentMode.lastFour)}`;
+    }
+
+    if (paymentMode.type === 'internet-banking') {
+      return `${ownerTag} ${this.lastFourLabel(account?.lastFour)}`;
+    }
+
+    return ownerTag;
+  }
+
+  protected paymentModeShortLabel(paymentMode: PaymentMode): string {
+    if (paymentMode.type === 'cash') {
+      return 'Cash';
+    }
+
+    const account = this.paymentAccountForMode(paymentMode);
+    const ownerTag = this.memberTag(paymentMode.memberEmail ?? account?.memberEmail);
+
+    if (paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card') {
+      return `${ownerTag} ${this.lastFourLabel(paymentMode.lastFour)}`;
+    }
+
+    if (paymentMode.type === 'internet-banking') {
+      return `${ownerTag} ${this.lastFourLabel(account?.lastFour)}`;
+    }
+
+    return ownerTag;
+  }
+
+  protected paymentAccountIconSrc(account: Pick<PaymentAccount, 'bankName'>): string {
+    return PAYMENT_BANK_ICON_BY_NAME.get(account.bankName) ?? DEFAULT_BANK_ICON;
   }
 
   protected memberDisplayName(member: WorkspaceMember): string {
@@ -878,11 +930,11 @@ export class BulkEditorDialog {
   }
 
   protected defaultMemberEmail(): string | undefined {
-    return this.isMemberLocked() ? this.data.selectedMemberEmail : undefined;
+    return this.data.actingMemberEmail ?? this.lockedMemberEmail();
   }
 
   protected userFieldDisabled(row: { pendingDelete?: boolean }): boolean {
-    return !!row.pendingDelete || this.isMemberLocked();
+    return !!row.pendingDelete || !!this.defaultMemberEmail();
   }
 
   protected auditMonthLabel(date: string | undefined, fallback: string): string {
@@ -1101,18 +1153,25 @@ export class BulkEditorDialog {
   }
 
   private initialEditingRowIds(): Set<string> {
-    return new Set(
-      [
-        ...this.expenses(),
-        ...this.templates(),
-        ...this.incomes(),
-        ...this.categories(),
-        ...this.loans(),
-        ...this.investments(),
-      ]
-        .filter((row) => row.isNew || ('isSuggested' in row && row.isSuggested))
-        .map((row) => row.id),
-    );
+    const editingRowIds = new Set<string>();
+    if (this.data.initialEditingRowId) {
+      editingRowIds.add(this.data.initialEditingRowId);
+    }
+
+    for (const row of [
+      ...this.expenses(),
+      ...this.templates(),
+      ...this.incomes(),
+      ...this.categories(),
+      ...this.loans(),
+      ...this.investments(),
+    ]) {
+      if (row.isNew || ('isSuggested' in row && row.isSuggested)) {
+        editingRowIds.add(row.id);
+      }
+    }
+
+    return editingRowIds;
   }
 
   private visibleRows(): Array<DraftRow<{ id: string }>> {
@@ -1215,32 +1274,64 @@ export class BulkEditorDialog {
   }
 
   private memberValidationError(): string {
-    if (this.isMemberLocked() || !this.members.length) {
-      return '';
-    }
-
-    const newFinancialRows = [
-      ...this.expenses().filter(
-        (row) =>
-          !row.pendingDelete && (row.isNew || row.isSuggested) && this.isSuggestedExpenseReady(row),
-      ),
-      ...this.templates().filter((row) => !row.pendingDelete && row.isNew),
-      ...this.incomes().filter((row) => !row.pendingDelete && row.isNew),
-      ...this.investments().filter((row) => !row.pendingDelete && row.isNew),
-      ...this.loans().filter((row) => !row.pendingDelete && row.isNew),
-    ];
-
-    return newFinancialRows.some((row) => !row.memberEmail)
-      ? 'Choose a user for every new financial row when viewing all members.'
-      : '';
+    return '';
   }
 
   private recordMemberEmail(record: { memberEmail?: string }): string | undefined {
-    return this.isMemberLocked() ? this.data.selectedMemberEmail! : record.memberEmail || undefined;
+    return this.defaultMemberEmail() ?? record.memberEmail ?? undefined;
   }
 
   private isMemberLocked(): boolean {
-    return !!this.data.selectedMemberEmail && this.data.selectedMemberEmail !== 'ALL';
+    return !!this.defaultMemberEmail();
+  }
+
+  private lockedMemberEmail(): string | undefined {
+    return this.data.selectedMemberEmail && this.data.selectedMemberEmail !== 'ALL'
+      ? this.data.selectedMemberEmail
+      : undefined;
+  }
+
+  private paymentAccountForMode(paymentMode: PaymentMode): PaymentAccount | undefined {
+    if (!paymentMode.paymentAccountId) {
+      return undefined;
+    }
+
+    return this.paymentAccounts.find((account) => account.id === paymentMode.paymentAccountId);
+  }
+
+  private memberTag(memberEmail: string | undefined): string {
+    if (!memberEmail) {
+      return 'Legacy';
+    }
+
+    return this.shortMemberName(this.memberName(memberEmail));
+  }
+
+  private shortMemberName(name: string): string {
+    const [firstName, secondName] = name.split(/\s+/).filter(Boolean);
+    if (!firstName) {
+      return 'Unassigned';
+    }
+
+    return secondName ? `${firstName} ${secondName[0].toUpperCase()}` : firstName;
+  }
+
+  private lastFourLabel(lastFour: string | undefined): string {
+    return lastFour?.replace(/\D/g, '').slice(-4) || '----';
+  }
+
+  private paymentProviderLabel(
+    provider: PaymentMode['provider'] | string | undefined,
+  ): string | undefined {
+    if (provider === 'GPay') {
+      return 'Google Pay';
+    }
+
+    if (provider === 'SamsungPay') {
+      return 'Samsung Pay';
+    }
+
+    return provider;
   }
 
   private isRecurringDraftChanged(template: DraftTemplate, original: ExpenseTemplate): boolean {

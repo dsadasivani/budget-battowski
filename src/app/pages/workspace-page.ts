@@ -68,7 +68,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
             <p>Select which budget space is active.</p>
           </header>
           <div class="soft-list">
-            @for (workspace of store.workspaces(); track workspace.id) {
+            @for (workspace of store.activeWorkspaces(); track workspace.id) {
               <button
                 class="workspace-row"
                 type="button"
@@ -134,10 +134,46 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
         </article>
       </section>
 
+      <article class="panel-card archived-workspaces-card">
+        <header class="panel-heading">
+          <h2>Archived Workspaces</h2>
+          <p>Archived workspaces are hidden from switchers but remain available for cleanup.</p>
+        </header>
+        <div class="soft-list compact-archive-list">
+          @for (workspace of store.archivedWorkspaces(); track workspace.id) {
+            <article class="archived-payment-row archived-workspace-row">
+              <span class="icon-chip archived-payment-icon" aria-hidden="true">
+                <mat-icon>inventory_2</mat-icon>
+              </span>
+              <div>
+                <strong>{{ workspace.name }}</strong>
+                <small>
+                  {{ workspace.members.length }} member{{ workspace.members.length === 1 ? '' : 's' }}
+                  &middot; archived {{ store.shortDateLabel(workspace.archivedDate || '') }}
+                </small>
+              </div>
+              <div class="archive-row-actions">
+                <button
+                  mat-stroked-button
+                  type="button"
+                  (click)="store.deleteArchivedWorkspace(workspace.id)"
+                  [disabled]="!store.canManageWorkspaceRecord(workspace) || store.isSyncing()"
+                >
+                  <mat-icon aria-hidden="true">delete_forever</mat-icon>
+                  Delete
+                </button>
+              </div>
+            </article>
+          } @empty {
+            <div class="empty-state">No archived workspaces</div>
+          }
+        </div>
+      </article>
+
       <article class="panel-card archived-payments-card">
         <header class="panel-heading">
           <h2>Archived Payments</h2>
-          <p>Restore archived payment modes and payment accounts when you need them again.</p>
+          <p>Restore archived payment modes and accounts, or delete the ones you no longer need.</p>
         </header>
 
         <section class="archived-payment-columns">
@@ -150,18 +186,29 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                     <img [ngSrc]="store.paymentModeIconSrc(paymentMode)" width="28" height="28" alt="" />
                   </span>
                   <div>
-                    <strong>{{ paymentMode.name }}</strong>
+                    <strong>{{ store.paymentModeDisplayLabel(paymentMode) }}</strong>
                     <small>{{ store.paymentModeTypeLabel(paymentMode.type) }}</small>
                   </div>
-                  <button
-                    mat-stroked-button
-                    type="button"
-                    (click)="store.restorePaymentMode(paymentMode.id)"
-                    [disabled]="!store.canWrite()"
-                  >
-                    <mat-icon aria-hidden="true">restore</mat-icon>
-                    Restore
-                  </button>
+                  <div class="archive-row-actions">
+                    <button
+                      mat-stroked-button
+                      type="button"
+                      (click)="store.restorePaymentMode(paymentMode.id)"
+                      [disabled]="!store.canWrite() || store.isSyncing()"
+                    >
+                      <mat-icon aria-hidden="true">restore</mat-icon>
+                      Restore
+                    </button>
+                    <button
+                      mat-stroked-button
+                      type="button"
+                      (click)="store.deleteArchivedPaymentMode(paymentMode.id)"
+                      [disabled]="!store.canWrite() || store.isSyncing()"
+                    >
+                      <mat-icon aria-hidden="true">delete_forever</mat-icon>
+                      Delete
+                    </button>
+                  </div>
                 </article>
               } @empty {
                 <div class="empty-state">No archived payment modes</div>
@@ -178,18 +225,29 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                     <img [ngSrc]="store.paymentAccountIconSrc(account)" width="28" height="28" alt="" />
                   </span>
                   <div>
-                    <strong>{{ account.name }}</strong>
-                    <small>{{ account.bankName }} &middot; {{ store.paymentAccountDetail(account) }}</small>
+                    <strong>{{ store.paymentAccountLabel(account) }}</strong>
+                    <small>{{ store.paymentAccountDetail(account) }}</small>
                   </div>
-                  <button
-                    mat-stroked-button
-                    type="button"
-                    (click)="store.restorePaymentAccount(account.id)"
-                    [disabled]="!store.canWrite()"
-                  >
-                    <mat-icon aria-hidden="true">restore</mat-icon>
-                    Restore
-                  </button>
+                  <div class="archive-row-actions">
+                    <button
+                      mat-stroked-button
+                      type="button"
+                      (click)="store.restorePaymentAccount(account.id)"
+                      [disabled]="!store.canWrite() || store.isSyncing()"
+                    >
+                      <mat-icon aria-hidden="true">restore</mat-icon>
+                      Restore
+                    </button>
+                    <button
+                      mat-stroked-button
+                      type="button"
+                      (click)="store.deleteArchivedPaymentAccount(account.id)"
+                      [disabled]="!store.canWrite() || store.isSyncing()"
+                    >
+                      <mat-icon aria-hidden="true">delete_forever</mat-icon>
+                      Delete
+                    </button>
+                  </div>
                 </article>
               } @empty {
                 <div class="empty-state">No archived payment accounts</div>
@@ -231,6 +289,10 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
       .archived-payments-card {
         display: grid;
         gap: 18px;
+      }
+
+      .archived-workspaces-card {
+        margin-top: 18px;
       }
 
       .archived-payment-columns {
@@ -289,6 +351,19 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
         object-fit: contain;
       }
 
+      .archived-payment-icon mat-icon {
+        font-size: 24px;
+        width: 24px;
+        height: 24px;
+      }
+
+      .archive-row-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
       @media (max-width: 780px) {
         .archived-payment-columns {
           grid-template-columns: 1fr;
@@ -298,9 +373,13 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
           grid-template-columns: 40px minmax(0, 1fr);
         }
 
-        .archived-payment-row button {
+        .archive-row-actions {
           grid-column: 1 / -1;
-          justify-self: stretch;
+          justify-content: stretch;
+        }
+
+        .archive-row-actions button {
+          flex: 1 1 130px;
         }
       }
     `,

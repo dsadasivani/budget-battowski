@@ -87,7 +87,7 @@ type TourCapableStore = BudgetStore & {
         </button>
 
         <mat-menu #mobileWorkspaceMenu="matMenu" class="workspace-menu">
-          @for (workspace of store.workspaces(); track workspace.id) {
+          @for (workspace of store.activeWorkspaces(); track workspace.id) {
             <button mat-menu-item type="button" (click)="store.selectWorkspace(workspace.id)">
               <mat-icon aria-hidden="true">home_work</mat-icon>
               <span>{{ workspace.name }}</span>
@@ -170,8 +170,7 @@ type TourCapableStore = BudgetStore & {
               </header>
               <div class="soft-list">
                 @for (expense of store.recurringEntries().slice(0, 4); track expense.id) {
-                  <article class="list-row">
-                    <span class="avatar mini">{{ store.memberInitial(expense.memberEmail) }}</span>
+                  <article class="list-row no-leading-icon">
                     <div>
                       <strong>{{ expense.name }}</strong>
                       <small>{{ store.categoryName(expense.categoryId) }}</small>
@@ -193,8 +192,7 @@ type TourCapableStore = BudgetStore & {
               </header>
               <div class="soft-list">
                 @for (expense of store.oneTimeEntries().slice(0, 4); track expense.id) {
-                  <article class="list-row">
-                    <span class="avatar mini">{{ store.memberInitial(expense.memberEmail) }}</span>
+                  <article class="list-row no-leading-icon">
                     <div>
                       <strong>{{ expense.name }}</strong>
                       <small
@@ -227,10 +225,7 @@ type TourCapableStore = BudgetStore & {
                     >
                     <div>
                       <strong>{{ investment.name }}</strong>
-                      <small
-                        >{{ store.investmentFrequencyLabel(investment) }} &middot;
-                        {{ investment.memberName }}</small
-                      >
+                      <small>{{ store.investmentFrequencyLabel(investment) }}</small>
                     </div>
                     <b class="teal-text">{{
                       investment.monthlyAmount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'

@@ -110,9 +110,9 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
               <button
                 mat-icon-button
                 type="button"
-                aria-label="Edit categories"
-                matTooltip="Edit categories"
-                (click)="store.openBulkEditor('planning', 1)"
+                [attr.aria-label]="'Edit category ' + category.name"
+                matTooltip="Edit category"
+                (click)="store.openBulkEditor('planning', 1, category.id)"
                 [disabled]="!store.canWrite()"
               >
                 <mat-icon aria-hidden="true">edit</mat-icon>

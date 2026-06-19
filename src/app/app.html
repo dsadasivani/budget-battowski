@@ -247,7 +247,7 @@
       </button>
 
       <mat-menu #workspaceMenu="matMenu" class="workspace-menu">
-        @for (workspace of workspaces(); track workspace.id) {
+        @for (workspace of activeWorkspaces(); track workspace.id) {
           <button mat-menu-item type="button" (click)="selectWorkspace(workspace.id)">
             <mat-icon aria-hidden="true">home_work</mat-icon>
             <span>{{ workspace.name }}</span>

@@ -460,6 +460,16 @@ export class BudgetStore implements OnDestroy {
   readonly syncError = signal<string | null>(null);
   readonly workspaceId = signal<string | null>(null);
   readonly workspaces = signal<Workspace[]>([]);
+  readonly activeWorkspaces = computed(() =>
+    this.workspaces()
+      .filter((workspace) => !workspace.archivedDate)
+      .sort((left, right) => left.name.localeCompare(right.name)),
+  );
+  readonly archivedWorkspaces = computed(() =>
+    this.workspaces()
+      .filter((workspace) => !!workspace.archivedDate)
+      .sort((left, right) => left.name.localeCompare(right.name)),
+  );
   readonly activeWorkspace = computed(
     () => this.workspaces().find((workspace) => workspace.id === this.workspaceId()) ?? null,
   );
@@ -552,7 +562,9 @@ export class BudgetStore implements OnDestroy {
       return {
         ...paymentAccount,
         detail: this.paymentAccountDetail(paymentAccount),
+        displayName: this.paymentAccountLabel(paymentAccount),
         iconSrc: this.paymentAccountIconSrc(paymentAccount),
+        ownerTag: this.memberTag(paymentAccount.memberEmail),
         mappedModeCount: mappedModes.length,
         mappedModes,
         recordCount: usage.count,
@@ -585,12 +597,15 @@ export class BudgetStore implements OnDestroy {
             ? this.bankIconSrc(paymentMode.bankName)
             : undefined,
         detail: this.paymentModeDetail(paymentMode),
+        displayName: this.paymentModeDisplayLabel(paymentMode),
         icon: this.paymentModeIcon(paymentMode.type),
         iconSrc: this.paymentModeIconSrc(paymentMode),
         paymentAccountDetail: paymentAccount ? this.paymentAccountDetail(paymentAccount) : '',
-        paymentAccountName: paymentAccount?.name ?? '',
+        paymentAccountName: paymentAccount ? this.paymentAccountLabel(paymentAccount) : '',
         providerTone: this.paymentModeVisualTone(paymentMode),
         recordCount: usage.count,
+        shortLabel: this.paymentModeShortLabel(paymentMode),
+        ownerTag: this.memberTag(this.paymentModeMemberEmail(paymentMode)),
         typeLabel: this.paymentModeTypeLabel(paymentMode.type),
         usageAmount: usage.amount,
       };
@@ -1324,6 +1339,12 @@ export class BudgetStore implements OnDestroy {
       return;
     }
 
+    const workspace = this.workspaces().find((item) => item.id === workspaceId);
+    if (workspace?.archivedDate) {
+      this.syncStatus.set('Archived workspaces cannot be opened');
+      return;
+    }
+
     this.stopFirestoreListeners();
     this.clearAppData();
     this.loadedWorkspaceCollections.set(new Set());
@@ -1450,15 +1471,61 @@ export class BudgetStore implements OnDestroy {
     };
 
     await this.saveWorkspace(archivedWorkspace, 'Workspace archived');
-    const remainingWorkspaces = this.workspaces().filter((item) => item.id !== workspace.id);
-    this.workspaces.set(remainingWorkspaces);
+    const remainingWorkspaces = this.activeWorkspaces();
 
     if (remainingWorkspaces[0]) {
       await this.selectWorkspace(remainingWorkspaces[0].id);
       return;
     }
 
-    await this.createWorkspace();
+    this.stopFirestoreListeners();
+    this.repository.set(null);
+    this.workspaceId.set(null);
+    this.clearAppData();
+    this.isWorkspaceDataLoading.set(false);
+    this.syncStatus.set('Workspace archived. Create a workspace to continue.');
+  }
+
+  canManageWorkspaceRecord(workspace: Workspace | null | undefined): boolean {
+    const email = this.userEmail();
+    return !!email && !!workspace && workspace.ownerEmail === email;
+  }
+
+  async deleteArchivedWorkspace(workspaceId: string): Promise<void> {
+    const workspace = this.workspaces().find((item) => item.id === workspaceId);
+    if (!workspace?.archivedDate || !this.canManageWorkspaceRecord(workspace)) {
+      return;
+    }
+
+    const confirmed = await this.openWorkspaceConfirm({
+      title: 'Delete Archived Workspace',
+      message: `Permanently delete ${workspace.name}? This removes the archived workspace and its budget records.`,
+      confirmLabel: 'Delete',
+      icon: 'delete_forever',
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    if (this.firebase.mode === 'firebase' && !this.firebase.app) {
+      this.syncStatus.set('Sign in required to delete workspace');
+      return;
+    }
+
+    this.isSyncing.set(true);
+    this.syncError.set(null);
+
+    try {
+      if (this.firebase.app) {
+        await BudgetFirestoreRepository.deleteWorkspace(this.firebase.app, workspace.id);
+      }
+      this.workspaces.update((workspaces) => workspaces.filter((item) => item.id !== workspace.id));
+      this.syncStatus.set('Archived workspace deleted');
+    } catch (error) {
+      this.handleSyncError(error instanceof Error ? error.message : 'Workspace delete failed.');
+    } finally {
+      this.isSyncing.set(false);
+    }
   }
 
   async archiveWorkspaceMember(memberEmail: string): Promise<void> {
@@ -1613,13 +1680,16 @@ export class BudgetStore implements OnDestroy {
     }
   }
 
-  openBulkEditor(scope: BulkEditorScope, initialTabIndex = 0): void {
+  openBulkEditor(scope: BulkEditorScope, initialTabIndex = 0, initialEditingRowId?: string): void {
     const data = {
       scope,
       initialTabIndex,
+      initialEditingRowId,
       selectedMonth: this.selectedMonth(),
       members: this.activeMembers(),
       selectedMemberEmail: this.selectedMemberEmail(),
+      actingMemberEmail: this.actingMemberEmail(),
+      paymentAccounts: this.paymentAccounts(),
       paymentModes: this.paymentModes(),
       categories: this.categories(),
       incomes: this.filteredIncomes(),
@@ -1805,6 +1875,7 @@ export class BudgetStore implements OnDestroy {
         approvedExpenses.push({
           ...this.expenseFromTemplate(effectiveTemplate, month, existing),
           amount: row.amount,
+          memberEmail: this.actingMemberEmail() ?? effectiveTemplate.memberEmail,
         });
         continue;
       }
@@ -1847,7 +1918,7 @@ export class BudgetStore implements OnDestroy {
         notes: plan.notes || 'Approved from recurring investment plan',
         createdDate: existing?.createdDate || new Date().toISOString(),
         sourceInvestmentId: plan.id,
-        memberEmail: plan.memberEmail,
+        memberEmail: this.actingMemberEmail() ?? plan.memberEmail,
         paymentModeId: plan.paymentModeId,
         auditTrail: existing?.auditTrail ?? [],
       });
@@ -2086,7 +2157,7 @@ export class BudgetStore implements OnDestroy {
       return 'Saved payment mode';
     }
 
-    return paymentMode.name;
+    return this.paymentModeDisplayLabel(paymentMode);
   }
 
   paymentModeDetail(paymentMode: PaymentMode): string {
@@ -2099,7 +2170,10 @@ export class BudgetStore implements OnDestroy {
     }
 
     if (paymentMode.type === 'internet-banking') {
-      return paymentMode.bankName ?? DEFAULT_BANK_NAME;
+      const paymentAccount = this.paymentAccountForMode(paymentMode);
+      return paymentAccount
+        ? this.paymentAccountDetail(paymentAccount)
+        : paymentMode.bankName ?? DEFAULT_BANK_NAME;
     }
 
     return (
@@ -2141,8 +2215,11 @@ export class BudgetStore implements OnDestroy {
   }
 
   paymentModeIconSrc(paymentMode: PaymentMode): string {
-    if (paymentMode.type === 'internet-banking' && paymentMode.bankName) {
-      return this.bankIconSrc(paymentMode.bankName);
+    if (paymentMode.type === 'internet-banking') {
+      const paymentAccount = this.paymentAccountForMode(paymentMode);
+      return paymentAccount
+        ? this.paymentAccountIconSrc(paymentAccount)
+        : this.bankIconSrc(paymentMode.bankName);
     }
 
     if (paymentMode.type === 'cash') {
@@ -2170,6 +2247,57 @@ export class BudgetStore implements OnDestroy {
     return this.bankIconSrc(paymentAccount.bankName);
   }
 
+  paymentAccountLabel(paymentAccount: Pick<PaymentAccount, 'bankName'>): string {
+    return paymentAccount.bankName;
+  }
+
+  paymentModeDisplayLabel(paymentMode: PaymentMode): string {
+    if (paymentMode.type === 'cash') {
+      return 'Cash';
+    }
+
+    const paymentAccount = this.paymentAccountForMode(paymentMode);
+
+    if (paymentMode.type === 'upi' || paymentMode.type === 'wallet') {
+      return (
+        this.paymentProviderLabel(paymentMode.provider) ?? this.paymentModeTypeLabel(paymentMode.type)
+      );
+    }
+
+    if (paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card') {
+      return this.paymentModeTypeLabel(paymentMode.type);
+    }
+
+    if (paymentMode.type === 'internet-banking') {
+      return paymentAccount?.bankName ?? 'Internet Banking';
+    }
+
+    return this.paymentModeTypeLabel(paymentMode.type);
+  }
+
+  paymentModeShortLabel(paymentMode: PaymentMode): string {
+    if (paymentMode.type === 'cash') {
+      return 'Cash';
+    }
+
+    const paymentAccount = this.paymentAccountForMode(paymentMode);
+    const ownerTag = this.memberTag(this.paymentModeMemberEmail(paymentMode));
+
+    if (paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card') {
+      return `${ownerTag} ${this.lastFourLabel(paymentMode.lastFour)}`;
+    }
+
+    if (paymentMode.type === 'internet-banking') {
+      return `${ownerTag} ${this.lastFourLabel(paymentAccount?.lastFour)}`;
+    }
+
+    return ownerTag;
+  }
+
+  paymentModeOwnerTag(paymentMode: PaymentMode): string {
+    return this.memberTag(this.paymentModeMemberEmail(paymentMode));
+  }
+
   paymentModeMeta(paymentModeId: string | undefined): {
     iconSrc: string;
     label: string;
@@ -2194,7 +2322,7 @@ export class BudgetStore implements OnDestroy {
 
     return {
       iconSrc: this.paymentModeIconSrc(paymentMode),
-      label: paymentMode.name,
+      label: this.paymentModeShortLabel(paymentMode),
       tone: this.paymentModeVisualTone(paymentMode),
       typeLabel: this.paymentModeTypeLabel(paymentMode.type),
     };
@@ -2249,6 +2377,21 @@ export class BudgetStore implements OnDestroy {
     return this.paymentAccounts().find((account) => account.id === paymentMode.paymentAccountId);
   }
 
+  private paymentModeMemberEmail(paymentMode: PaymentMode): string | undefined {
+    return paymentMode.memberEmail ?? this.paymentAccountForMode(paymentMode)?.memberEmail;
+  }
+
+  private lastFourLabel(lastFour: string | undefined): string {
+    return lastFour?.replace(/\D/g, '').slice(-4) || '----';
+  }
+
+  private withDerivedPaymentModeName(paymentMode: PaymentMode): PaymentMode {
+    return {
+      ...paymentMode,
+      name: this.paymentModeDisplayLabel(paymentMode),
+    };
+  }
+
   private bankIconSrc(bankName: PaymentBankName | string | undefined): string {
     return bankName && bankName in PAYMENT_BANK_ICON_BY_NAME
       ? PAYMENT_BANK_ICON_BY_NAME[bankName as PaymentBankName]
@@ -2259,6 +2402,15 @@ export class BudgetStore implements OnDestroy {
     return bankName && bankName in PAYMENT_BANK_ICON_BY_NAME
       ? (bankName as PaymentBankName)
       : DEFAULT_BANK_NAME;
+  }
+
+  private shortMemberName(name: string): string {
+    const [firstName, secondName] = name.split(/\s+/).filter(Boolean);
+    if (!firstName) {
+      return 'Unassigned';
+    }
+
+    return secondName ? `${firstName} ${secondName[0].toUpperCase()}` : firstName;
   }
 
   private paymentModeVisualTone(paymentMode: PaymentMode): string {
@@ -2375,6 +2527,41 @@ export class BudgetStore implements OnDestroy {
     });
   }
 
+  async deleteArchivedPaymentMode(paymentModeId: string): Promise<boolean> {
+    if (paymentModeId === DEFAULT_CASH_PAYMENT_MODE.id) {
+      return false;
+    }
+
+    const paymentMode = this.paymentModes().find((mode) => mode.id === paymentModeId);
+    if (!paymentMode?.archivedDate) {
+      return false;
+    }
+
+    const confirmed = await this.openWorkspaceConfirm({
+      title: 'Delete Payment Mode',
+      message: `Permanently delete ${this.paymentModeDisplayLabel(paymentMode)}?`,
+      confirmLabel: 'Delete',
+      icon: 'delete_forever',
+    });
+    if (!confirmed) {
+      return false;
+    }
+
+    const deleted = await this.runFirebaseWrite(async () => {
+      await this.repository()?.delete('paymentModes', paymentMode.id);
+    }, () => {
+      this.paymentModes.update((paymentModes) =>
+        paymentModes.filter((mode) => mode.id !== paymentMode.id),
+      );
+    });
+
+    if (deleted) {
+      this.syncStatus.set('Archived payment mode deleted');
+    }
+
+    return deleted;
+  }
+
   async savePaymentAccount(paymentAccount: PaymentAccount): Promise<boolean> {
     const normalized = this.normalizePaymentAccount(paymentAccount);
     const saved = await this.saveRecords('paymentAccounts', [normalized], () => {
@@ -2424,6 +2611,46 @@ export class BudgetStore implements OnDestroy {
     });
   }
 
+  async deleteArchivedPaymentAccount(paymentAccountId: string): Promise<boolean> {
+    const paymentAccount = this.paymentAccounts().find((account) => account.id === paymentAccountId);
+    if (!paymentAccount?.archivedDate) {
+      return false;
+    }
+
+    if (
+      this.paymentModes().some(
+        (paymentMode) => paymentMode.paymentAccountId === paymentAccount.id,
+      )
+    ) {
+      this.syncStatus.set('Delete linked payment modes before deleting this account');
+      return false;
+    }
+
+    const confirmed = await this.openWorkspaceConfirm({
+      title: 'Delete Payment Account',
+      message: `Permanently delete ${this.paymentAccountLabel(paymentAccount)}?`,
+      confirmLabel: 'Delete',
+      icon: 'delete_forever',
+    });
+    if (!confirmed) {
+      return false;
+    }
+
+    const deleted = await this.runFirebaseWrite(async () => {
+      await this.repository()?.delete('paymentAccounts', paymentAccount.id);
+    }, () => {
+      this.paymentAccounts.update((paymentAccounts) =>
+        paymentAccounts.filter((account) => account.id !== paymentAccount.id),
+      );
+    });
+
+    if (deleted) {
+      this.syncStatus.set('Archived payment account deleted');
+    }
+
+    return deleted;
+  }
+
   memberName(memberEmail: string | undefined): string {
     if (!memberEmail) {
       return 'Unassigned';
@@ -2446,6 +2673,19 @@ export class BudgetStore implements OnDestroy {
       .join('')
       .slice(0, 2)
       .toUpperCase();
+  }
+
+  memberTag(memberEmail: string | undefined): string {
+    return memberEmail ? this.shortMemberName(this.memberName(memberEmail)) : 'Legacy';
+  }
+
+  actingMemberEmail(): string | undefined {
+    if (this.userEmail()) {
+      return this.userEmail() ?? undefined;
+    }
+
+    const selected = this.selectedMemberEmail();
+    return selected === 'ALL' ? undefined : selected;
   }
 
   categoryColor(categoryId: string): string {
@@ -3504,8 +3744,15 @@ export class BudgetStore implements OnDestroy {
         left.name.localeCompare(right.name),
       );
       this.workspaces.set(workspaces);
-      await this.selectWorkspace(workspaces[0]?.id ?? legacyWorkspace.id);
-      this.syncStatus.set('Synced with Firebase');
+      const activeWorkspace = workspaces.find((workspace) => !workspace.archivedDate);
+      if (activeWorkspace) {
+        await this.selectWorkspace(activeWorkspace.id);
+        this.syncStatus.set('Synced with Firebase');
+      } else {
+        this.clearAppData();
+        this.isWorkspaceDataLoading.set(false);
+        this.syncStatus.set('Create a workspace to continue');
+      }
     } catch (error) {
       this.handleSyncError(
         error instanceof Error ? error.message : 'Unable to connect to Firebase.',
@@ -3529,56 +3776,69 @@ export class BudgetStore implements OnDestroy {
 
   private normalizePaymentMode(paymentMode: PaymentMode): PaymentMode {
     const now = new Date().toISOString();
-    const name = paymentMode.name.trim() || this.paymentModeTypeLabel(paymentMode.type);
+    const memberEmail = paymentMode.memberEmail ?? this.actingMemberEmail();
+    const paymentAccountId = this.isAccountBackedPaymentMode(paymentMode)
+      ? paymentMode.paymentAccountId
+      : undefined;
+    const paymentAccount = paymentAccountId
+      ? this.paymentAccounts().find((account) => account.id === paymentAccountId)
+      : undefined;
     const base = {
       id: paymentMode.id || id('payment-mode'),
       type: paymentMode.type,
-      name,
-      paymentAccountId: this.isAccountBackedPaymentMode(paymentMode)
-        ? paymentMode.paymentAccountId
-        : undefined,
+      name: paymentMode.name.trim() || this.paymentModeTypeLabel(paymentMode.type),
+      paymentAccountId,
+      memberEmail,
       createdDate: paymentMode.createdDate || now,
       updatedDate: paymentMode.updatedDate || now,
       archivedDate: paymentMode.archivedDate,
     };
 
     if (paymentMode.type === 'upi' || paymentMode.type === 'wallet') {
-      return {
+      return this.withDerivedPaymentModeName({
         ...base,
         provider: paymentMode.provider,
-      };
+      });
     }
 
     if (paymentMode.type === 'internet-banking') {
-      return {
+      return this.withDerivedPaymentModeName({
         ...base,
-        bankName: this.paymentBankNameValue(paymentMode.bankName),
-      };
+        bankName: paymentAccount
+          ? paymentAccount.bankName
+          : this.paymentBankNameValue(paymentMode.bankName),
+      });
     }
 
     if (paymentMode.type === 'cash') {
       return base;
     }
 
-    return {
+    return this.withDerivedPaymentModeName({
       ...base,
       cardType: paymentMode.cardType,
       lastFour: paymentMode.lastFour?.replace(/\D/g, '').slice(-4),
-    };
+    });
   }
 
   private normalizePaymentAccount(paymentAccount: PaymentAccount): PaymentAccount {
     const now = new Date().toISOString();
     const lastFour = paymentAccount.lastFour.replace(/\D/g, '').slice(-4);
-
-    return {
+    const memberEmail = paymentAccount.memberEmail ?? this.actingMemberEmail();
+    const normalized = {
       id: paymentAccount.id || id('payment-account'),
       name: paymentAccount.name.trim() || 'Bank account',
       bankName: this.paymentBankNameValue(paymentAccount.bankName),
       lastFour,
+      memberEmail,
       createdDate: paymentAccount.createdDate || now,
       updatedDate: paymentAccount.updatedDate || now,
       archivedDate: paymentAccount.archivedDate,
+    };
+
+    return {
+      ...normalized,
+      name: this.paymentAccountLabel(normalized),
     };
   }
 

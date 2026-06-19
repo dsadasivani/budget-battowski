@@ -44,7 +44,6 @@
             <th scope="col">Record</th>
             <th scope="col">Source</th>
             <th scope="col">Category</th>
-            <th scope="col">User</th>
             <th scope="col">Amount</th>
             <th scope="col" aria-label="Actions"></th>
           </tr>
@@ -79,9 +78,6 @@
                 </span>
               </td>
               <td data-label="Category">{{ row.categoryName }}</td>
-              <td data-label="User">
-                <span class="user-pill">{{ row.memberName || 'Unassigned' }}</span>
-              </td>
               <td data-label="Amount">
                 <mat-form-field appearance="outline" subscriptSizing="dynamic">
                   <input

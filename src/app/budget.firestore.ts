@@ -100,8 +100,48 @@ export class BudgetFirestoreRepository {
           ...data,
         } as Workspace;
       })
-      .filter((workspace) => !workspace.archivedDate)
       .sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  static async deleteWorkspace(app: FirebaseApp, workspaceId: string): Promise<void> {
+    const { collection, deleteDoc, doc, getDocs, getFirestore, writeBatch } =
+      await import('firebase/firestore');
+    const db = getFirestore(app);
+    const collectionNames: BudgetCollectionName[] = [
+      'paymentAccounts',
+      'paymentModes',
+      'categories',
+      'incomes',
+      'templates',
+      'expenses',
+      'investments',
+      'loans',
+    ];
+
+    for (const collectionName of collectionNames) {
+      const snapshot = await getDocs(
+        collection(db, WORKSPACE_COLLECTION, workspaceId, collectionName),
+      );
+      let batch = writeBatch(db);
+      let operationCount = 0;
+
+      for (const docSnapshot of snapshot.docs) {
+        batch.delete(docSnapshot.ref);
+        operationCount += 1;
+
+        if (operationCount === 450) {
+          await batch.commit();
+          batch = writeBatch(db);
+          operationCount = 0;
+        }
+      }
+
+      if (operationCount) {
+        await batch.commit();
+      }
+    }
+
+    await deleteDoc(doc(db, WORKSPACE_COLLECTION, workspaceId));
   }
 
   static async ensureLegacyWorkspace(

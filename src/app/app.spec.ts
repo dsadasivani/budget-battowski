@@ -132,8 +132,63 @@ function createPaymentModeStore(
   const activePaymentModes = computed(() =>
     paymentModes().filter((paymentMode) => !paymentMode.archivedDate),
   );
+  const memberTag = (memberEmail: string | undefined) => (memberEmail ? 'Test U' : 'Legacy');
   const paymentModesForAccount = (paymentAccountId: string) =>
     activePaymentModes().filter((paymentMode) => paymentMode.paymentAccountId === paymentAccountId);
+  const paymentAccountLabel = (paymentAccount: Pick<PaymentAccount, 'bankName'>) =>
+    paymentAccount.bankName;
+  const paymentModeDisplayLabel = (paymentMode: PaymentMode) => {
+    const paymentAccount = paymentMode.paymentAccountId
+      ? activePaymentAccounts().find((account) => account.id === paymentMode.paymentAccountId)
+      : undefined;
+
+    if (paymentMode.type === 'cash') {
+      return 'Cash';
+    }
+
+    if (paymentMode.type === 'upi' || paymentMode.type === 'wallet') {
+      return paymentMode.provider ?? paymentModeTypeLabel(paymentMode.type);
+    }
+
+    if (paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card') {
+      return paymentModeTypeLabel(paymentMode.type);
+    }
+
+    if (paymentMode.type === 'internet-banking') {
+      return paymentAccount?.bankName ?? 'Internet Banking';
+    }
+
+    return paymentModeTypeLabel(paymentMode.type);
+  };
+  const paymentModeShortLabel = (paymentMode: PaymentMode) => {
+    const paymentAccount = paymentMode.paymentAccountId
+      ? activePaymentAccounts().find((account) => account.id === paymentMode.paymentAccountId)
+      : undefined;
+    const ownerTag = memberTag(paymentMode.memberEmail ?? paymentAccount?.memberEmail);
+
+    if (paymentMode.type === 'cash') {
+      return 'Cash';
+    }
+
+    if (paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card') {
+      return `${ownerTag} ${paymentMode.lastFour ?? '----'}`;
+    }
+
+    if (paymentMode.type === 'internet-banking') {
+      return `${ownerTag} ${paymentAccount?.lastFour ?? '----'}`;
+    }
+
+    return ownerTag;
+  };
+  const modeIconSrc = (paymentMode: PaymentMode) => {
+    const paymentAccount = paymentMode.paymentAccountId
+      ? activePaymentAccounts().find((account) => account.id === paymentMode.paymentAccountId)
+      : undefined;
+
+    return paymentMode.type === 'internet-banking' && paymentAccount
+      ? paymentAccountIconSrc(paymentAccount)
+      : paymentModeIconSrc(paymentMode);
+  };
   const paymentAccountUsage = (paymentAccountId: string) =>
     paymentModesForAccount(paymentAccountId).reduce(
       (total, paymentMode) => {
@@ -152,7 +207,9 @@ function createPaymentModeStore(
       return {
         ...paymentAccount,
         detail: paymentAccountDetail(paymentAccount),
+        displayName: paymentAccountLabel(paymentAccount),
         iconSrc: paymentAccountIconSrc(paymentAccount),
+        ownerTag: memberTag(paymentAccount.memberEmail),
         mappedModeCount: mappedModes.length,
         mappedModes,
         recordCount: usage.count,
@@ -169,8 +226,9 @@ function createPaymentModeStore(
           : paymentMode.type === 'internet-banking'
             ? paymentMode.bankName
             : paymentMode.provider,
+      displayName: paymentModeDisplayLabel(paymentMode),
       icon: paymentMode.type === 'upi' ? 'qr_code_2' : 'credit_card',
-      iconSrc: paymentModeIconSrc(paymentMode),
+      iconSrc: modeIconSrc(paymentMode),
       bankIconSrc: paymentMode.paymentAccountId
         ? paymentAccountIconSrc(
             activePaymentAccounts().find((account) => account.id === paymentMode.paymentAccountId),
@@ -178,13 +236,25 @@ function createPaymentModeStore(
         : undefined,
       paymentAccountName:
         activePaymentAccounts().find((account) => account.id === paymentMode.paymentAccountId)
-          ?.name ?? '',
+          ?.bankName ?? '',
+      paymentAccountDetail:
+        paymentAccountDetail(
+          activePaymentAccounts().find((account) => account.id === paymentMode.paymentAccountId) ?? {
+            lastFour: '',
+          },
+        ) ?? '',
       providerTone: paymentMode.provider
         ? paymentProviderTone(paymentMode.provider)
         : paymentMode.type === 'internet-banking'
           ? 'bank'
           : paymentMode.type,
       recordCount: 0,
+      shortLabel: paymentModeShortLabel(paymentMode),
+      ownerTag: memberTag(
+        paymentMode.memberEmail ??
+          activePaymentAccounts().find((account) => account.id === paymentMode.paymentAccountId)
+            ?.memberEmail,
+      ),
       typeLabel: paymentModeTypeLabel(paymentMode.type),
       usageAmount: 0,
     })),
@@ -243,10 +313,23 @@ function createPaymentModeStore(
     canWrite: signal(true),
     paymentAccountDetail,
     paymentAccountIconSrc,
+    paymentAccountLabel,
+    paymentModeDisplayLabel,
+    paymentModeShortLabel,
+    paymentModeOwnerTag: (paymentMode: PaymentMode) => {
+      const paymentAccount = paymentMode.paymentAccountId
+        ? activePaymentAccounts().find((account) => account.id === paymentMode.paymentAccountId)
+        : undefined;
+      return memberTag(paymentMode.memberEmail ?? paymentAccount?.memberEmail);
+    },
+    paymentModeUsage: (paymentModeId: string) => {
+      const card = paymentModeCards().find((paymentMode) => paymentMode.id === paymentModeId);
+      return { amount: card?.usageAmount ?? 0, count: card?.recordCount ?? 0 };
+    },
     paymentModesForAccount,
     canArchivePaymentAccount: (paymentAccountId: string) =>
       paymentModesForAccount(paymentAccountId).length === 0,
-    paymentModeIconSrc,
+    paymentModeIconSrc: modeIconSrc,
     paymentModeTone: (paymentModeId: string | undefined) =>
       activePaymentModes().find((paymentMode) => paymentMode.id === paymentModeId)?.provider
         ? 'googlepay'
@@ -1410,11 +1493,11 @@ describe('App', () => {
       },
     ]);
 
-    expect(app.paymentModeLabel('pm-old-card')).toBe('Old card');
+    expect(app.paymentModeLabel('pm-old-card')).toBe('Credit Card');
     expect(app.paymentModeMeta('pm-old-card')).toEqual(
       expect.objectContaining({
         iconSrc: '/payment-icons/cards_default.svg',
-        label: 'Old card',
+        label: 'Legacy 1234',
       }),
     );
     expect(app.paymentModeMeta('payment-mode-cash')).toEqual(
@@ -1729,7 +1812,7 @@ describe('App', () => {
       },
     ]);
 
-    const expected = { iconSrc: '/payment-icons/paytm.svg', label: 'Paytm Wallet' };
+    const expected = { iconSrc: '/payment-icons/paytm.svg', label: 'Legacy' };
     expect(app.expenseRows()[0].paymentModeMeta).toEqual(expect.objectContaining(expected));
     expect(app.portfolioRows()[0].paymentModeMeta).toEqual(expect.objectContaining(expected));
     expect(app.loanRepaymentRows()[0].paymentModeMeta).toEqual(expect.objectContaining(expected));
@@ -1798,24 +1881,20 @@ describe('PaymentModesPage', () => {
       .compileComponents();
   });
 
-  it('should validate required fields and save UPI providers', async () => {
+  it('should save UPI providers with a derived name', async () => {
     const fixture = TestBed.createComponent(PaymentModesPage);
     const page = fixture.componentInstance;
     fixture.detectChanges();
 
-    page.savePaymentMode();
-
-    expect(page.validationError()).toBe('Display name is required.');
-    expect(store.savePaymentMode).not.toHaveBeenCalled();
-
-    page.form.patchValue({ name: 'Personal Google Pay', provider: 'Google Pay' });
+    page.form.patchValue({ provider: 'Google Pay' });
     page.savePaymentMode();
     await Promise.resolve();
 
+    expect(page.validationError()).toBe('');
     expect(store.savePaymentMode).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'upi',
-        name: 'Personal Google Pay',
+        name: 'UPI',
         provider: 'Google Pay',
         lastFour: undefined,
       }),
@@ -1828,7 +1907,7 @@ describe('PaymentModesPage', () => {
     fixture.detectChanges();
 
     page.setFormType('credit-card');
-    page.form.patchValue({ name: 'Visa Credit', lastFour: '12' });
+    page.form.patchValue({ lastFour: '12' });
     page.savePaymentMode();
 
     expect(page.validationError()).toBe('Card modes need exactly 4 digits.');
@@ -1840,7 +1919,7 @@ describe('PaymentModesPage', () => {
     expect(store.savePaymentMode).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'credit-card',
-        name: 'Visa Credit',
+        name: 'Credit Card',
         provider: undefined,
         cardType: 'visa',
         lastFour: '9876',
@@ -1848,7 +1927,7 @@ describe('PaymentModesPage', () => {
     );
   });
 
-  it('should save internet banking modes with bank and mapped account data', async () => {
+  it('should require and save internet banking modes with mapped account data', async () => {
     store.paymentAccounts.set([
       {
         id: 'pa-hdfc',
@@ -1862,19 +1941,21 @@ describe('PaymentModesPage', () => {
     fixture.detectChanges();
 
     page.setFormType('internet-banking');
-    page.form.patchValue({
-      name: 'HDFC NetBanking',
-      bankName: 'HDFC',
-      paymentAccountId: 'pa-hdfc',
-    });
+    page.savePaymentMode();
+
+    expect(page.validationError()).toBe(
+      'Choose a linked payment account for internet banking.',
+    );
+
+    page.form.patchValue({ paymentAccountId: 'pa-hdfc' });
     page.savePaymentMode();
     await Promise.resolve();
 
     expect(store.savePaymentMode).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'internet-banking',
-        name: 'HDFC NetBanking',
-        bankName: 'HDFC',
+        name: 'Internet Banking',
+        bankName: undefined,
         paymentAccountId: 'pa-hdfc',
         provider: undefined,
       }),
@@ -1889,11 +1970,10 @@ describe('PaymentModesPage', () => {
     page.selectedTabIndex.set(1);
     page.savePaymentAccount();
 
-    expect(page.accountValidationError()).toBe('Account name is required.');
+    expect(page.accountValidationError()).toBe('Account needs exactly 4 digits.');
     expect(store.savePaymentAccount).not.toHaveBeenCalled();
 
     page.accountForm.patchValue({
-      name: 'Salary account',
       bankName: 'HDFC',
       lastFour: '4321',
     });
@@ -1903,7 +1983,7 @@ describe('PaymentModesPage', () => {
 
     expect(store.savePaymentAccount).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: 'Salary account',
+        name: 'Bank account',
         bankName: 'HDFC',
         lastFour: '4321',
       }),

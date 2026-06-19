@@ -72,6 +72,7 @@ export interface PaymentMode {
   lastFour?: string;
   bankName?: PaymentBankName;
   paymentAccountId?: string;
+  memberEmail?: string;
   createdDate?: string;
   updatedDate?: string;
   archivedDate?: string;
@@ -82,6 +83,7 @@ export interface PaymentAccount {
   name: string;
   bankName: PaymentBankName;
   lastFour: string;
+  memberEmail?: string;
   createdDate?: string;
   updatedDate?: string;
   archivedDate?: string;

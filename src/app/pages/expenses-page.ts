@@ -150,7 +150,6 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                     <span class="dot" [style.background]="expense.categoryColor" aria-hidden="true"></span>
                     {{ expense.categoryName }}
                   </span>
-                  <span class="avatar mini">{{ expense.memberInitial }}</span>
                   <b>{{ expense.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</b>
                   <span class="badge neutral">
                     {{ expense.typeLabel === 'recurring' ? 'Recur' : '1x' }}
@@ -182,7 +181,6 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                     <th>Date</th>
                     <th>Description</th>
                     <th>Category</th>
-                    <th>Member</th>
                     <th>Amount</th>
                     <th>Paid via</th>
                     <th>Type</th>
@@ -201,9 +199,6 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                           <span class="dot" [style.background]="expense.categoryColor" aria-hidden="true"></span>
                           {{ expense.categoryName }}
                         </span>
-                      </td>
-                      <td>
-                        <span class="avatar mini">{{ expense.memberInitial }}</span>
                       </td>
                       <td>
                         <b>{{ expense.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</b>
@@ -225,9 +220,9 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                         <button
                           mat-icon-button
                           type="button"
-                          aria-label="Edit expenses"
-                          matTooltip="Edit expenses"
-                          (click)="store.openBulkEditor('monthly')"
+                          [attr.aria-label]="'Edit expense ' + expense.name"
+                          matTooltip="Edit expense"
+                          (click)="store.openBulkEditor('monthly', 0, expense.id)"
                           [disabled]="!store.canWrite()"
                         >
                           <mat-icon aria-hidden="true">edit</mat-icon>
@@ -236,7 +231,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                     </tr>
                   } @empty {
                     <tr>
-                      <td colspan="8">
+                      <td colspan="7">
                         <div class="empty-state">No expenses match this view</div>
                       </td>
                     </tr>
@@ -332,7 +327,7 @@ export class ExpensesPage {
     return this.store
       .expenseRows()
       .filter((expense) =>
-        [expense.name, expense.categoryName, expense.memberName, expense.typeLabel]
+        [expense.name, expense.categoryName, expense.typeLabel]
           .join(' ')
           .toLowerCase()
           .includes(query),

@@ -650,6 +650,10 @@ a {
   padding: 14px;
 }
 
+.list-row.no-leading-icon {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
 .plan-row {
   grid-template-columns: 54px minmax(0, 1fr) auto auto;
   padding: 14px;
