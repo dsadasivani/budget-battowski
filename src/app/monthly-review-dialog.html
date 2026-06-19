@@ -1,4 +1,5 @@
-<div class="dialog-title" mat-dialog-title>
+<header class="dialog-title">
+  <span class="mobile-drag-handle" aria-hidden="true"></span>
   <div class="dialog-title-main">
     <span class="dialog-mark" aria-hidden="true">
       <mat-icon>fact_check</mat-icon>
@@ -27,15 +28,15 @@
       class="dialog-close"
       mat-icon-button
       type="button"
-      mat-dialog-close
       aria-label="Close review"
+      (click)="cancel()"
     >
       <mat-icon aria-hidden="true">close</mat-icon>
     </button>
   </div>
-</div>
+</header>
 
-<mat-dialog-content class="review-dialog">
+<section class="review-dialog">
   @if (rows().length) {
     <div class="review-table-wrap">
       <table class="review-table">
@@ -129,15 +130,15 @@
       <span>No expected recurring records for this month</span>
     </div>
   }
-</mat-dialog-content>
+</section>
 
-<mat-dialog-actions class="review-actions" align="end">
+<footer class="review-actions">
   @if (validationError()) {
     <span class="dialog-error" role="alert">{{ validationError() }}</span>
   }
-  <button mat-stroked-button type="button" mat-dialog-close>Cancel</button>
+  <button mat-stroked-button type="button" (click)="cancel()">Cancel</button>
   <button mat-flat-button type="button" (click)="approve()" [disabled]="!rows().length">
     <mat-icon aria-hidden="true">check_circle</mat-icon>
     Approve all
   </button>
-</mat-dialog-actions>
+</footer>

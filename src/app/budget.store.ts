@@ -1742,12 +1742,36 @@ export class BudgetStore implements OnDestroy {
       return;
     }
 
+    const data = {
+      monthLabel: this.monthLabel(),
+      rows: this.monthlyReviewRows(),
+    };
+
+    if (this.breakpointObserver.isMatched('(max-width: 760px)')) {
+      const bottomSheetRef = this.bottomSheet.open<
+        MonthlyReviewDialog,
+        typeof data,
+        MonthlyReviewResult
+      >(MonthlyReviewDialog, {
+        ariaLabel: 'Review expected records',
+        autoFocus: false,
+        data,
+        maxHeight: 'calc(100dvh - 16px)',
+        panelClass: 'monthly-review-sheet-panel',
+        restoreFocus: true,
+      });
+
+      bottomSheetRef.afterDismissed().subscribe((result) => {
+        if (result) {
+          void this.applyMonthlyReview(result);
+        }
+      });
+      return;
+    }
+
     const dialogRef = this.dialog.open(MonthlyReviewDialog, {
       autoFocus: false,
-      data: {
-        monthLabel: this.monthLabel(),
-        rows: this.monthlyReviewRows(),
-      },
+      data,
       maxHeight: '96dvh',
       maxWidth: '96vw',
       panelClass: 'monthly-review-panel',

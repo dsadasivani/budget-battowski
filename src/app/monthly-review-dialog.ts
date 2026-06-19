@@ -1,6 +1,10 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import {
+  MAT_BOTTOM_SHEET_DATA,
+  MatBottomSheetRef,
+} from '@angular/material/bottom-sheet';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -45,11 +49,21 @@ export interface MonthlyReviewResult {
   ],
   templateUrl: './monthly-review-dialog.html',
   styleUrl: './monthly-review-dialog.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MonthlyReviewDialog {
   private readonly dialogRef =
-    inject<MatDialogRef<MonthlyReviewDialog, MonthlyReviewResult>>(MatDialogRef);
-  protected readonly data = inject<MonthlyReviewData>(MAT_DIALOG_DATA);
+    inject<MatDialogRef<MonthlyReviewDialog, MonthlyReviewResult>>(MatDialogRef, {
+      optional: true,
+    });
+  private readonly bottomSheetRef = inject<
+    MatBottomSheetRef<MonthlyReviewDialog, MonthlyReviewResult>
+  >(MatBottomSheetRef, { optional: true });
+  private readonly dialogData = inject<MonthlyReviewData>(MAT_DIALOG_DATA, { optional: true });
+  private readonly bottomSheetData = inject<MonthlyReviewData>(MAT_BOTTOM_SHEET_DATA, {
+    optional: true,
+  });
+  protected readonly data = this.resolveData();
   protected readonly rows = signal<MonthlyReviewRow[]>(this.data.rows.map((row) => ({ ...row })));
   protected readonly expenseCount = computed(
     () => this.rows().filter((row) => row.sourceType === 'expense').length,
@@ -74,7 +88,7 @@ export class MonthlyReviewDialog {
       return;
     }
 
-    this.dialogRef.close({
+    this.close({
       rows: [
         {
           ...row,
@@ -93,7 +107,7 @@ export class MonthlyReviewDialog {
       return;
     }
 
-    this.dialogRef.close({
+    this.close({
       rows: this.rows().map((row) => ({
         ...row,
         amount: Number(row.amount) || 0,
@@ -101,7 +115,29 @@ export class MonthlyReviewDialog {
     });
   }
 
+  protected cancel(): void {
+    this.close();
+  }
+
   private isValidAmount(row: MonthlyReviewRow): boolean {
     return row.pendingDelete || (Number.isFinite(Number(row.amount)) && Number(row.amount) >= 0);
+  }
+
+  private close(result?: MonthlyReviewResult): void {
+    if (this.bottomSheetRef) {
+      this.bottomSheetRef.dismiss(result);
+      return;
+    }
+
+    this.dialogRef?.close(result);
+  }
+
+  private resolveData(): MonthlyReviewData {
+    const data = this.dialogData ?? this.bottomSheetData;
+    if (!data) {
+      throw new Error('Monthly review data is required.');
+    }
+
+    return data;
   }
 }
