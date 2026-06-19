@@ -162,7 +162,9 @@ function createPaymentModeStore(
   };
   const paymentModeDetail = (paymentMode: PaymentMode) => {
     if (paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card') {
-      return paymentMode.lastFour ? `xxxx xxxx xxxx ${paymentMode.lastFour}` : 'xxxx xxxx xxxx ----';
+      return paymentMode.lastFour
+        ? `xxxx xxxx xxxx ${paymentMode.lastFour}`
+        : 'xxxx xxxx xxxx ----';
     }
 
     if (paymentMode.type === 'cash') {
@@ -173,7 +175,9 @@ function createPaymentModeStore(
       const paymentAccount = paymentMode.paymentAccountId
         ? activePaymentAccounts().find((account) => account.id === paymentMode.paymentAccountId)
         : undefined;
-      return paymentAccount ? paymentAccountDetail(paymentAccount) : (paymentMode.bankName ?? 'Default');
+      return paymentAccount
+        ? paymentAccountDetail(paymentAccount)
+        : (paymentMode.bankName ?? 'Default');
     }
 
     return paymentMode.provider ?? paymentModeTypeLabel(paymentMode.type);
@@ -252,7 +256,9 @@ function createPaymentModeStore(
           ?.bankName ?? '',
       paymentAccountDetail:
         paymentAccountDetail(
-          activePaymentAccounts().find((account) => account.id === paymentMode.paymentAccountId) ?? {
+          activePaymentAccounts().find(
+            (account) => account.id === paymentMode.paymentAccountId,
+          ) ?? {
             lastFour: '',
           },
         ) ?? '',
@@ -1989,9 +1995,7 @@ describe('PaymentModesPage', () => {
     page.setFormType('internet-banking');
     page.savePaymentMode();
 
-    expect(page.validationError()).toBe(
-      'Choose a linked payment account for internet banking.',
-    );
+    expect(page.validationError()).toBe('Choose a linked payment account for internet banking.');
 
     page.form.patchValue({ paymentAccountId: 'pa-hdfc' });
     page.savePaymentMode();
@@ -2067,7 +2071,9 @@ describe('PaymentModesPage', () => {
     fixture.detectChanges();
 
     expect(page.selectedPaymentAccountCard()).toEqual(expect.objectContaining({ id: 'pa-hdfc' }));
-    expect(element.querySelector('.account-detail-panel')?.textContent ?? '').toContain('Google Pay');
+    expect(element.querySelector('.account-detail-panel')?.textContent ?? '').toContain(
+      'Google Pay',
+    );
   });
 
   it('should show mapped payment modes in a bottom sheet on mobile account clicks', () => {
@@ -2375,10 +2381,243 @@ describe('BulkEditorDialog', () => {
     fixture.detectChanges();
     await fixture.whenStable();
 
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('input[placeholder="Search expenses"]'),
+    ).toBeTruthy();
+
     const results = await runAxe(fixture.nativeElement);
 
     expect(results.violations).toEqual([]);
   }, 12000);
+
+  it('should filter and sort expense rows with common modal controls', () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        categories: [
+          { id: 'category-home', name: 'Home', monthlyBudget: 35000, color: '#1f7a8c' },
+          { id: 'category-food', name: 'Food', monthlyBudget: 12000, color: '#0f766e' },
+        ],
+        expenses: [
+          {
+            id: 'expense-rent',
+            month: '2026-05',
+            date: '2026-05-01',
+            name: 'Rent',
+            categoryId: 'category-home',
+            amount: 25000,
+            type: 'recurring',
+            note: 'Prepopulated from recurring plan',
+            templateId: 'fixed-rent',
+            paymentModeId: 'pm-card',
+          },
+          {
+            id: 'expense-fuel',
+            month: '2026-05',
+            date: '2026-05-04',
+            name: 'Fuel',
+            categoryId: 'category-food',
+            amount: 2500,
+            type: 'one-time',
+            note: '',
+            paymentModeId: 'pm-gpay',
+          },
+          {
+            id: 'expense-groceries',
+            month: '2026-05',
+            date: '2026-05-08',
+            name: 'Groceries',
+            categoryId: 'category-food',
+            amount: 3200,
+            type: 'one-time',
+            note: '',
+          },
+          {
+            id: 'expense-medical-apr',
+            month: '2026-04',
+            date: '2026-04-08',
+            name: 'Medical',
+            categoryId: 'category-home',
+            amount: 1800,
+            type: 'one-time',
+            note: '',
+          },
+        ],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      filteredExpenses: () => Array<{
+        amount: number;
+        categoryId: string;
+        isSuggested?: boolean;
+        name: string;
+        paymentModeId?: string;
+      }>;
+      setTableFilter: (table: string, key: string, value: string) => void;
+      toggleSort: (table: string, column: string) => void;
+    };
+
+    dialog.setTableFilter('expenses', 'status', 'suggested');
+    expect(dialog.filteredExpenses().map((expense) => expense.name)).toEqual(['Medical']);
+
+    dialog.setTableFilter('expenses', 'status', 'all');
+    dialog.setTableFilter('expenses', 'categoryId', 'category-food');
+    expect(dialog.filteredExpenses().map((expense) => expense.name)).toEqual(['Fuel', 'Groceries']);
+
+    dialog.setTableFilter('expenses', 'categoryId', '');
+    dialog.setTableFilter('expenses', 'paymentModeId', 'pm-gpay');
+    expect(dialog.filteredExpenses().map((expense) => expense.name)).toEqual(['Fuel']);
+
+    dialog.setTableFilter('expenses', 'paymentModeId', '');
+    dialog.setTableFilter('expenses', 'query', 'rent');
+    expect(dialog.filteredExpenses().map((expense) => expense.name)).toEqual(['Rent']);
+
+    dialog.setTableFilter('expenses', 'query', '');
+    dialog.setTableFilter('expenses', 'categoryId', 'category-food');
+    dialog.toggleSort('expenses', 'amount');
+    expect(dialog.filteredExpenses().map((expense) => expense.name)).toEqual(['Fuel', 'Groceries']);
+
+    dialog.toggleSort('expenses', 'amount');
+    expect(dialog.filteredExpenses().map((expense) => expense.name)).toEqual(['Groceries', 'Fuel']);
+  });
+
+  it('should filter and sort investment rows with common modal controls', () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        scope: 'planning',
+        initialTabIndex: 2,
+        categories: [
+          {
+            id: 'category-equity',
+            name: 'Equity',
+            monthlyBudget: 0,
+            color: '#2563eb',
+            type: 'Investments',
+          },
+          {
+            id: 'category-gold',
+            name: 'Gold',
+            monthlyBudget: 0,
+            color: '#a16207',
+            type: 'Investments',
+          },
+        ],
+        investments: [
+          {
+            id: 'investment-index',
+            name: 'Index SIP',
+            amount: 15000,
+            categoryId: 'category-equity',
+            frequency: 'monthly',
+            date: '2026-05-01',
+            startDate: '2026-05-01',
+            notes: '',
+            paymentModeId: 'pm-gpay',
+          },
+          {
+            id: 'investment-gold',
+            name: 'Gold Fund',
+            amount: 5000,
+            categoryId: 'category-gold',
+            frequency: 'one-time',
+            date: '2026-05-05',
+            notes: '',
+            paymentModeId: 'pm-card',
+          },
+          {
+            id: 'investment-debt',
+            name: 'Debt Fund',
+            amount: 7000,
+            categoryId: 'category-equity',
+            frequency: 'annual',
+            date: '2026-05-02',
+            notes: '',
+          },
+        ],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      filteredInvestments: () => Array<{
+        amount: number;
+        categoryId?: string;
+        frequency: string;
+        name: string;
+        paymentModeId?: string;
+      }>;
+      setTableFilter: (table: string, key: string, value: string) => void;
+      toggleSort: (table: string, column: string) => void;
+    };
+
+    dialog.setTableFilter('investments', 'frequency', 'monthly');
+    expect(dialog.filteredInvestments().map((investment) => investment.name)).toEqual([
+      'Index SIP',
+    ]);
+
+    dialog.setTableFilter('investments', 'frequency', '');
+    dialog.setTableFilter('investments', 'paymentModeId', 'pm-card');
+    expect(dialog.filteredInvestments().map((investment) => investment.name)).toEqual([
+      'Gold Fund',
+    ]);
+
+    dialog.setTableFilter('investments', 'paymentModeId', '');
+    dialog.setTableFilter('investments', 'categoryId', 'category-equity');
+    expect(dialog.filteredInvestments().map((investment) => investment.name)).toEqual([
+      'Index SIP',
+      'Debt Fund',
+    ]);
+
+    dialog.setTableFilter('investments', 'categoryId', '');
+    dialog.toggleSort('investments', 'amount');
+    dialog.toggleSort('investments', 'amount');
+    expect(dialog.filteredInvestments().map((investment) => investment.name)).toEqual([
+      'Index SIP',
+      'Debt Fund',
+      'Gold Fund',
+    ]);
+  });
+
+  it('should apply all draft rows after sorting and filtering the modal view', () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        expenses: [
+          ...dialogData.expenses,
+          {
+            id: 'expense-fuel',
+            month: '2026-05',
+            date: '2026-05-04',
+            name: 'Fuel',
+            categoryId: 'category-home',
+            amount: 2500,
+            type: 'one-time',
+            note: '',
+          },
+        ],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialogRef = TestBed.inject(MatDialogRef) as unknown as {
+      close: ReturnType<typeof vi.fn>;
+    };
+    const dialog = fixture.componentInstance as unknown as {
+      apply: () => void;
+      setTableFilter: (table: string, key: string, value: string) => void;
+      toggleSort: (table: string, column: string) => void;
+    };
+
+    dialog.setTableFilter('expenses', 'query', 'rent');
+    dialog.toggleSort('expenses', 'amount');
+    dialog.apply();
+
+    const result = dialogRef.close.mock.calls[0][0];
+    expect(result.expenses.map((expense: { name: string }) => expense.name).sort()).toEqual([
+      'Fuel',
+      'Rent',
+    ]);
+  });
 
   it('should suggest previous one-time expenses that are not already in the selected month', () => {
     TestBed.overrideProvider(MAT_DIALOG_DATA, {
