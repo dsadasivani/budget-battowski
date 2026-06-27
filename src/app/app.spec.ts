@@ -3708,7 +3708,7 @@ describe('budget import helpers', () => {
   });
 
   it('should add existing categories to the workbook master sheet', async () => {
-    const XLSX = await import('xlsx');
+    const readExcelFile = (await import('read-excel-file/universal')).default;
     const workbookBlob = await createBudgetImportTemplateWorkbook([
       {
         id: 'category-home',
@@ -3725,13 +3725,14 @@ describe('budget import helpers', () => {
         type: 'Investments',
       },
     ]);
-    const workbook = XLSX.read(await workbookBlob.arrayBuffer(), { type: 'array' });
-    const rows = XLSX.utils.sheet_to_json<Record<string, string | number>>(
-      workbook.Sheets['master_categories'],
-      { defval: '' },
+    const workbook = await readExcelFile(await workbookBlob.arrayBuffer());
+    const masterSheet = workbook.find((sheet) => sheet.sheet === 'master_categories');
+    const [headers = [], ...dataRows] = masterSheet?.data ?? [];
+    const rows = dataRows.map((row) =>
+      Object.fromEntries(headers.map((header, index) => [String(header), row[index] ?? ''])),
     );
 
-    expect(workbook.SheetNames[0]).toBe('master_categories');
+    expect(workbook[0]?.sheet).toBe('master_categories');
     expect(rows).toContainEqual(
       expect.objectContaining({
         name: 'Home',
