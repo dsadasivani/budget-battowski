@@ -16,7 +16,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
       <section class="page narrow mobile-import-export-page">
         <header class="page-header desktop-page-header">
           <div>
-            <h1>Import/Export</h1>
+            <h1>Import &amp; Export</h1>
             <p>Move budget data through the validated Excel workflow.</p>
           </div>
         </header>

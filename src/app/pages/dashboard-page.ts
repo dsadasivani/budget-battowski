@@ -72,28 +72,28 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
         </div>
 
         <section class="stat-grid five" tabindex="0" aria-label="Monthly financial summary">
-          <article class="stat-card">
+          <article class="stat-card income-stat">
             <span class="icon-chip blue"><mat-icon aria-hidden="true">download</mat-icon></span>
             <p>Total Income</p>
             <strong>{{
               store.monthlyIncome() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
             }}</strong>
           </article>
-          <article class="stat-card">
+          <article class="stat-card expense-stat">
             <span class="icon-chip red"><mat-icon aria-hidden="true">upload</mat-icon></span>
             <p>Total Expenses</p>
             <strong>{{
               store.outflowTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
             }}</strong>
           </article>
-          <article class="stat-card">
+          <article class="stat-card investment-stat">
             <span class="icon-chip teal"><mat-icon aria-hidden="true">trending_up</mat-icon></span>
             <p>Investments</p>
             <strong>{{
               store.investmentTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
             }}</strong>
           </article>
-          <article class="stat-card">
+          <article class="stat-card loan-stat">
             <span class="icon-chip orange"
               ><mat-icon aria-hidden="true">account_balance</mat-icon></span
             >
@@ -102,14 +102,45 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
               store.debtEmiTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
             }}</strong>
           </article>
-          <article class="stat-card success">
+          <article class="stat-card success hero-runway">
             <span class="icon-chip green"><mat-icon aria-hidden="true">savings</mat-icon></span>
-            <p>Remaining</p>
+            <p>Remaining Runway</p>
             <strong>{{
               store.remainingFunds() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
             }}</strong>
           </article>
         </section>
+
+        <article class="panel-card mobile-budget-limits-panel">
+          <header class="panel-heading">
+            <div>
+              <h2>Budget Limits</h2>
+              <p>{{ store.monthLabel() }} category usage</p>
+            </div>
+            <a routerLink="/categories">Manage</a>
+          </header>
+          <div class="progress-list">
+            @for (category of store.categoryCards().slice(0, 4); track category.id) {
+              <article class="progress-row">
+                <div>
+                  <strong>{{ category.name }}</strong>
+                  <b>{{ category.used | percent: '1.0-0' }}</b>
+                </div>
+                <mat-progress-bar
+                  mode="determinate"
+                  [value]="category.percent"
+                  [attr.aria-label]="category.name + ' budget used'"
+                ></mat-progress-bar>
+                <small>
+                  {{ category.spent | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }} of
+                  {{ category.monthlyBudget | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}
+                </small>
+              </article>
+            } @empty {
+              <div class="empty-state">No category limits yet</div>
+            }
+          </div>
+        </article>
 
         <section class="dashboard-layout">
           <div class="panel-stack">

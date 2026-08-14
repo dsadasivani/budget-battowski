@@ -5,7 +5,7 @@
       <mat-icon>fact_check</mat-icon>
     </span>
     <div class="dialog-title-copy">
-      <h2>Review Expected Records</h2>
+      <h2>Monthly Review</h2>
       <p>{{ data.monthLabel }}</p>
     </div>
   </div>
@@ -105,18 +105,18 @@
                   >
                     <mat-icon aria-hidden="true">check_circle</mat-icon>
                   </button>
-                <button
-                  class="delete-toggle"
-                  mat-icon-button
-                  type="button"
-                  [attr.aria-label]="row.pendingDelete ? 'Keep record' : 'Delete record'"
-                  [matTooltip]="row.pendingDelete ? 'Keep' : 'Delete'"
-                  (click)="toggleDelete(row)"
-                >
-                  <mat-icon aria-hidden="true">{{
-                    row.pendingDelete ? 'undo' : 'delete'
-                  }}</mat-icon>
-                </button>
+                  <button
+                    class="delete-toggle"
+                    mat-icon-button
+                    type="button"
+                    [attr.aria-label]="row.pendingDelete ? 'Keep record' : 'Delete record'"
+                    [matTooltip]="row.pendingDelete ? 'Keep' : 'Delete'"
+                    (click)="toggleDelete(row)"
+                  >
+                    <mat-icon aria-hidden="true">{{
+                      row.pendingDelete ? 'undo' : 'delete'
+                    }}</mat-icon>
+                  </button>
                 </div>
               </td>
             </tr>

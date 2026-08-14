@@ -108,6 +108,7 @@ import { BudgetStore } from '../budget.store';
         <button
           type="button"
           [class.active]="store.selectedMemberEmail() === 'ALL'"
+          [attr.aria-pressed]="store.selectedMemberEmail() === 'ALL'"
           (click)="store.setSelectedMember('ALL')"
         >
           All Members
@@ -116,6 +117,7 @@ import { BudgetStore } from '../budget.store';
           <button
             type="button"
             [class.active]="store.selectedMemberEmail() === member.email"
+            [attr.aria-pressed]="store.selectedMemberEmail() === member.email"
             (click)="store.setSelectedMember(member.email)"
           >
             {{ store.memberDisplayName(member) }}

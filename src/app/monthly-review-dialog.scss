@@ -6,9 +6,9 @@
   --review-header: #f0f5ff;
   --review-line: #dce5f1;
   --review-line-strong: #c8d6e8;
-  --review-blue: #2f80ff;
-  --review-blue-strong: #0f5ff5;
-  --review-blue-soft: #eaf3ff;
+  --review-blue: #0000ff;
+  --review-blue-strong: #0000cc;
+  --review-blue-soft: #eeeeff;
   --review-teal: #0f766e;
   --review-teal-soft: #e6fbf7;
   --review-danger: #be123c;
@@ -318,10 +318,10 @@
 }
 
 .approve-row {
-  color: var(--review-teal);
+  color: var(--review-blue);
 
   &:hover {
-    background: var(--review-teal-soft);
+    background: var(--review-blue-soft);
   }
 
   &:disabled {
@@ -376,13 +376,13 @@
   }
 
   button[mat-flat-button] {
-    background: #0f6f86;
+    background: var(--review-blue);
     color: #fff;
   }
 
   button[mat-stroked-button] {
     border-color: var(--review-line-strong);
-    color: #075985;
+    color: var(--review-blue);
   }
 }
 

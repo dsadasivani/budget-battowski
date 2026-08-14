@@ -1,11 +1,5 @@
 import { CommonModule, NgOptimizedImage } from '@angular/common';
-import {
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  inject,
-  signal,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
@@ -44,16 +38,6 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 
         <div class="mobile-page-controls mobile-filter-strip">
           <app-month-member-controls />
-          <label class="search-box mobile-search-box">
-            <mat-icon aria-hidden="true">search</mat-icon>
-            <span class="sr-only">Search expenses</span>
-            <input
-              type="search"
-              placeholder="Search expenses"
-              [value]="query()"
-              (input)="setQuery($event)"
-            />
-          </label>
         </div>
 
         <section
@@ -62,7 +46,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
           aria-label="Expense summary"
         >
           @if (store.hasMonthlyReviewRows()) {
-            <article class="stat-card">
+            <article class="stat-card review-stat-card">
               <span class="icon-chip blue"><mat-icon aria-hidden="true">fact_check</mat-icon></span>
               <p>Pending Review</p>
               <strong>{{ store.monthlyReviewRows().length }}</strong>
@@ -78,21 +62,21 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
               </button>
             </article>
           }
-          <article class="stat-card">
+          <article class="stat-card expense-total-card">
             <span class="icon-chip red"><mat-icon aria-hidden="true">credit_card</mat-icon></span>
             <p>Total Expenses</p>
             <strong>{{
               store.outflowTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
             }}</strong>
           </article>
-          <article class="stat-card">
+          <article class="stat-card recurring-total-card">
             <span class="icon-chip orange"><mat-icon aria-hidden="true">sync</mat-icon></span>
             <p>Recurring</p>
             <strong>{{
               store.recurringTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
             }}</strong>
           </article>
-          <article class="stat-card">
+          <article class="stat-card one-time-total-card">
             <span class="icon-chip purple"
               ><mat-icon aria-hidden="true">shopping_bag</mat-icon></span
             >
@@ -103,11 +87,22 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
           </article>
         </section>
 
+        <label class="search-box mobile-search-box mobile-transaction-search">
+          <mat-icon aria-hidden="true">search</mat-icon>
+          <span class="sr-only">Search expenses</span>
+          <input
+            type="search"
+            placeholder="Search transactions"
+            [value]="query()"
+            (input)="setQuery($event)"
+          />
+        </label>
+
         <section class="content-grid two-one">
           <article class="panel-card">
             <header class="panel-heading split">
               <div>
-                <h2>All Expenses</h2>
+                <h2>Recent Transactions</h2>
                 <p>Search, review, and manage monthly transactions</p>
               </div>
               <div class="table-actions">
@@ -139,7 +134,11 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                   <span>{{ expense.dayLabel }}</span>
                   <strong>{{ expense.name }}</strong>
                   <span class="badge">
-                    <span class="dot" [style.background]="expense.categoryColor" aria-hidden="true"></span>
+                    <span
+                      class="dot"
+                      [style.background]="expense.categoryColor"
+                      aria-hidden="true"
+                    ></span>
                     {{ expense.categoryName }}
                   </span>
                   <b>{{ expense.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</b>
@@ -188,7 +187,11 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                       </td>
                       <td>
                         <span class="badge">
-                          <span class="dot" [style.background]="expense.categoryColor" aria-hidden="true"></span>
+                          <span
+                            class="dot"
+                            [style.background]="expense.categoryColor"
+                            aria-hidden="true"
+                          ></span>
                           {{ expense.categoryName }}
                         </span>
                       </td>

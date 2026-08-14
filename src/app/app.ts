@@ -1,4 +1,5 @@
 import { CommonModule } from '@angular/common';
+import { CdkTrapFocus } from '@angular/cdk/a11y';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -27,6 +28,7 @@ type NavItem = {
   icon: string;
   path: string;
   shortLabel?: string;
+  mobilePlacement: 'primary' | 'utility';
 };
 
 type OnboardingStep = {
@@ -62,6 +64,7 @@ type LoginFeature = {
     RouterLink,
     RouterLinkActive,
     RouterOutlet,
+    CdkTrapFocus,
     MatBottomSheetModule,
     MatButtonModule,
     MatIconModule,
@@ -79,6 +82,8 @@ export class App extends BudgetStore {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
   private loginCarouselTimer: ReturnType<typeof setInterval> | null = null;
+  private navFocusRestoreTimer: ReturnType<typeof setTimeout> | null = null;
+  private navTriggerElement: HTMLElement | null = null;
 
   readonly activeRoutePath = signal('/dashboard');
   readonly navOpen = signal(false);
@@ -222,19 +227,67 @@ export class App extends BudgetStore {
     },
   ];
   readonly navItems: NavItem[] = [
-    { label: 'Dashboard', icon: 'dashboard', path: '/dashboard' },
-    { label: 'Monthly Expenses', icon: 'credit_card', path: '/expenses', shortLabel: 'Expenses' },
-    { label: 'Planning', icon: 'calendar_month', path: '/planning' },
-    { label: 'Investments', icon: 'trending_up', path: '/investments' },
-    { label: 'Loans', icon: 'account_balance', path: '/loans' },
-    { label: 'Categories', icon: 'sell', path: '/categories' },
-    { label: 'Payment Modes', icon: 'payments', path: '/payment-modes' },
-    { label: 'Import/Export', icon: 'upload_file', path: '/import-export' },
-    { label: 'Workspace', icon: 'group', path: '/workspace' },
-    { label: 'Settings', icon: 'settings', path: '/settings' },
+    {
+      label: 'Dashboard',
+      shortLabel: 'Home',
+      icon: 'dashboard',
+      path: '/dashboard',
+      mobilePlacement: 'primary',
+    },
+    {
+      label: 'Monthly Expenses',
+      shortLabel: 'Expenses',
+      icon: 'credit_card',
+      path: '/expenses',
+      mobilePlacement: 'primary',
+    },
+    {
+      label: 'Planning',
+      shortLabel: 'Plan',
+      icon: 'calendar_month',
+      path: '/planning',
+      mobilePlacement: 'primary',
+    },
+    {
+      label: 'Investments',
+      shortLabel: 'Invest',
+      icon: 'trending_up',
+      path: '/investments',
+      mobilePlacement: 'primary',
+    },
+    {
+      label: 'Loans',
+      icon: 'account_balance',
+      path: '/loans',
+      mobilePlacement: 'primary',
+    },
+    { label: 'Categories', icon: 'sell', path: '/categories', mobilePlacement: 'utility' },
+    {
+      label: 'Payment Modes',
+      icon: 'payments',
+      path: '/payment-modes',
+      mobilePlacement: 'utility',
+    },
+    {
+      label: 'Import & Export',
+      icon: 'upload_file',
+      path: '/import-export',
+      mobilePlacement: 'utility',
+    },
+    {
+      label: 'Workspace Management',
+      icon: 'group',
+      path: '/workspace',
+      mobilePlacement: 'utility',
+    },
+    { label: 'Settings', icon: 'settings', path: '/settings', mobilePlacement: 'utility' },
   ];
-  readonly primaryMobileNavItems = this.navItems.slice(0, 5);
-  readonly utilityMobileNavItems = this.navItems.slice(5);
+  readonly primaryMobileNavItems = this.navItems.filter(
+    (item) => item.mobilePlacement === 'primary',
+  );
+  readonly utilityMobileNavItems = this.navItems.filter(
+    (item) => item.mobilePlacement === 'utility',
+  );
   readonly activeMobileNavItem = computed(() => {
     const path = this.activeRoutePath();
     return (
@@ -262,6 +315,10 @@ export class App extends BudgetStore {
   override ngOnDestroy(): void {
     if (this.loginCarouselTimer) {
       clearInterval(this.loginCarouselTimer);
+    }
+
+    if (this.navFocusRestoreTimer) {
+      clearTimeout(this.navFocusRestoreTimer);
     }
 
     super.ngOnDestroy();
@@ -329,12 +386,36 @@ export class App extends BudgetStore {
     return path && path !== '/' ? path : '/dashboard';
   }
 
-  toggleNav(): void {
-    this.navOpen.update((open) => !open);
+  toggleNav(event?: Event): void {
+    if (this.navOpen()) {
+      this.closeNav();
+      return;
+    }
+
+    this.navTriggerElement =
+      event?.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+    this.navOpen.set(true);
   }
 
-  closeNav(): void {
+  closeNav(restoreFocus = true): void {
+    const trigger = restoreFocus ? this.navTriggerElement : null;
     this.navOpen.set(false);
+    this.navTriggerElement = null;
+
+    if (!trigger) {
+      return;
+    }
+
+    if (this.navFocusRestoreTimer) {
+      clearTimeout(this.navFocusRestoreTimer);
+    }
+
+    this.navFocusRestoreTimer = setTimeout(() => {
+      if (trigger.isConnected) {
+        trigger.focus();
+      }
+      this.navFocusRestoreTimer = null;
+    });
   }
 
   nextLoginFeature(): void {

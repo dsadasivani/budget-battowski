@@ -426,10 +426,10 @@ describe('App', () => {
     const app = fixture.componentInstance;
 
     expect(app.primaryMobileNavItems.map((item) => item.shortLabel || item.label)).toEqual([
-      'Dashboard',
+      'Home',
       'Expenses',
-      'Planning',
-      'Investments',
+      'Plan',
+      'Invest',
       'Loans',
     ]);
   });
@@ -450,7 +450,123 @@ describe('App', () => {
       (fixture.nativeElement as HTMLElement).querySelectorAll('.mobile-bottom-nav a span'),
     ).map((item) => item.textContent?.trim());
 
-    expect(labels).toEqual(['Dashboard', 'Expenses', 'Planning', 'Investments', 'Loans']);
+    expect(labels).toEqual(['Home', 'Expenses', 'Plan', 'Invest', 'Loans']);
+  });
+
+  it('should expose the active navigation destination to assistive technology', async () => {
+    const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const app = fixture.componentInstance as unknown as {
+      firebase: { mode: string };
+      isSessionChecking: { set: (checking: boolean) => void };
+    };
+
+    app.firebase.mode = 'local';
+    app.isSessionChecking.set(false);
+    await router.navigateByUrl('/dashboard');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.querySelector('.side-nav a.active')?.getAttribute('aria-current')).toBe('page');
+    expect(
+      compiled.querySelector('.mobile-bottom-nav a.active')?.getAttribute('aria-current'),
+    ).toBe('page');
+  });
+
+  it('should expose the selected member filter as a pressed button', async () => {
+    const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const app = fixture.componentInstance as unknown as {
+      firebase: { mode: string };
+      isSessionChecking: { set: (checking: boolean) => void };
+    };
+
+    app.firebase.mode = 'local';
+    app.isSessionChecking.set(false);
+    await router.navigateByUrl('/dashboard');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const memberSegments = (fixture.nativeElement as HTMLElement).querySelector('.member-segments');
+    const buttons = Array.from(memberSegments?.querySelectorAll<HTMLButtonElement>('button') ?? []);
+    const allMembers = buttons.find((button) => button.textContent?.trim() === 'All Members');
+
+    expect(allMembers?.getAttribute('aria-pressed')).toBe('true');
+    expect(
+      buttons
+        .filter((button) => button !== allMembers)
+        .every((button) => button.getAttribute('aria-pressed') === 'false'),
+    ).toBe(true);
+  });
+
+  it('should close the guided tour when Escape is pressed', async () => {
+    globalThis.localStorage?.setItem('budget-battowski-onboarding-v1', 'seen');
+    const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const app = fixture.componentInstance as unknown as {
+      firebase: { mode: string };
+      isSessionChecking: { set: (checking: boolean) => void };
+    };
+
+    app.firebase.mode = 'local';
+    app.isSessionChecking.set(false);
+    await router.navigateByUrl('/dashboard');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const trigger = (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>(
+      '.guided-tour-button',
+    );
+    trigger?.focus();
+    trigger?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const dialog = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>(
+      '.onboarding-backdrop',
+    );
+    expect(dialog?.getAttribute('aria-modal')).toBe('true');
+
+    dialog?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect((fixture.nativeElement as HTMLElement).querySelector('.onboarding-backdrop')).toBeNull();
+  });
+
+  it('should expose responsive navigation state and close it with Escape', async () => {
+    const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const app = fixture.componentInstance as unknown as {
+      firebase: { mode: string };
+      isSessionChecking: { set: (checking: boolean) => void };
+      navOpen: () => boolean;
+    };
+
+    app.firebase.mode = 'local';
+    app.isSessionChecking.set(false);
+    await router.navigateByUrl('/dashboard');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const trigger = compiled.querySelector<HTMLButtonElement>('.mobile-menu-trigger');
+    trigger?.focus();
+    trigger?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const navigation = compiled.querySelector<HTMLElement>('#primary-navigation');
+    expect(app.navOpen()).toBe(true);
+    expect(trigger?.getAttribute('aria-expanded')).toBe('true');
+
+    navigation?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(app.navOpen()).toBe(false);
+    expect(trigger?.getAttribute('aria-expanded')).toBe('false');
   });
 
   it('should render payment modes inside the mobile utility menu', async () => {
@@ -524,10 +640,10 @@ describe('App', () => {
     ['/loans', 'account_balance', 'Loans'],
     ['/categories', 'sell', 'Categories'],
     ['/payment-modes', 'payments', 'Payment Modes'],
-    ['/import-export', 'upload_file', 'Import/Export'],
-    ['/workspace', 'group', 'Workspace'],
+    ['/import-export', 'upload_file', 'Import & Export'],
+    ['/workspace', 'group', 'Workspace Management'],
     ['/settings', 'settings', 'Settings'],
-  ])('should render the mobile app bar for %s', async (path, icon, label) => {
+  ])('should render the branded mobile shell for %s', async (path, icon, label) => {
     const fixture = TestBed.createComponent(App);
     const router = TestBed.inject(Router);
     const app = fixture.componentInstance as unknown as {
@@ -542,9 +658,16 @@ describe('App', () => {
     await fixture.whenStable();
 
     const header = (fixture.nativeElement as HTMLElement).querySelector('.mobile-app-bar');
+    const routeHeading = (fixture.nativeElement as HTMLElement).querySelector(
+      '.mobile-route-heading',
+    );
 
-    expect(header?.querySelector('mat-icon')?.textContent?.trim()).toBe(icon);
-    expect(header?.querySelector('h1')?.textContent?.trim()).toBe(label);
+    expect(header?.querySelector('.mobile-brand')?.textContent?.trim()).toBe('Budget Battowski');
+    expect(header?.querySelector('.mobile-menu-trigger mat-icon')?.textContent?.trim()).toBe(
+      'apps',
+    );
+    expect(routeHeading?.querySelector('mat-icon')?.textContent?.trim()).toBe(icon);
+    expect(routeHeading?.querySelector('h1')?.textContent?.trim()).toBe(label);
   });
 
   it('should keep secondary mobile destinations in the utility menu model', () => {
@@ -554,8 +677,8 @@ describe('App', () => {
     expect(app.utilityMobileNavItems.map((item) => item.label)).toEqual([
       'Categories',
       'Payment Modes',
-      'Import/Export',
-      'Workspace',
+      'Import & Export',
+      'Workspace Management',
       'Settings',
     ]);
   });

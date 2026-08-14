@@ -42,7 +42,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 
         <section class="stat-grid" [class.three]="!store.hasMonthlyReviewRows()">
           @if (store.hasMonthlyReviewRows()) {
-            <article class="stat-card">
+            <article class="stat-card review-stat-card">
               <span class="icon-chip blue"><mat-icon aria-hidden="true">fact_check</mat-icon></span>
               <p>Pending Review</p>
               <strong>{{ store.monthlyReviewRows().length }}</strong>
@@ -58,7 +58,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
               </button>
             </article>
           }
-          <article class="stat-card">
+          <article class="stat-card investment-total-card">
             <span class="icon-chip teal"><mat-icon aria-hidden="true">trending_up</mat-icon></span>
             <p>Total Invested</p>
             <strong>{{
@@ -66,19 +66,19 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
             }}</strong>
             <small>This month</small>
           </article>
-          <article class="stat-card">
+          <article class="stat-card active-plans-card">
             <span class="icon-chip green"><mat-icon aria-hidden="true">functions</mat-icon></span>
-            <p>Derived Tracking</p>
+            <p>Active Plans</p>
             <strong>{{ store.portfolioRows().length }}</strong>
-            <small>Active plans</small>
+            <small>Current plans</small>
           </article>
-          <article class="stat-card">
+          <article class="stat-card scheduled-total-card">
             <span class="icon-chip blue"><mat-icon aria-hidden="true">work</mat-icon></span>
-            <p>Scheduled Total</p>
+            <p>Scheduled SIPs</p>
             <strong>{{
               store.portfolioValue() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
             }}</strong>
-            <small>Derived from plan history</small>
+            <small>Plan value</small>
           </article>
         </section>
 
@@ -123,6 +123,38 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                 </button>
               </div>
             </header>
+
+            <div class="mobile-investment-list">
+              @for (investment of filteredRows(); track investment.id) {
+                <article class="mobile-investment-row">
+                  <span class="category-icon blue" aria-hidden="true">
+                    <mat-icon>show_chart</mat-icon>
+                  </span>
+                  <div>
+                    <strong>{{ investment.name }}</strong>
+                    <small>{{ investment.categoryName }}</small>
+                  </div>
+                  <p>
+                    <strong>{{
+                      investment.monthlyAmount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                    }}</strong>
+                    <small>{{ store.investmentFrequencyLabel(investment) }}</small>
+                  </p>
+                  <button
+                    mat-icon-button
+                    type="button"
+                    [attr.aria-label]="'Edit investment ' + investment.name"
+                    matTooltip="Edit investment"
+                    (click)="store.openBulkEditor('planning', 2, investment.id)"
+                    [disabled]="!store.canWrite()"
+                  >
+                    <mat-icon aria-hidden="true">edit</mat-icon>
+                  </button>
+                </article>
+              } @empty {
+                <div class="empty-state">No investments match this view</div>
+              }
+            </div>
 
             <div class="data-table-wrap">
               <table class="data-table">
