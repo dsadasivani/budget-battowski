@@ -1,0 +1,25 @@
+name: Promotion Policy
+
+on:
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  promotion-policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require develop as the promotion source
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [[ "$HEAD_REF" != "develop" ]]; then
+            echo "Pull requests to master must originate from develop."
+            exit 1
+          fi
+
+          echo "Promotion source is develop."
