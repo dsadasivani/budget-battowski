@@ -24,6 +24,30 @@ export function effectiveValueForDate<T extends EffectiveDatedVersion>(
   return isVersionEffectiveOnDate(current, date) ? { value: current, source: 'current' } : null;
 }
 
+export function effectiveValueForOccurrence<T>(
+  current: T,
+  history: readonly (T & EffectiveDatedVersion)[],
+  occurrenceDate: (value: T) => string | null,
+): EffectiveDatingResult<T> | null {
+  const historical = [...history]
+    .filter((version) => {
+      const date = occurrenceDate(version);
+      return !!date && isVersionEffectiveOnDate(version, date);
+    })
+    .sort((left, right) =>
+      (right.effectiveStartDate ?? '').localeCompare(left.effectiveStartDate ?? ''),
+    )[0];
+  if (historical) {
+    return { value: historical, source: 'historical' };
+  }
+
+  const currentOccurrenceDate = occurrenceDate(current);
+  return currentOccurrenceDate &&
+    isVersionEffectiveOnDate(current as T & EffectiveDatedVersion, currentOccurrenceDate)
+    ? { value: current, source: 'current' }
+    : null;
+}
+
 export function closeEffectiveVersion<T extends EffectiveDatedVersion>(
   value: T,
   effectiveEndDate: string,

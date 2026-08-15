@@ -5,6 +5,7 @@ import { MatIconModule } from '@angular/material/icon';
 
 import { BudgetStore } from '../budget.store';
 import { AppPageSkeletonComponent } from '../shared/page-skeleton';
+import { OnboardingStore } from '../stores/onboarding.store';
 
 @Component({
   selector: 'app-settings-page',
@@ -63,6 +64,23 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
               <p>Add Firebase config in the environment file to enable cloud persistence.</p>
             }
           </article>
+
+          <article class="panel-card action-card">
+            <span class="icon-chip purple"
+              ><mat-icon aria-hidden="true">tips_and_updates</mat-icon></span
+            >
+            <h2>Guided tour</h2>
+            <p>Review the key steps for setting up and using your budget workspace.</p>
+            <button
+              class="guided-tour-button"
+              mat-stroked-button
+              type="button"
+              (click)="onboarding.requestTourLaunch()"
+            >
+              <mat-icon aria-hidden="true">play_circle</mat-icon>
+              Start guided tour
+            </button>
+          </article>
         </section>
       </section>
     }
@@ -71,4 +89,5 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 })
 export class SettingsPage {
   readonly store = inject(BudgetStore);
+  readonly onboarding = inject(OnboardingStore);
 }

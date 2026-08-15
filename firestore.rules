@@ -7,17 +7,22 @@ service cloud.firestore {
     function workspacePath(id) { return /databases/$(database)/documents/budgetWorkspaces/$(id); }
     function workspace(id) { return get(workspacePath(id)).data; }
     function legacyOwner(id) { return hasEmail() && request.auth.token.email == id; }
+    function uidMemberData(data) {
+      return signedIn() && 'memberUids' in data && request.auth.uid in data.memberUids;
+    }
     function memberData(data) {
       return signedIn() && (
-        ('memberUids' in data && request.auth.uid in data.memberUids) ||
-        (hasEmail() && 'memberEmails' in data && request.auth.token.email in data.memberEmails)
+        uidMemberData(data) ||
+        ((!('memberUids' in data) || data.memberUids.size() == 0) && hasEmail() &&
+          'memberEmails' in data && request.auth.token.email in data.memberEmails)
       );
     }
     function member(id) { return exists(workspacePath(id)) && memberData(workspace(id)); }
     function owner(id) {
       return exists(workspacePath(id)) && signedIn() && (
         ('ownerUid' in workspace(id) && workspace(id).ownerUid == request.auth.uid) ||
-        (hasEmail() && workspace(id).ownerEmail == request.auth.token.email)
+        (!('ownerUid' in workspace(id)) && hasEmail() &&
+          workspace(id).ownerEmail == request.auth.token.email)
       );
     }
     function optionalString(data, field) { return !(field in data) || data[field] is string; }
@@ -38,14 +43,21 @@ service cloud.firestore {
       return ('ownerUid' in data || 'memberEmail' in data) && authOwns(data);
     }
     function immutableOwner() {
-      return ((!(('ownerUid') in resource.data) && !(('ownerUid') in request.resource.data)) ||
-          request.resource.data.ownerUid == resource.data.ownerUid) &&
+      return (('ownerUid' in resource.data && 'ownerUid' in request.resource.data &&
+          request.resource.data.ownerUid == resource.data.ownerUid) ||
+        (!('ownerUid' in resource.data) &&
+          (!('ownerUid' in request.resource.data) ||
+            (hasEmail() && 'memberEmail' in resource.data &&
+              resource.data.memberEmail == request.auth.token.email &&
+              request.resource.data.ownerUid == request.auth.uid)))) &&
         ((!(('memberEmail') in resource.data) && !(('memberEmail') in request.resource.data)) ||
           request.resource.data.memberEmail == resource.data.memberEmail);
     }
     function sameOwner(left, right) {
       return ('ownerUid' in left && 'ownerUid' in right && left.ownerUid == right.ownerUid) ||
-        ('memberEmail' in left && 'memberEmail' in right && left.memberEmail == right.memberEmail);
+        ((!('ownerUid' in left) || !('ownerUid' in right)) &&
+          'memberEmail' in left && 'memberEmail' in right &&
+          left.memberEmail == right.memberEmail);
     }
     function frequency(value) {
       return value in ['weekly','monthly','quarterly','half-yearly','annual','one-time'];
@@ -101,6 +113,15 @@ service cloud.firestore {
         request.resource.data.displayName is string && optionalString(request.resource.data, 'photoUrl');
       allow delete: if signedIn() && request.auth.uid == uid;
     }
+    match /budgetUserDirectoryByEmail/{normalizedEmail} {
+      allow get, list: if signedIn();
+      allow create, update: if hasEmail() && request.resource.data.keys().hasOnly(['uid','email','displayName','photoUrl','updatedAt']) &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.email == request.auth.token.email &&
+        normalizedEmail == request.auth.token.email &&
+        request.resource.data.displayName is string && optionalString(request.resource.data, 'photoUrl');
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
     match /budgetUserPrivate/{uid} {
       allow read, delete: if signedIn() && request.auth.uid == uid;
       allow create, update: if signedIn() && request.auth.uid == uid &&
@@ -120,9 +141,11 @@ service cloud.firestore {
         request.resource.data.memberEmails is list &&
         (('ownerUid' in request.resource.data && request.resource.data.ownerUid == request.auth.uid &&
             request.auth.uid in request.resource.data.memberUids) ||
-          (hasEmail() && request.resource.data.ownerEmail == request.auth.token.email &&
+          (!('ownerUid' in request.resource.data) && hasEmail() &&
+            request.resource.data.ownerEmail == request.auth.token.email &&
             request.auth.token.email in request.resource.data.memberEmails));
-      allow read: if legacyOwner(workspaceId) || memberData(resource.data);
+      allow get: if legacyOwner(workspaceId) || memberData(resource.data);
+      allow list: if uidMemberData(resource.data);
       allow update: if owner(workspaceId) && workspaceSchema(request.resource.data) && request.resource.data.ownerEmail == resource.data.ownerEmail &&
         ((!('ownerUid' in resource.data) &&
             (!('ownerUid' in request.resource.data) || request.resource.data.ownerUid == request.auth.uid)) ||

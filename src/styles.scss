@@ -1129,6 +1129,11 @@ a {
 
   &.warn {
     background: #fff8ed;
+
+    p,
+    .category-card-body {
+      color: #5d6b7e;
+    }
   }
 
   &.danger {
