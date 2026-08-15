@@ -2145,6 +2145,7 @@ export class BulkEditorDialog {
 
         return {
           id: template.id,
+          version: template.version,
           name: template.isNew
             ? template.name.trim() || 'Recurring expense'
             : original?.name || template.name.trim() || 'Recurring expense',
@@ -2160,13 +2161,15 @@ export class BulkEditorDialog {
           skippedMonths: template.skippedMonths ?? [],
           archivedDate: template.archivedDate,
           memberEmail: this.recordMemberEmail(template),
+          ownerUid: template.ownerUid,
           paymentModeId: template.paymentModeId || undefined,
           auditTrail: template.auditTrail ?? [],
         };
       });
     const expenses = this.showMonthlyTables()
-      ? expenseRows.map((expense) => ({
+        ? expenseRows.map((expense) => ({
           id: expense.id,
+          version: expense.version,
           month: dateMonthKey(dateValue(expense.date)) || expense.month || this.data.selectedMonth,
           date:
             optionalDate(expense.date) || monthStartDate(expense.month || this.data.selectedMonth),
@@ -2180,7 +2183,9 @@ export class BulkEditorDialog {
               : ('one-time' as const),
           note: expense.note ?? '',
           templateId: expense.templateId || undefined,
+          sourceLoanId: expense.sourceLoanId,
           memberEmail: this.recordMemberEmail(expense),
+          ownerUid: expense.ownerUid,
           paymentModeId: expense.paymentModeId || undefined,
         }))
       : this.data.expenses;
@@ -2189,6 +2194,7 @@ export class BulkEditorDialog {
       scope: this.data.scope,
       categories: this.activeRows(this.categories()).map((category) => ({
         id: category.id,
+        version: category.version,
         name: category.name.trim() || 'Category',
         monthlyBudget:
           (category.type || 'Expenses') === 'Expenses' ? toNumber(category.monthlyBudget) : 0,
@@ -2201,6 +2207,7 @@ export class BulkEditorDialog {
         .filter((income) => !income.pendingDelete)
         .map((income) => ({
           id: income.id,
+          version: income.version,
           source: income.isNew
             ? income.source.trim() || 'Income'
             : this.originalIncomesById.get(income.id)?.source || income.source.trim() || 'Income',
@@ -2216,6 +2223,7 @@ export class BulkEditorDialog {
           endDate: optionalDate(income.endDate),
           auditTrail: income.auditTrail ?? [],
           memberEmail: this.recordMemberEmail(income),
+          ownerUid: income.ownerUid,
         })),
       templates,
       expenses,
@@ -2223,6 +2231,7 @@ export class BulkEditorDialog {
         .filter((investment) => !investment.pendingDelete)
         .map((investment) => ({
           id: investment.id,
+          version: investment.version,
           name: investment.isNew
             ? investment.name.trim() || 'Investment'
             : this.originalInvestmentsById.get(investment.id)?.name ||
@@ -2242,12 +2251,14 @@ export class BulkEditorDialog {
           sourceInvestmentId: investment.sourceInvestmentId,
           auditTrail: investment.auditTrail ?? [],
           memberEmail: this.recordMemberEmail(investment),
+          ownerUid: investment.ownerUid,
           paymentModeId: investment.paymentModeId || undefined,
         })),
       loans: this.loans()
         .filter((loan) => !loan.pendingDelete)
         .map((loan) => ({
           id: loan.id,
+          version: loan.version,
           lender: loan.isNew
             ? loan.lender.trim() || 'Lender'
             : this.originalLoansById.get(loan.id)?.lender || loan.lender.trim() || 'Lender',
@@ -2262,6 +2273,7 @@ export class BulkEditorDialog {
           endDate: requiredDate(loan.endDate),
           notes: loan.notes ?? '',
           memberEmail: this.recordMemberEmail(loan),
+          ownerUid: loan.ownerUid,
           paymentModeId: loan.paymentModeId || undefined,
           auditTrail: loan.auditTrail ?? [],
         })),

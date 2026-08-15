@@ -30,10 +30,7 @@ export function readQaFirebaseConfig(cwd = process.cwd()) {
   }
 
   return Object.fromEntries(
-    [...block.matchAll(/^\s*([a-zA-Z0-9_]+):\s*'([^']*)'/gm)].map((match) => [
-      match[1],
-      match[2],
-    ]),
+    [...block.matchAll(/^\s*([a-zA-Z0-9_]+):\s*'([^']*)'/gm)].map((match) => [match[1], match[2]]),
   );
 }
 
@@ -95,9 +92,30 @@ export function buildQaSeedData() {
   ];
 
   const paymentAccounts = [
-    { id: 'acct-hdfc', name: 'HDFC Everyday QA', bankName: 'HDFC', lastFour: '4321', createdDate: now },
-    { id: 'acct-sbi', name: 'SBI EMI QA', bankName: 'SBI', lastFour: '2468', createdDate: now },
-    { id: 'acct-axis', name: 'Axis Backup QA', bankName: 'Axis', lastFour: '1357', createdDate: now },
+    {
+      id: 'acct-hdfc',
+      name: 'HDFC Everyday QA',
+      bankName: 'HDFC',
+      lastFour: '4321',
+      createdDate: now,
+      memberEmail: owner,
+    },
+    {
+      id: 'acct-sbi',
+      name: 'SBI EMI QA',
+      bankName: 'SBI',
+      lastFour: '2468',
+      createdDate: now,
+      memberEmail: editor,
+    },
+    {
+      id: 'acct-axis',
+      name: 'Axis Backup QA',
+      bankName: 'Axis',
+      lastFour: '1357',
+      createdDate: now,
+      memberEmail: member,
+    },
     {
       id: 'acct-archived',
       name: 'Old ICICI QA',
@@ -105,11 +123,18 @@ export function buildQaSeedData() {
       lastFour: '9090',
       createdDate: now,
       archivedDate: archived,
+      memberEmail: owner,
     },
   ];
 
   const paymentModes = [
-    { id: 'payment-mode-cash', type: 'cash', name: 'Cash', createdDate: now },
+    {
+      id: 'payment-mode-cash',
+      type: 'cash',
+      name: 'Cash',
+      workspaceGlobal: true,
+      createdDate: now,
+    },
     {
       id: 'pm-upi-gpay',
       type: 'upi',
@@ -117,13 +142,16 @@ export function buildQaSeedData() {
       name: 'Google Pay QA',
       paymentAccountId: 'acct-hdfc',
       createdDate: now,
+      memberEmail: owner,
     },
     {
       id: 'pm-wallet-paytm',
-      type: 'wallet',
+      type: 'upi',
       provider: 'Paytm',
-      name: 'Paytm Wallet QA',
+      name: 'Paytm UPI QA',
+      paymentAccountId: 'acct-axis',
       createdDate: now,
+      memberEmail: member,
     },
     {
       id: 'pm-card-visa',
@@ -131,8 +159,9 @@ export function buildQaSeedData() {
       name: 'Visa Credit QA',
       cardType: 'visa',
       lastFour: '9002',
-      paymentAccountId: 'acct-hdfc',
+      paymentAccountId: 'acct-axis',
       createdDate: now,
+      memberEmail: member,
     },
     {
       id: 'pm-card-rupay',
@@ -142,21 +171,25 @@ export function buildQaSeedData() {
       lastFour: '7711',
       paymentAccountId: 'acct-sbi',
       createdDate: now,
+      memberEmail: editor,
     },
     {
       id: 'pm-netbanking-sbi',
       type: 'internet-banking',
       name: 'SBI NetBanking QA',
-      bankName: 'SBI',
-      paymentAccountId: 'acct-sbi',
+      bankName: 'Axis',
+      paymentAccountId: 'acct-axis',
       createdDate: now,
+      memberEmail: member,
     },
     {
       id: 'pm-archive-target',
-      type: 'wallet',
+      type: 'upi',
       provider: 'BHIM',
       name: 'Archive Target QA',
+      paymentAccountId: 'acct-hdfc',
       createdDate: now,
+      memberEmail: owner,
     },
     {
       id: 'pm-archived-upi',
@@ -166,6 +199,7 @@ export function buildQaSeedData() {
       paymentAccountId: 'acct-archived',
       createdDate: now,
       archivedDate: archived,
+      memberEmail: owner,
     },
   ];
 
@@ -248,7 +282,7 @@ export function buildQaSeedData() {
       frequency: 'quarterly',
       startDate: '2026-03-10',
       memberEmail: owner,
-      paymentModeId: 'pm-netbanking-sbi',
+      paymentModeId: 'pm-upi-gpay',
     },
     {
       id: 'tpl-school-half-yearly',
@@ -259,7 +293,7 @@ export function buildQaSeedData() {
       frequency: 'half-yearly',
       startDate: '2026-06-12',
       memberEmail: member,
-      paymentModeId: 'pm-upi-gpay',
+      paymentModeId: 'pm-wallet-paytm',
     },
     {
       id: 'tpl-annual-renewal',
@@ -270,7 +304,7 @@ export function buildQaSeedData() {
       frequency: 'annual',
       startDate: '2026-06-18',
       memberEmail: editor,
-      paymentModeId: 'pm-card-visa',
+      paymentModeId: 'pm-card-rupay',
     },
     {
       id: 'tpl-ended-subscription',
@@ -282,7 +316,7 @@ export function buildQaSeedData() {
       startDate: '2026-01-01',
       endDate: '2026-05-31',
       memberEmail: owner,
-      paymentModeId: 'pm-card-visa',
+      paymentModeId: 'pm-upi-gpay',
     },
     {
       id: 'tpl-skipped-current',
@@ -436,7 +470,7 @@ export function buildQaSeedData() {
       endDate: '2036-06-15',
       notes: 'Long-running home loan',
       memberEmail: owner,
-      paymentModeId: 'pm-netbanking-sbi',
+      paymentModeId: 'pm-upi-gpay',
       auditTrail: [
         {
           id: 'audit-home-loan-created',
@@ -452,7 +486,7 @@ export function buildQaSeedData() {
           endDate: '2036-06-15',
           notes: 'Long-running home loan',
           memberEmail: owner,
-          paymentModeId: 'pm-netbanking-sbi',
+          paymentModeId: 'pm-upi-gpay',
         },
       ],
     },

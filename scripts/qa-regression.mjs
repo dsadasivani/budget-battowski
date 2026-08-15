@@ -12,11 +12,20 @@ if (!password) {
 }
 
 const rootDir = process.cwd();
+const reportPath = path.join(rootDir, 'QA_FIREBASE_REGRESSION_REPORT.md');
 const port = Number(process.env.QA_APP_PORT ?? 4314);
 const cdpPort = Number(process.env.QA_CDP_PORT ?? 9224);
 const baseUrl = `http://127.0.0.1:${port}`;
-const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const axeSource = readFileSync(path.join(rootDir, 'node_modules', 'axe-core', 'axe.min.js'), 'utf8');
+const today = new Date();
+const reviewMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+const npmCliPath = process.env.npm_execpath;
+const npmCommand = npmCliPath ? process.execPath : process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const npmPrefixArgs = npmCliPath ? [npmCliPath] : [];
+const npmNeedsShell = process.platform === 'win32' && !npmCliPath;
+const axeSource = readFileSync(
+  path.join(rootDir, 'node_modules', 'axe-core', 'axe.min.js'),
+  'utf8',
+);
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const report = {
@@ -47,7 +56,7 @@ function runCommand(label, command, args) {
     cwd: rootDir,
     encoding: 'utf8',
     env: process.env,
-    shell: process.platform === 'win32',
+    shell: npmNeedsShell,
   });
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}${result.error?.message ?? ''}`;
   const entry = {
@@ -82,7 +91,13 @@ function chromePath() {
   const candidates =
     process.platform === 'win32'
       ? [
-          path.join(process.env.ProgramFiles ?? '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+          path.join(
+            process.env.ProgramFiles ?? '',
+            'Google',
+            'Chrome',
+            'Application',
+            'chrome.exe',
+          ),
           path.join(
             process.env['ProgramFiles(x86)'] ?? '',
             'Google',
@@ -105,7 +120,11 @@ function chromePath() {
             'msedge.exe',
           ),
         ]
-      : ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', 'google-chrome', 'chromium'];
+      : [
+          '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+          'google-chrome',
+          'chromium',
+        ];
 
   return candidates.find((candidate) => candidate && existsSync(candidate)) ?? candidates.at(-1);
 }
@@ -130,13 +149,13 @@ async function waitForHttp(url, timeoutMs = 90000) {
 
 function startServer() {
   const child = spawn(
-    npmCmd,
-    ['run', 'start:qa', '--', '--port', String(port), '--host', '127.0.0.1'],
+    npmCommand,
+    [...npmPrefixArgs, 'run', 'start:qa', '--', '--port', String(port), '--host', '127.0.0.1'],
     {
       cwd: rootDir,
       env: process.env,
       stdio: ['ignore', 'pipe', 'pipe'],
-      shell: process.platform === 'win32',
+      shell: npmNeedsShell,
     },
   );
   let log = '';
@@ -318,15 +337,32 @@ async function login(page, email) {
     })()`,
     30000,
   );
-  await waitFor(
-    page,
-    `(() => {
-      const app = globalThis.ng?.getComponent?.(document.querySelector('app-root'));
-      return app?.userEmail?.() === ${JSON.stringify(email)}
-        && app?.workspaces?.().some((workspace) => workspace.id === ${JSON.stringify(QA_WORKSPACE_ID)});
-    })()`,
-    45000,
-  );
+  try {
+    await waitFor(
+      page,
+      `(() => {
+        const app = globalThis.ng?.getComponent?.(document.querySelector('app-root'));
+        return app?.userEmail?.() === ${JSON.stringify(email)}
+          && app?.workspaces?.().some((workspace) => workspace.id === ${JSON.stringify(QA_WORKSPACE_ID)});
+      })()`,
+      45000,
+    );
+  } catch (error) {
+    const authState = await evaluate(
+      page,
+      `(() => {
+        const app = globalThis.ng?.getComponent?.(document.querySelector('app-root'));
+        return {
+          userEmail: app?.userEmail?.() ?? null,
+          workspaceIds: app?.workspaces?.().map((workspace) => workspace.id) ?? [],
+          syncError: app?.syncError?.() ?? null,
+          syncStatus: app?.syncStatus?.() ?? null,
+        };
+      })()`,
+    ).catch(() => null);
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`${message} Auth state: ${JSON.stringify(authState)}`);
+  }
   await ensureQaWorkspace(page);
 }
 
@@ -473,10 +509,15 @@ async function runOwnerBehaviorChecks(page) {
         const restoredAccount = await app.restorePaymentAccount('acct-archived');
         add('Restore archived payment account', restoredAccount && app.activePaymentAccounts().some((account) => account.id === 'acct-archived'));
 
-        app.setSelectedMonth('2026-06');
+        app.setSelectedMonth(${JSON.stringify(reviewMonth)});
         await wait(600);
         const reviewRows = app.monthlyReviewRows();
         add('Monthly review has pending rows', reviewRows.length >= 4, String(reviewRows.length));
+        if (reviewRows.length < 2) {
+          throw new Error(
+            'Monthly review returned fewer than two pending rows for ${reviewMonth}.',
+          );
+        }
         const selectedReviewRows = reviewRows.slice(0, 4).map((row, index) => ({
           ...row,
           amount: index === 0 ? row.amount + 111 : row.amount,
@@ -487,11 +528,11 @@ async function runOwnerBehaviorChecks(page) {
         const approvedRow = selectedReviewRows[0];
         const skippedRow = selectedReviewRows[1];
         const approved = approvedRow?.sourceType === 'expense'
-          ? app.expenses().some((expense) => expense.templateId === approvedRow.sourceId && expense.month === '2026-06' && expense.amount === approvedRow.amount)
+          ? app.expenses().some((expense) => expense.templateId === approvedRow.sourceId && expense.month === ${JSON.stringify(reviewMonth)} && expense.amount === approvedRow.amount)
           : app.investments().some((investment) => investment.sourceInvestmentId === approvedRow.sourceId && investment.amount === approvedRow.amount);
         const skipped = skippedRow?.sourceType === 'expense'
-          ? app.templates().some((template) => template.id === skippedRow.sourceId && template.skippedMonths?.includes('2026-06'))
-          : app.investments().some((investment) => investment.id === skippedRow.sourceId && investment.skippedMonths?.includes('2026-06'));
+          ? app.templates().some((template) => template.id === skippedRow.sourceId && template.skippedMonths?.includes(${JSON.stringify(reviewMonth)}))
+          : app.investments().some((investment) => investment.id === skippedRow.sourceId && investment.skippedMonths?.includes(${JSON.stringify(reviewMonth)}));
         add('Monthly review approve row', Boolean(approved), approvedRow ? JSON.stringify(approvedRow) : 'No approved row selected');
         add('Monthly review delete/skip row', Boolean(skipped), skippedRow ? JSON.stringify(skippedRow) : 'No skipped row selected');
 
@@ -532,8 +573,8 @@ async function runOwnerBehaviorChecks(page) {
           frequency: 'one-time',
           date: '2026-06-23',
           notes: 'Created by regression',
-          memberEmail: 'qa.editor@budget.test',
-          paymentModeId: 'pm-card-rupay',
+          memberEmail: 'qa.owner@budget.test',
+          paymentModeId: 'pm-upi-gpay',
         };
         await runWrite('investments', 'investments', investment);
         add('Create one-time investment', app.investments().some((item) => item.id === investment.id));
@@ -553,8 +594,8 @@ async function runOwnerBehaviorChecks(page) {
           startDate: '2026-06-10',
           endDate: '2027-02-10',
           notes: 'Created by regression',
-          memberEmail: 'qa.member@budget.test',
-          paymentModeId: 'pm-card-visa',
+          memberEmail: 'qa.owner@budget.test',
+          paymentModeId: 'pm-upi-gpay',
         };
         await runWrite('loans', 'loans', loan);
         add('Create loan', app.loans().some((item) => item.id === loan.id));
@@ -563,7 +604,7 @@ async function runOwnerBehaviorChecks(page) {
         await runDelete('loans', 'loans', loan.id);
         add('Delete loan', !app.loans().some((item) => item.id === loan.id));
       } catch (error) {
-        add('Owner behavior check execution', false, error instanceof Error ? error.message : String(error));
+        add('Owner behavior check execution', false, error instanceof Error ? error.stack ?? error.message : String(error));
       }
 
       return out;
@@ -572,7 +613,13 @@ async function runOwnerBehaviorChecks(page) {
   );
 
   for (const item of result) {
-    addCoverage('Functional regression', item.scenario, item.ok ? 'Pass' : 'Fail', item.notes, QA_ACCOUNTS.owner);
+    addCoverage(
+      'Functional regression',
+      item.scenario,
+      item.ok ? 'Pass' : 'Fail',
+      item.notes,
+      QA_ACCOUNTS.owner,
+    );
     if (!item.ok) {
       addIssue(
         'High',
@@ -615,7 +662,11 @@ async function runRoleChecks(page, email) {
           type: 'one-time',
           note: 'Role write check',
           memberEmail: app.userEmail(),
-          paymentModeId: 'pm-upi-gpay',
+          paymentModeId: app.userEmail() === 'qa.editor@budget.test'
+            ? 'pm-card-rupay'
+            : app.userEmail() === 'qa.member@budget.test'
+              ? 'pm-wallet-paytm'
+              : 'pm-upi-gpay',
         };
         await app.runFirebaseWrite(
           async () => repo.upsert('expenses', record),
@@ -628,7 +679,7 @@ async function runRoleChecks(page, email) {
         );
         add('Workspace member can write subcollection records', created && !app.expenses().some((item) => item.id === record.id), app.userEmail());
       } catch (error) {
-        add('Role check execution', false, error instanceof Error ? error.message : String(error));
+        add('Role check execution', false, error instanceof Error ? error.stack ?? error.message : String(error));
       }
       return out;
     })()`,
@@ -636,7 +687,13 @@ async function runRoleChecks(page, email) {
   );
 
   for (const item of result) {
-    addCoverage('Role and permission regression', item.scenario, item.ok ? 'Pass' : 'Fail', item.notes, email);
+    addCoverage(
+      'Role and permission regression',
+      item.scenario,
+      item.ok ? 'Pass' : 'Fail',
+      item.notes,
+      email,
+    );
     if (!item.ok) {
       addIssue(
         'High',
@@ -651,7 +708,9 @@ async function runRoleChecks(page, email) {
 }
 
 function escapeCell(value) {
-  return String(value ?? '').replace(/\|/g, '\\|').replace(/\n/g, '<br>');
+  return String(value ?? '')
+    .replace(/\|/g, '\\|')
+    .replace(/\n/g, '<br>');
 }
 
 function markdownTable(headers, rows) {
@@ -664,13 +723,18 @@ function markdownTable(headers, rows) {
 
 async function writeReport() {
   const passed = report.coverage.filter((item) => item.result === 'Pass').length;
-  const failed = report.coverage.filter((item) => item.result === 'Fail').length;
+  const failedCoverage = report.coverage.filter((item) => item.result === 'Fail').length;
+  const failed = failedCoverage > 0 || report.issues.length > 0;
   const lines = [
     '# QA Firebase Regression Report',
     '',
     `Generated: ${report.generatedAt}`,
     `Workspace: ${QA_WORKSPACE_ID}`,
-    `Result: ${failed ? `${failed} failed checks` : 'Pass'} (${passed} passed, ${failed} failed)`,
+    `Result: ${
+      failed
+        ? `Fail (${passed} passed, ${failedCoverage} coverage failed, ${report.issues.length} issue(s))`
+        : `Pass (${passed} passed, 0 failed)`
+    }`,
     '',
     '## Automated Checks',
     markdownTable(
@@ -727,12 +791,12 @@ async function writeReport() {
     '',
   ];
 
-  await writeFile(path.join(rootDir, 'QA_FIREBASE_REGRESSION_REPORT.md'), lines.join('\n'), 'utf8');
+  await writeFile(reportPath, lines.join('\n'), 'utf8');
 }
 
 async function main() {
-  runCommand('Unit suite', npmCmd, ['test', '--', '--watch=false']);
-  runCommand('QA build', npmCmd, ['run', 'build:qa']);
+  runCommand('Unit suite', npmCommand, [...npmPrefixArgs, 'test', '--', '--watch=false']);
+  runCommand('QA build', npmCommand, [...npmPrefixArgs, 'run', 'build:qa']);
 
   let server;
   let chrome;
@@ -744,7 +808,13 @@ async function main() {
     page = await cdpNewPage(baseUrl);
 
     await login(page, QA_ACCOUNTS.owner);
-    addCoverage('Auth/workspace', 'Owner password login', 'Pass', 'QA login form authenticated and loaded workspace.', QA_ACCOUNTS.owner);
+    addCoverage(
+      'Auth/workspace',
+      'Owner password login',
+      'Pass',
+      'QA login form authenticated and loaded workspace.',
+      QA_ACCOUNTS.owner,
+    );
 
     const routes = [
       { path: '/dashboard', text: 'Dashboard' },
@@ -773,7 +843,13 @@ async function main() {
 
     for (const email of [QA_ACCOUNTS.editor, QA_ACCOUNTS.member]) {
       await login(page, email);
-      addCoverage('Auth/workspace', `${email} password login`, 'Pass', 'QA login form authenticated and loaded workspace.', email);
+      addCoverage(
+        'Auth/workspace',
+        `${email} password login`,
+        'Pass',
+        'QA login form authenticated and loaded workspace.',
+        email,
+      );
       await runRoleChecks(page, email);
       await logout(page);
     }
@@ -784,7 +860,7 @@ async function main() {
       'QA Firebase regression execution',
       'Run npm run qa:regression with QA_FIREBASE_PASSWORD set.',
       'Runner completes all automated scenarios.',
-      error instanceof Error ? error.stack ?? error.message : String(error),
+      error instanceof Error ? (error.stack ?? error.message) : String(error),
       server?.getLog?.() ?? '',
     );
   } finally {
@@ -794,6 +870,8 @@ async function main() {
     await writeReport();
   }
 
+  console.log(`QA regression report: ${reportPath}`);
+  console.log(`QA regression result: ${report.issues.length ? 'FAILED' : 'PASSED'}`);
   if (report.issues.length) {
     process.exitCode = 1;
   }

@@ -2,6 +2,8 @@ import type { FirebaseApp } from 'firebase/app';
 import type { Firestore, Unsubscribe } from 'firebase/firestore';
 
 import { getBudgetFirestore } from './firebase.client';
+import { FirestoreWriteCoordinator, SAFE_BATCH_SIZE } from './data/firestore-write-coordinator';
+import type { BudgetMutationSet } from './domain/mutations/budget-mutations';
 import type {
   BudgetCollectionName,
   BudgetDataMap,
@@ -15,7 +17,9 @@ import type {
 } from './budget.models';
 
 const WORKSPACE_COLLECTION = 'budgetWorkspaces';
-const PROFILE_COLLECTION = 'budgetUserProfiles';
+const LEGACY_PROFILE_COLLECTION = 'budgetUserProfiles';
+const USER_DIRECTORY_COLLECTION = 'budgetUserDirectory';
+const USER_PRIVATE_COLLECTION = 'budgetUserPrivate';
 const CATEGORY_REMAP_COLLECTION = 'categoryRemapOperations';
 const CATEGORY_REMAP_STEPS: CategoryRemapStep[] = [
   'categories',
@@ -37,6 +41,12 @@ function workspaceWithoutId(workspace: Workspace): Omit<Workspace, 'id'> {
 
 function activeMemberEmails(workspace: Workspace): string[] {
   return workspace.members.filter((member) => !member.archivedDate).map((member) => member.email);
+}
+
+function activeMemberUids(workspace: Workspace): string[] {
+  return workspace.members
+    .filter((member) => !member.archivedDate && !!member.uid)
+    .map((member) => member.uid!);
 }
 
 function stripUndefined<T>(value: T): T {
@@ -61,6 +71,7 @@ export class BudgetFirestoreRepository {
   constructor(
     private readonly app: FirebaseApp,
     private readonly workspaceId: string,
+    private readonly identity?: { uid: string; email: string },
   ) {}
 
   async listen<TName extends BudgetCollectionName>(
@@ -91,15 +102,19 @@ export class BudgetFirestoreRepository {
     );
   }
 
-  static async listAccessibleWorkspaces(app: FirebaseApp, userEmail: string): Promise<Workspace[]> {
+  static async listAccessibleWorkspaces(
+    app: FirebaseApp,
+    identity: { uid: string; email: string },
+  ): Promise<Workspace[]> {
     const { collection, getDocs, getFirestore, query, where } = await import('firebase/firestore');
     const db = getFirestore(app);
     const workspacesRef = collection(db, WORKSPACE_COLLECTION);
-    const snapshot = await getDocs(
-      query(workspacesRef, where('memberEmails', 'array-contains', userEmail)),
-    );
+    const [uidSnapshot, emailSnapshot] = await Promise.all([
+      getDocs(query(workspacesRef, where('memberUids', 'array-contains', identity.uid))),
+      getDocs(query(workspacesRef, where('memberEmails', 'array-contains', identity.email))),
+    ]);
 
-    return snapshot.docs
+    return [...new Map([...uidSnapshot.docs, ...emailSnapshot.docs].map((item) => [item.id, item])).values()]
       .map((docSnapshot) => {
         const data = docSnapshot.data() as Omit<Workspace, 'id'> & {
           memberEmails?: string[];
@@ -139,7 +154,7 @@ export class BudgetFirestoreRepository {
         batch.delete(docSnapshot.ref);
         operationCount += 1;
 
-        if (operationCount === 450) {
+        if (operationCount === SAFE_BATCH_SIZE) {
           await batch.commit();
           batch = writeBatch(db);
           operationCount = 0;
@@ -156,6 +171,7 @@ export class BudgetFirestoreRepository {
 
   static async ensureLegacyWorkspace(
     app: FirebaseApp,
+    userUid: string,
     userEmail: string,
     displayName: string,
     photoUrl?: string,
@@ -169,7 +185,27 @@ export class BudgetFirestoreRepository {
     if (snapshot.exists()) {
       const data = snapshot.data() as Omit<Workspace, 'id'>;
       if (Array.isArray(data.members) && data.ownerEmail) {
-        return { id: snapshot.id, ...data } as Workspace;
+        const members = data.members.map((member) =>
+          member.email === userEmail ? { ...member, uid: member.uid ?? userUid } : member,
+        );
+        const workspace = {
+          id: snapshot.id,
+          ...data,
+          ownerUid: data.ownerUid ?? (data.ownerEmail === userEmail ? userUid : undefined),
+          members,
+          memberUids: [...new Set([...(data.memberUids ?? []), userUid])],
+        } as Workspace;
+        await setDoc(
+          workspaceRef,
+          {
+            ...stripUndefined(workspaceWithoutId(workspace)),
+            memberEmails: activeMemberEmails(workspace),
+            memberUids: activeMemberUids(workspace),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true },
+        );
+        return workspace;
       }
     }
 
@@ -178,9 +214,11 @@ export class BudgetFirestoreRepository {
       id: userEmail,
       name: `${displayName || userEmail}'s workspace`,
       ownerEmail: userEmail,
+      ownerUid: userUid,
       members: [
         {
           email: userEmail,
+          uid: userUid,
           displayName: displayName || userEmail,
           photoUrl,
           role: 'owner',
@@ -196,6 +234,7 @@ export class BudgetFirestoreRepository {
       {
         ...stripUndefined(workspaceWithoutId(workspace)),
         memberEmails: [userEmail],
+        memberUids: [userUid],
         updatedAt: serverTimestamp(),
       },
       { merge: true },
@@ -220,9 +259,11 @@ export class BudgetFirestoreRepository {
       id: workspaceRef.id,
       name: name.trim() || 'New workspace',
       ownerEmail,
+      ownerUid: ownerProfile.uid,
       members: [
         {
           email: ownerEmail,
+          uid: ownerProfile.uid,
           displayName: ownerProfile.displayName || ownerEmail,
           photoUrl: ownerProfile.photoUrl,
           role: 'owner',
@@ -230,6 +271,7 @@ export class BudgetFirestoreRepository {
         },
         ...editorProfiles.map((profile) => ({
           email: profile.email,
+          uid: profile.uid,
           displayName: profile.displayName || profile.email,
           photoUrl: profile.photoUrl,
           role: 'editor' as const,
@@ -243,6 +285,7 @@ export class BudgetFirestoreRepository {
     await setDoc(workspaceRef, {
       ...stripUndefined(workspaceWithoutId(workspace)),
       memberEmails: activeMemberEmails(workspace),
+      memberUids: activeMemberUids(workspace),
       updatedAt: serverTimestamp(),
     });
 
@@ -253,26 +296,112 @@ export class BudgetFirestoreRepository {
     const { doc, getFirestore, serverTimestamp, setDoc } = await import('firebase/firestore');
     const db = getFirestore(app);
 
-    await setDoc(
-      doc(db, PROFILE_COLLECTION, profile.email),
-      {
-        ...stripUndefined(profile),
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
-    );
-  }
-
-  static async findUserProfile(app: FirebaseApp, email: string): Promise<UserProfile | null> {
-    const { doc, getDoc, getFirestore } = await import('firebase/firestore');
-    const db = getFirestore(app);
-    const snapshot = await getDoc(doc(db, PROFILE_COLLECTION, email));
-
-    if (!snapshot.exists()) {
-      return null;
+    if (!profile.uid) {
+      await setDoc(
+        doc(db, LEGACY_PROFILE_COLLECTION, profile.email),
+        { ...stripUndefined(profile), updatedAt: serverTimestamp() },
+        { merge: true },
+      );
+      return;
     }
 
-    return snapshot.data() as UserProfile;
+    await Promise.all([
+      setDoc(
+        doc(db, USER_DIRECTORY_COLLECTION, profile.uid),
+        {
+          uid: profile.uid,
+          email: profile.email,
+          displayName: profile.displayName,
+          photoUrl: profile.photoUrl,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      ),
+      setDoc(
+        doc(db, USER_PRIVATE_COLLECTION, profile.uid),
+        {
+          uid: profile.uid,
+          onboarding: profile.onboarding,
+          updatedDate: profile.updatedDate,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      ),
+    ]);
+  }
+
+  static async findUserProfile(app: FirebaseApp, uid: string): Promise<UserProfile | null> {
+    const { doc, getDoc, getFirestore } = await import('firebase/firestore');
+    const db = getFirestore(app);
+    const [directory, privateProfile] = await Promise.all([
+      getDoc(doc(db, USER_DIRECTORY_COLLECTION, uid)),
+      getDoc(doc(db, USER_PRIVATE_COLLECTION, uid)),
+    ]);
+    if (!directory.exists()) {
+      return null;
+    }
+    return {
+      ...(directory.data() as UserProfile),
+      ...(privateProfile.exists() ? privateProfile.data() : {}),
+      uid,
+    } as UserProfile;
+  }
+
+  static async findUserProfileByEmail(app: FirebaseApp, email: string): Promise<UserProfile | null> {
+    const { collection, doc, getDoc, getDocs, getFirestore, limit, query, where } = await import('firebase/firestore');
+    const db = getFirestore(app);
+    const directory = await getDocs(
+      query(collection(db, USER_DIRECTORY_COLLECTION), where('email', '==', email), limit(1)),
+    );
+    if (!directory.empty) {
+      const snapshot = directory.docs[0];
+      return { uid: snapshot.id, ...snapshot.data() } as UserProfile;
+    }
+    const legacy = await getDoc(doc(db, LEGACY_PROFILE_COLLECTION, email));
+    return legacy.exists() ? (legacy.data() as UserProfile) : null;
+  }
+
+  /* Legacy email-keyed profiles remain readable during the staged migration. */
+  static async findLegacyUserProfile(app: FirebaseApp, email: string): Promise<UserProfile | null> {
+    const { doc, getDoc, getFirestore } = await import('firebase/firestore');
+    const db = getFirestore(app);
+    const snapshot = await getDoc(doc(db, LEGACY_PROFILE_COLLECTION, email));
+    return snapshot.exists() ? (snapshot.data() as UserProfile) : null;
+  }
+
+  private ownedRecord<T extends BudgetRecord>(record: T): T {
+    if (
+      !this.identity ||
+      !('memberEmail' in record) ||
+      record.memberEmail !== this.identity.email ||
+      ('ownerUid' in record && record.ownerUid)
+    ) {
+      return record;
+    }
+    return { ...record, ownerUid: this.identity.uid };
+  }
+
+  private withOwnedMutations(mutations: BudgetMutationSet): BudgetMutationSet {
+    return Object.fromEntries(
+      Object.entries(mutations).map(([collectionName, value]) => {
+        if (!value) {
+          return [collectionName, value];
+        }
+        return [
+          collectionName,
+          {
+            ...value,
+            creates: value.creates.map((record: BudgetRecord) => this.ownedRecord(record)),
+            updates: value.updates.map(
+              (update: { record: BudgetRecord; expectedVersion: number }) => ({
+              ...update,
+              record: this.ownedRecord(update.record),
+              }),
+            ),
+          },
+        ];
+      }),
+    ) as BudgetMutationSet;
   }
 
   async upsertWorkspace(workspace: Workspace): Promise<void> {
@@ -284,6 +413,7 @@ export class BudgetFirestoreRepository {
       {
         ...stripUndefined(workspaceWithoutId(workspace)),
         memberEmails: activeMemberEmails(workspace),
+        memberUids: activeMemberUids(workspace),
         updatedAt: serverTimestamp(),
       },
       { merge: true },
@@ -296,7 +426,7 @@ export class BudgetFirestoreRepository {
   ): Promise<void> {
     const { doc, serverTimestamp, setDoc } = await import('firebase/firestore');
     const db = await this.database();
-    const { id, ...data } = record;
+    const { id, ...data } = this.ownedRecord(record);
 
     await setDoc(doc(db, WORKSPACE_COLLECTION, this.workspaceId, collectionName, id), {
       ...stripUndefined(data),
@@ -314,18 +444,25 @@ export class BudgetFirestoreRepository {
 
     const { doc, serverTimestamp, writeBatch } = await import('firebase/firestore');
     const db = await this.database();
-    const batch = writeBatch(db);
-    const timestamp = serverTimestamp();
-
-    for (const record of records) {
-      const { id, ...data } = record;
-      batch.set(doc(db, WORKSPACE_COLLECTION, this.workspaceId, collectionName, id), {
-        ...stripUndefined(data),
-        updatedAt: timestamp,
-      });
+    for (let offset = 0; offset < records.length; offset += SAFE_BATCH_SIZE) {
+      const batch = writeBatch(db);
+      const timestamp = serverTimestamp();
+      for (const record of records.slice(offset, offset + SAFE_BATCH_SIZE)) {
+        const { id, ...data } = this.ownedRecord(record);
+        batch.set(doc(db, WORKSPACE_COLLECTION, this.workspaceId, collectionName, id), {
+          ...stripUndefined(data),
+          updatedAt: timestamp,
+        });
+      }
+      await batch.commit();
     }
+  }
 
-    await batch.commit();
+  async executeMutations(mutations: BudgetMutationSet): Promise<void> {
+    const db = await this.database();
+    await new FirestoreWriteCoordinator(db, this.workspaceId).execute(
+      this.withOwnedMutations(mutations),
+    );
   }
 
   async delete(collectionName: BudgetCollectionName, recordId: string): Promise<void> {
@@ -422,9 +559,9 @@ export class BudgetFirestoreRepository {
             where('categoryId', '==', operation.sourceCategoryId),
           ),
         );
-        for (let offset = 0; offset < snapshot.docs.length; offset += 400) {
+        for (let offset = 0; offset < snapshot.docs.length; offset += SAFE_BATCH_SIZE) {
           const batch = writeBatch(db);
-          for (const snapshotDocument of snapshot.docs.slice(offset, offset + 400)) {
+          for (const snapshotDocument of snapshot.docs.slice(offset, offset + SAFE_BATCH_SIZE)) {
             batch.update(snapshotDocument.ref, {
               categoryId: operation.replacementCategoryId,
               updatedAt: serverTimestamp(),

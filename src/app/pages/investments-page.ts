@@ -156,7 +156,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
               }
             </div>
 
-            <div class="data-table-wrap">
+            <div class="data-table-wrap" tabindex="0" aria-label="Investment portfolio table">
               <table class="data-table">
                 <thead>
                   <tr>

@@ -4120,7 +4120,7 @@ describe('BudgetStore bulk editor launcher', () => {
 
     const fixture = TestBed.createComponent(App);
 
-    fixture.componentInstance.openBulkEditor('monthly');
+    await fixture.componentInstance.openBulkEditor('monthly');
 
     expect(bottomSheetOpen).toHaveBeenCalled();
     expect(dialogOpen).not.toHaveBeenCalled();

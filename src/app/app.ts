@@ -6,7 +6,6 @@ import {
   DestroyRef,
   computed,
   effect,
-  forwardRef,
   inject,
   signal,
 } from '@angular/core';
@@ -23,6 +22,7 @@ import { filter } from 'rxjs';
 
 import { appEnvironment } from '../environments/environment';
 import { BudgetStore } from './budget.store';
+import { BudgetFacade } from './core/budget.facade';
 import type { OnboardingProgress, OnboardingStepStatus } from './budget.models';
 
 type NavItem = {
@@ -59,6 +59,8 @@ type LoginFeature = {
   highlights: string[];
 };
 
+export interface App extends BudgetFacade {}
+
 @Component({
   selector: 'app-root',
   imports: [
@@ -75,12 +77,12 @@ type LoginFeature = {
     MatProgressBarModule,
     MatTooltipModule,
   ],
-  providers: [{ provide: BudgetStore, useExisting: forwardRef(() => App) }],
+  providers: [BudgetFacade, { provide: BudgetStore, useExisting: BudgetFacade }],
   templateUrl: './app.html',
   styleUrl: './app.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class App extends BudgetStore {
+export class App {
   private static readonly onboardingStorageKey = 'budget-battowski-onboarding-v2';
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
@@ -88,6 +90,7 @@ export class App extends BudgetStore {
   private navFocusRestoreTimer: ReturnType<typeof setTimeout> | null = null;
   private navTriggerElement: HTMLElement | null = null;
   private onboardingHydratedIdentity: string | null = null;
+  readonly budget = inject(BudgetFacade);
 
   readonly activeRoutePath = signal('/dashboard');
   readonly navOpen = signal(false);
@@ -334,7 +337,7 @@ export class App extends BudgetStore {
   readonly accountLabel = computed(() => this.userName() || this.userEmail() || 'Signed in');
 
   constructor() {
-    super();
+    this.exposeFacadeCompatibilityApi();
     this.activeRoutePath.set(this.normalizedRoutePath(this.router.url));
     this.router.events
       .pipe(
@@ -348,7 +351,7 @@ export class App extends BudgetStore {
     effect(() => this.hydrateOnboardingWhenReady());
   }
 
-  override ngOnDestroy(): void {
+  ngOnDestroy(): void {
     if (this.loginCarouselTimer) {
       clearInterval(this.loginCarouselTimer);
     }
@@ -357,7 +360,23 @@ export class App extends BudgetStore {
       clearTimeout(this.navFocusRestoreTimer);
     }
 
-    super.ngOnDestroy();
+  }
+
+  private exposeFacadeCompatibilityApi(): void {
+    Object.assign(this, this.budget);
+    let prototype: object | null = Object.getPrototypeOf(this.budget);
+    while (prototype && prototype !== Object.prototype) {
+      for (const propertyName of Object.getOwnPropertyNames(prototype)) {
+        if (propertyName === 'constructor' || propertyName in this) {
+          continue;
+        }
+        const value = Reflect.get(prototype, propertyName, this.budget) as unknown;
+        if (typeof value === 'function') {
+          Reflect.set(this, propertyName, value.bind(this.budget));
+        }
+      }
+      prototype = Object.getPrototypeOf(prototype) as object | null;
+    }
   }
 
   openOnboarding(): void {

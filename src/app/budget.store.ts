@@ -9,20 +9,27 @@ import type { User } from 'firebase/auth';
 import { firstValueFrom } from 'rxjs';
 
 import { BudgetFirestoreRepository } from './budget.firestore';
+import { isVersionEffectiveOnDate } from './domain/effective-dating/effective-dating-engine';
+import { isLoanOccurrenceInRange, loanOccurrenceDate } from './domain/loans/loan-schedule-engine';
+import { scheduleForMonth } from './domain/recurrence/recurrence-engine';
+import { applyEntityMutations, planEntityMutations } from './domain/mutations/mutation-planner';
+import type { BudgetMutationSet } from './domain/mutations/budget-mutations';
+import type { EntityMutations, VersionedRecord } from './domain/mutations/entity-mutations';
 import {
   CategoryRetirementDialog,
   type CategoryRetirementData,
   type CategoryRetirementResult,
 } from './category-retirement-dialog';
-import {
+import type {
   BulkEditorDialog,
-  type BulkEditorResult,
-  type BulkEditorScope,
+  BulkEditorData,
+  BulkEditorResult,
+  BulkEditorScope,
 } from './bulk-editor-dialog';
-import {
+import type {
   MonthlyReviewDialog,
-  type MonthlyReviewResult,
-  type MonthlyReviewRow,
+  MonthlyReviewResult,
+  MonthlyReviewRow,
 } from './monthly-review-dialog';
 import { IncomeEditorDialog, type IncomeEditorData } from './income-editor-dialog';
 import {
@@ -33,12 +40,17 @@ import {
   type WorkspaceFormResult,
 } from './workspace-form-dialog';
 import {
-  initializeBudgetFirebase,
   observeBudgetAuth,
   signInWithEmailPassword,
   signInWithGoogle,
   signOutBudgetUser,
 } from './firebase.client';
+import { FinanceStore } from './stores/finance.store';
+import { OnboardingStore } from './stores/onboarding.store';
+import { PaymentStore } from './stores/payment.store';
+import { PlanningStore } from './stores/planning.store';
+import { SessionStore } from './stores/session.store';
+import { WorkspaceStore } from './stores/workspace.store';
 import {
   buildProcessedImportWorkbook,
   createBudgetImportTemplateWorkbook,
@@ -131,19 +143,7 @@ function laterDate(first: string, second: string): string {
 }
 
 function dateInMonth(month: string, sourceDate?: string): string {
-  const day = Math.max(1, Math.min(28, Number(sourceDate?.split('-')[2]) || 1));
-  return `${month}-${String(day).padStart(2, '0')}`;
-}
-
-function loanOccurrenceDate(month: string, startDate: string): string {
-  const nominalDay = Math.max(1, Math.min(31, Number(startDate.split('-')[2]) || 1));
-  const lastDay = Number(monthEndDate(month).split('-')[2]);
-  return `${month}-${String(Math.min(nominalDay, lastDay)).padStart(2, '0')}`;
-}
-
-function isLoanOccurrenceInRange(month: string, startDate: string, endDate?: string): boolean {
-  const occurrenceDate = loanOccurrenceDate(month, startDate);
-  return occurrenceDate >= startDate && (!endDate || occurrenceDate <= endDate);
+  return loanOccurrenceDate(month, sourceDate || monthStartDate(month));
 }
 
 function dateFromIso(date: string): Date {
@@ -251,24 +251,6 @@ function planFrequency(plan: ScheduledPlan): InvestmentFrequency {
   return plan.frequency ?? 'monthly';
 }
 
-function monthsBetween(startMonth: string, endMonth: string): number {
-  const start = monthParts(startMonth);
-  const end = monthParts(endMonth);
-
-  return (end.year - start.year) * 12 + end.monthIndex - start.monthIndex;
-}
-
-function investmentIntervalMonths(frequency: InvestmentFrequency): number {
-  const intervals: Partial<Record<InvestmentFrequency, number>> = {
-    monthly: 1,
-    quarterly: 3,
-    'half-yearly': 6,
-    annual: 12,
-  };
-
-  return intervals[frequency] ?? 1;
-}
-
 function investmentScheduleForMonth(
   investment: InvestmentEntry,
   month: string,
@@ -288,94 +270,53 @@ function planScheduleForMonth(
   month: string,
 ): { amount: number; date: string; occurrences: number } | null {
   const anchorDate = activeStartDate(plan.startDate, plan.date || plan.createdDate);
-
   if (!anchorDate) {
     return null;
   }
-
-  const frequency = planFrequency(plan);
-
-  if (frequency === 'one-time') {
-    const planMonth = dateMonthKey(plan.date || plan.startDate || plan.createdDate);
-    if (
-      planMonth !== month ||
-      !isMonthInRange(month, plan.date || plan.startDate || plan.createdDate, plan.endDate) ||
-      (!!plan.effectiveStartDate &&
-        (plan.date || plan.startDate || plan.createdDate || '') < plan.effectiveStartDate)
-    ) {
-      return null;
-    }
-
-    return {
+  return scheduleForMonth(
+    {
+      frequency: planFrequency(plan),
+      startDate: anchorDate,
+      endDate: plan.endDate,
+      effectiveStartDate: plan.effectiveStartDate,
       amount: plan.amount,
-      date: plan.date || plan.startDate || plan.createdDate || monthStartDate(month),
-      occurrences: 1,
-    };
-  }
-
-  if (!isMonthInRange(month, anchorDate, plan.endDate)) {
-    return null;
-  }
-
-  const monthStart = monthStartDate(month);
-  const monthEnd = monthEndDate(month);
-  const effectiveStart = laterDate(
-    laterDate(anchorDate, monthStart),
-    plan.effectiveStartDate || '',
+    },
+    month,
   );
-  const effectiveEnd = plan.endDate && plan.endDate < monthEnd ? plan.endDate : monthEnd;
+}
 
-  if (effectiveStart > effectiveEnd) {
-    return null;
-  }
+function intendedMutationIds<T extends VersionedRecord>(
+  mutations: EntityMutations<T>,
+): Set<string> {
+  return new Set([
+    ...mutations.creates.map((record) => record.id),
+    ...mutations.updates.map(({ record }) => record.id),
+    ...mutations.deletes.map(({ id: recordId }) => recordId),
+  ]);
+}
 
-  if (frequency === 'weekly') {
-    const daysFromAnchor = daysBetween(anchorDate, effectiveStart);
-    const firstOffset = (7 - (daysFromAnchor % 7)) % 7 || 0;
-    const firstOccurrence = dateFromIso(effectiveStart);
-    firstOccurrence.setDate(firstOccurrence.getDate() + firstOffset);
-
-    if (monthKey(firstOccurrence) !== month) {
-      return null;
-    }
-
-    const firstDate = `${firstOccurrence.getFullYear()}-${String(
-      firstOccurrence.getMonth() + 1,
-    ).padStart(2, '0')}-${String(firstOccurrence.getDate()).padStart(2, '0')}`;
-
-    if (firstDate > effectiveEnd) {
-      return null;
-    }
-
-    const occurrences = Math.floor(daysBetween(firstDate, effectiveEnd) / 7) + 1;
-
-    return {
-      amount: plan.amount * occurrences,
-      date: firstDate,
-      occurrences,
-    };
-  }
-
-  const anchorMonth = dateMonthKey(anchorDate);
-  if (!anchorMonth) {
-    return null;
-  }
-
-  const elapsedMonths = monthsBetween(anchorMonth, month);
-  const intervalMonths = investmentIntervalMonths(frequency);
-  if (elapsedMonths < 0 || elapsedMonths % intervalMonths !== 0) {
-    return null;
-  }
-
-  const occurrenceDate = dateInMonth(month, anchorDate);
-  if (occurrenceDate < effectiveStart || occurrenceDate > effectiveEnd) {
-    return null;
-  }
-
+function excludeUntouchedEditorUpdates<T extends VersionedRecord>(
+  planned: EntityMutations<T>,
+  openingRecords: readonly T[],
+  editorIntent: EntityMutations<T>,
+): EntityMutations<T> {
+  const openingIds = new Set(openingRecords.map((record) => record.id));
+  const intendedIds = intendedMutationIds(editorIntent);
+  const openingVersions = new Map(openingRecords.map((record) => [record.id, record.version ?? 0]));
   return {
-    amount: plan.amount,
-    date: occurrenceDate,
-    occurrences: 1,
+    ...planned,
+    updates: planned.updates
+      .filter(({ record }) => !openingIds.has(record.id) || intendedIds.has(record.id))
+      .map((update) =>
+        intendedIds.has(update.record.id)
+          ? { ...update, expectedVersion: openingVersions.get(update.record.id) ?? 0 }
+          : update,
+      ),
+    deletes: planned.deletes.map((deletion) =>
+      intendedIds.has(deletion.id)
+        ? { ...deletion, expectedVersion: openingVersions.get(deletion.id) ?? 0 }
+        : deletion,
+    ),
   };
 }
 
@@ -466,6 +407,12 @@ const WORKSPACE_DATA_COLLECTIONS: BudgetCollectionName[] = [
 
 @Injectable()
 export class BudgetStore implements OnDestroy {
+  private readonly sessionState = inject(SessionStore);
+  private readonly workspaceState = inject(WorkspaceStore);
+  private readonly financeState = inject(FinanceStore);
+  private readonly paymentState = inject(PaymentStore);
+  private readonly planningState = inject(PlanningStore);
+  private readonly onboardingState = inject(OnboardingStore);
   private readonly bottomSheet = inject(MatBottomSheet);
   private readonly breakpointObserver = inject(BreakpointObserver);
   private readonly dialog = inject(MatDialog);
@@ -481,20 +428,18 @@ export class BudgetStore implements OnDestroy {
   private authHydrationKey: string | null = null;
   private authHydrationInFlight: Promise<void> | null = null;
 
-  readonly firebase = initializeBudgetFirebase();
+  readonly firebase = this.sessionState.firebase;
   private readonly repository = signal<BudgetFirestoreRepository | null>(null);
-  readonly isSessionChecking = signal(this.firebase.mode === 'firebase');
-  readonly isSyncing = signal(false);
-  readonly loginLoaderActive = signal(false);
-  readonly isWorkspaceDataLoading = signal(false);
+  readonly isSessionChecking = this.sessionState.isSessionChecking;
+  readonly isSyncing = this.sessionState.isSyncing;
+  readonly loginLoaderActive = this.sessionState.loginLoaderActive;
+  readonly isWorkspaceDataLoading = this.workspaceState.isWorkspaceDataLoading;
   private readonly loadedWorkspaceCollections = signal(new Set<BudgetCollectionName>());
-  readonly syncStatus = signal(
-    this.firebase.mode === 'firebase' ? 'Sign in with Google' : 'Firebase config needed',
-  );
-  readonly syncError = signal<string | null>(null);
+  readonly syncStatus = this.sessionState.syncStatus;
+  readonly syncError = this.sessionState.syncError;
   readonly pendingCategoryRemapCount = signal(0);
-  readonly workspaceId = signal<string | null>(null);
-  readonly workspaces = signal<Workspace[]>([]);
+  readonly workspaceId = this.workspaceState.workspaceId;
+  readonly workspaces = this.workspaceState.workspaces;
   readonly activeWorkspaces = computed(() =>
     this.workspaces()
       .filter((workspace) => !workspace.archivedDate)
@@ -508,25 +453,26 @@ export class BudgetStore implements OnDestroy {
   readonly activeWorkspace = computed(
     () => this.workspaces().find((workspace) => workspace.id === this.workspaceId()) ?? null,
   );
-  readonly userName = signal<string | null>(null);
-  readonly userEmail = signal<string | null>(null);
-  readonly userPhoto = signal<string | null>(null);
-  readonly onboardingProgress = signal<OnboardingProgress | null>(null);
-  readonly selectedMemberEmail = signal('ALL');
-  readonly selectedMonth = signal(currentMonth());
+  readonly userName = this.sessionState.userName;
+  readonly userUid = this.sessionState.userUid;
+  readonly userEmail = this.sessionState.userEmail;
+  readonly userPhoto = this.sessionState.userPhoto;
+  readonly onboardingProgress = this.onboardingState.progress;
+  readonly selectedMemberEmail = this.workspaceState.selectedMemberEmail;
+  readonly selectedMonth = this.financeState.selectedMonth;
   readonly monthPickerOpen = signal(false);
   readonly monthPickerView = signal<'months' | 'years'>('months');
   readonly pickerYear = signal(monthParts(this.selectedMonth()).year);
   readonly pickerYearPageStart = signal(yearPageStart(this.pickerYear()));
   readonly activeTabIndex = signal(0);
-  readonly paymentAccounts = signal<PaymentAccount[]>([]);
-  readonly paymentModes = signal<PaymentMode[]>([]);
-  readonly categories = signal<BudgetCategory[]>([]);
-  readonly incomes = signal<IncomeSource[]>([]);
-  readonly templates = signal<ExpenseTemplate[]>([]);
-  readonly expenses = signal<ExpenseEntry[]>([]);
-  readonly investments = signal<InvestmentEntry[]>([]);
-  readonly loans = signal<Loan[]>([]);
+  readonly paymentAccounts = this.paymentState.paymentAccounts;
+  readonly paymentModes = this.paymentState.paymentModes;
+  readonly categories = this.financeState.categories;
+  readonly incomes = this.financeState.incomes;
+  readonly templates = this.planningState.templates;
+  readonly expenses = this.financeState.expenses;
+  readonly investments = this.financeState.investments;
+  readonly loans = this.financeState.loans;
   readonly importSummary = signal<BudgetImportSummary | null>(null);
   readonly processedImportFile = signal<{ blob: Blob; filename: string } | null>(null);
 
@@ -1441,7 +1387,15 @@ export class BudgetStore implements OnDestroy {
     this.isWorkspaceDataLoading.set(true);
     this.workspaceId.set(workspaceId);
     this.selectedMemberEmail.set('ALL');
-    this.repository.set(new BudgetFirestoreRepository(this.firebase.app, workspaceId));
+    const uid = this.userUid();
+    const email = this.userEmail();
+    this.repository.set(
+      new BudgetFirestoreRepository(
+        this.firebase.app,
+        workspaceId,
+        uid && email ? { uid, email } : undefined,
+      ),
+    );
     await this.resumeCategoryRemaps();
     await this.listenToWorkspaceData();
   }
@@ -1849,7 +1803,12 @@ export class BudgetStore implements OnDestroy {
     }
   }
 
-  openBulkEditor(scope: BulkEditorScope, initialTabIndex = 0, initialEditingRowId?: string): void {
+  async openBulkEditor(
+    scope: BulkEditorScope,
+    initialTabIndex = 0,
+    initialEditingRowId?: string,
+  ): Promise<void> {
+    const { BulkEditorDialog: bulkEditorComponent } = await import('./bulk-editor-dialog');
     const data = {
       scope,
       initialTabIndex,
@@ -1870,7 +1829,7 @@ export class BudgetStore implements OnDestroy {
 
     if (this.breakpointObserver.isMatched('(max-width: 760px)')) {
       const bottomSheetRef = this.bottomSheet.open<BulkEditorDialog, typeof data, BulkEditorResult>(
-        BulkEditorDialog,
+        bulkEditorComponent,
         {
           ariaLabel: 'Bulk editor',
           autoFocus: false,
@@ -1883,13 +1842,13 @@ export class BudgetStore implements OnDestroy {
 
       bottomSheetRef.afterDismissed().subscribe((result) => {
         if (result) {
-          void this.applyBulkChanges(result);
+          void this.applyBulkChanges(result, data);
         }
       });
       return;
     }
 
-    const dialogRef = this.dialog.open(BulkEditorDialog, {
+    const dialogRef = this.dialog.open(bulkEditorComponent, {
       autoFocus: false,
       data,
       maxHeight: '100dvh',
@@ -1900,17 +1859,18 @@ export class BudgetStore implements OnDestroy {
 
     dialogRef.afterClosed().subscribe((result) => {
       if (result) {
-        void this.applyBulkChanges(result);
+        void this.applyBulkChanges(result, data);
       }
     });
   }
 
-  openMonthlyReview(): void {
+  async openMonthlyReview(): Promise<void> {
     if (!this.canReviewMonth()) {
       this.syncStatus.set('Review is available for current and future months only');
       return;
     }
 
+    const { MonthlyReviewDialog: monthlyReviewComponent } = await import('./monthly-review-dialog');
     const data = {
       monthLabel: this.monthLabel(),
       rows: this.monthlyReviewRows(),
@@ -1921,7 +1881,7 @@ export class BudgetStore implements OnDestroy {
         MonthlyReviewDialog,
         typeof data,
         MonthlyReviewResult
-      >(MonthlyReviewDialog, {
+      >(monthlyReviewComponent, {
         ariaLabel: 'Review expected records',
         autoFocus: false,
         data,
@@ -1938,7 +1898,7 @@ export class BudgetStore implements OnDestroy {
       return;
     }
 
-    const dialogRef = this.dialog.open(MonthlyReviewDialog, {
+    const dialogRef = this.dialog.open(monthlyReviewComponent, {
       autoFocus: false,
       data,
       maxHeight: '96dvh',
@@ -2113,6 +2073,7 @@ export class BudgetStore implements OnDestroy {
         createdDate: existing?.createdDate || new Date().toISOString(),
         sourceInvestmentId: plan.id,
         memberEmail: existing?.memberEmail ?? plan.memberEmail,
+        ownerUid: existing?.ownerUid ?? plan.ownerUid,
         paymentModeId: plan.paymentModeId,
         auditTrail: existing?.auditTrail ?? [],
       });
@@ -2134,29 +2095,23 @@ export class BudgetStore implements OnDestroy {
       ...approvedInvestments,
     ];
 
+    const mutations: BudgetMutationSet = {
+      templates: planEntityMutations(this.templates(), templates),
+      expenses: planEntityMutations(this.expenses(), expenses, [...deletedExpenseIds]),
+      investments: planEntityMutations(this.investments(), investments, [...deletedInvestmentIds]),
+    };
     const saved = await this.runFirebaseWrite(
       async () => {
         const repository = this.repository();
         if (!repository) {
           return;
         }
-
-        await Promise.all([
-          ...[...deletedExpenseIds].map((recordId) => repository.delete('expenses', recordId)),
-          ...[...deletedInvestmentIds].map((recordId) =>
-            repository.delete('investments', recordId),
-          ),
-        ]);
-        await Promise.all([
-          repository.upsertMany('templates', templates),
-          repository.upsertMany('expenses', expenses),
-          repository.upsertMany('investments', investments),
-        ]);
+        await repository.executeMutations(mutations);
       },
       () => {
-        this.templates.set(templates);
-        this.expenses.set(expenses);
-        this.investments.set(investments);
+        this.templates.set(applyEntityMutations(this.templates(), mutations.templates!));
+        this.expenses.set(applyEntityMutations(this.expenses(), mutations.expenses!));
+        this.investments.set(applyEntityMutations(this.investments(), mutations.investments!));
       },
     );
 
@@ -2355,7 +2310,7 @@ export class BudgetStore implements OnDestroy {
         );
       })
       .map<ExpenseEntry>((loan) => ({
-        id: id('emi'),
+        id: `review:loan:${loan.id}:${month}`,
         month,
         date: loanOccurrenceDate(month, loan.startDate),
         name: this.loanExpenseName(loan),
@@ -2364,7 +2319,9 @@ export class BudgetStore implements OnDestroy {
         type: 'recurring',
         note: 'Prepopulated from loan EMI',
         templateId: this.loanTemplateId(loan.id),
+        sourceLoanId: loan.id,
         memberEmail: loan.memberEmail,
+        ownerUid: loan.ownerUid,
         paymentModeId: loan.paymentModeId,
       }));
 
@@ -2428,7 +2385,7 @@ export class BudgetStore implements OnDestroy {
       'internet-banking': 'Internet Banking',
     };
 
-    return labels[type];
+    return labels[type] ?? 'Payment Mode';
   }
 
   paymentModeIcon(type: PaymentModeType): string {
@@ -2506,7 +2463,7 @@ export class BudgetStore implements OnDestroy {
       return paymentAccount?.bankName ?? 'Internet Banking';
     }
 
-    return this.paymentModeTypeLabel(paymentMode.type);
+    return paymentMode.name?.trim() || this.paymentModeTypeLabel(paymentMode.type);
   }
 
   paymentModeShortLabel(paymentMode: PaymentMode): string {
@@ -2709,12 +2666,14 @@ export class BudgetStore implements OnDestroy {
   async saveOnboardingProgress(progress: OnboardingProgress): Promise<void> {
     this.onboardingProgress.set(progress);
     const email = this.userEmail();
-    if (!email || !this.firebase.app) {
+    const uid = this.userUid();
+    if (!email || !uid || !this.firebase.app) {
       return;
     }
 
     await BudgetFirestoreRepository.upsertUserProfile(this.firebase.app, {
       email,
+      uid,
       displayName: this.userName() || email,
       photoUrl: this.userPhoto() || undefined,
       updatedDate: new Date().toISOString(),
@@ -3368,7 +3327,7 @@ export class BudgetStore implements OnDestroy {
     existing?: ExpenseEntry,
   ): ExpenseEntry {
     return {
-      id: existing?.id ?? id('planned'),
+      id: existing?.id ?? `review:expense:${template.id}:${month}`,
       month,
       date:
         templateScheduleForMonth(template, month)?.date ?? dateInMonth(month, template.startDate),
@@ -3379,6 +3338,7 @@ export class BudgetStore implements OnDestroy {
       note: existing?.note || 'Prepopulated from recurring plan',
       templateId: template.id,
       memberEmail: template.memberEmail,
+      ownerUid: existing?.ownerUid ?? template.ownerUid,
       paymentModeId: template.paymentModeId,
     };
   }
@@ -3407,11 +3367,7 @@ export class BudgetStore implements OnDestroy {
         endDate: audit.endDate,
       };
       const occurrence = templateScheduleForMonth(auditTemplate, month);
-      return (
-        !!occurrence &&
-        (!audit.effectiveStartDate || occurrence.date >= audit.effectiveStartDate) &&
-        (!audit.effectiveEndDate || occurrence.date <= audit.effectiveEndDate)
-      );
+      return !!occurrence && isVersionEffectiveOnDate(audit, occurrence.date);
     });
 
     if (auditVersion) {
@@ -4064,6 +4020,7 @@ export class BudgetStore implements OnDestroy {
     const email = user?.email ?? null;
     this.workspaceId.set(null);
     this.userName.set(user?.displayName ?? null);
+    this.userUid.set(user?.uid ?? null);
     this.userEmail.set(email);
     this.userPhoto.set(user?.photoURL ?? null);
     this.onboardingProgress.set(null);
@@ -4084,11 +4041,11 @@ export class BudgetStore implements OnDestroy {
     this.syncError.set(null);
 
     try {
-      const existingProfile = await BudgetFirestoreRepository.findUserProfile(
-        this.firebase.app,
-        email,
-      );
+      const existingProfile =
+        (await BudgetFirestoreRepository.findUserProfile(this.firebase.app, user.uid)) ??
+        (await BudgetFirestoreRepository.findLegacyUserProfile(this.firebase.app, email));
       const userProfile: UserProfile = {
+        uid: user.uid,
         email,
         displayName: user.displayName ?? email,
         photoUrl: user.photoURL ?? undefined,
@@ -4101,13 +4058,14 @@ export class BudgetStore implements OnDestroy {
       });
       const legacyWorkspace = await BudgetFirestoreRepository.ensureLegacyWorkspace(
         this.firebase.app,
+        user.uid,
         email,
         userProfile.displayName,
         userProfile.photoUrl,
       );
       const accessibleWorkspaces = await BudgetFirestoreRepository.listAccessibleWorkspaces(
         this.firebase.app,
-        email,
+        { uid: user.uid, email },
       );
       const workspaceMap = new Map(
         [legacyWorkspace, ...accessibleWorkspaces].map((workspace) => [workspace.id, workspace]),
@@ -4161,7 +4119,7 @@ export class BudgetStore implements OnDestroy {
     const base = {
       id: paymentMode.id || id('payment-mode'),
       type: paymentMode.type,
-      name: paymentMode.name.trim() || this.paymentModeTypeLabel(paymentMode.type),
+      name: paymentMode.name?.trim() || this.paymentModeTypeLabel(paymentMode.type),
       paymentAccountId,
       memberEmail,
       workspaceGlobal: workspaceGlobal || undefined,
@@ -4234,6 +4192,7 @@ export class BudgetStore implements OnDestroy {
     }
 
     return {
+      uid: this.userUid() ?? undefined,
       email,
       displayName: this.userName() || email,
       photoUrl: this.userPhoto() ?? undefined,
@@ -4246,7 +4205,10 @@ export class BudgetStore implements OnDestroy {
       return null;
     }
 
-    return BudgetFirestoreRepository.findUserProfile(this.firebase.app, this.normalizeEmail(email));
+    return BudgetFirestoreRepository.findUserProfileByEmail(
+      this.firebase.app,
+      this.normalizeEmail(email),
+    );
   }
 
   private workspaceWithEditorProfiles(workspace: Workspace, profiles: UserProfile[]): Workspace {
@@ -4261,6 +4223,7 @@ export class BudgetStore implements OnDestroy {
             member.email === profile.email
               ? {
                   ...member,
+                  uid: profile.uid ?? member.uid,
                   displayName: profile.displayName || profile.email,
                   photoUrl: profile.photoUrl,
                   role: 'editor',
@@ -4271,6 +4234,7 @@ export class BudgetStore implements OnDestroy {
         : [
             ...members,
             {
+              uid: profile.uid,
               email: profile.email,
               displayName: profile.displayName || profile.email,
               photoUrl: profile.photoUrl,
@@ -4600,7 +4564,10 @@ export class BudgetStore implements OnDestroy {
     };
   }
 
-  private async applyBulkChanges(result: BulkEditorResult): Promise<void> {
+  private async applyBulkChanges(
+    result: BulkEditorResult,
+    openingSnapshot?: BulkEditorData,
+  ): Promise<void> {
     const protectedLoanCategoryId = this.loanEmiCategoryId([
       ...this.categories(),
       ...result.categories,
@@ -5067,6 +5034,78 @@ export class BudgetStore implements OnDestroy {
       expenses = [...nextExpensesById.values()];
     }
 
+    const openingCategories = openingSnapshot?.categories ?? this.categories();
+    const openingIncomes = openingSnapshot?.incomes ?? this.incomes();
+    const openingTemplates = openingSnapshot?.templates ?? this.templates();
+    const openingExpenses = openingSnapshot?.expenses ?? this.expenses();
+    const openingInvestments = openingSnapshot?.investments ?? this.investments();
+    const openingLoans = openingSnapshot?.loans ?? this.loans();
+    const mutations: BudgetMutationSet = {
+      categories: excludeUntouchedEditorUpdates(
+        planEntityMutations(this.categories(), categories),
+        openingCategories,
+        planEntityMutations(openingCategories, result.categories, result.deleted.categories),
+      ),
+      incomes: excludeUntouchedEditorUpdates(
+        planEntityMutations(this.incomes(), incomes),
+        openingIncomes,
+        planEntityMutations(openingIncomes, result.incomes, result.deleted.incomes),
+      ),
+      templates: excludeUntouchedEditorUpdates(
+        planEntityMutations(this.templates(), templates, [...hardDeletedTemplateIds]),
+        openingTemplates,
+        planEntityMutations(openingTemplates, result.templates, result.deleted.templates),
+      ),
+      expenses: excludeUntouchedEditorUpdates(
+        planEntityMutations(this.expenses(), expenses, [
+          ...new Set([...result.deleted.expenses, ...extraDeletedExpenseIds]),
+        ]),
+        openingExpenses,
+        planEntityMutations(openingExpenses, result.expenses, result.deleted.expenses),
+      ),
+      investments: excludeUntouchedEditorUpdates(
+        planEntityMutations(this.investments(), investments),
+        openingInvestments,
+        planEntityMutations(openingInvestments, result.investments, result.deleted.investments),
+      ),
+      loans: excludeUntouchedEditorUpdates(
+        planEntityMutations(this.loans(), loans),
+        openingLoans,
+        planEntityMutations(openingLoans, result.loans, result.deleted.loans),
+      ),
+    };
+    const changedTemplateSourceIds = new Set(
+      templates
+        .filter((template) =>
+          this.isTemplateChanged(existingTemplatesById.get(template.id), template),
+        )
+        .map((template) => template.id),
+    );
+    const plannedExpenseUpdates = planEntityMutations(this.expenses(), expenses, [
+      ...new Set([...result.deleted.expenses, ...extraDeletedExpenseIds]),
+    ]).updates;
+    const retainedExpenseUpdateIds = new Set(
+      mutations.expenses!.updates.map(({ record }) => record.id),
+    );
+    for (const update of plannedExpenseUpdates) {
+      const previous = this.expenses().find((expense) => expense.id === update.record.id);
+      const templateId = previous?.templateId;
+      const isTemplateCascade =
+        !!templateId &&
+        (hardDeletedTemplateIds.has(templateId) || changedTemplateSourceIds.has(templateId));
+      const isLoanCascade =
+        !!templateId?.startsWith('loan:') &&
+        (changedLoanIds.has(templateId.slice('loan:'.length)) ||
+          deletedLoanIds.has(templateId.slice('loan:'.length)));
+      const isCategoryCascade = !!previous && categoryRemaps.has(previous.categoryId);
+      if (
+        !retainedExpenseUpdateIds.has(update.record.id) &&
+        (isTemplateCascade || isLoanCascade || isCategoryCascade)
+      ) {
+        mutations.expenses!.updates.push(update);
+      }
+    }
+
     const saved = await this.runFirebaseWrite(
       async () => {
         const repository = this.repository();
@@ -5081,31 +5120,15 @@ export class BudgetStore implements OnDestroy {
           this.pendingCategoryRemapCount.update((count) => Math.max(0, count - 1));
         }
 
-        await Promise.all([
-          ...[...hardDeletedTemplateIds].map((recordId) =>
-            repository.delete('templates', recordId),
-          ),
-          ...[...new Set([...result.deleted.expenses, ...extraDeletedExpenseIds])].map((recordId) =>
-            repository.delete('expenses', recordId),
-          ),
-        ]);
-
-        await Promise.all([
-          repository.upsertMany('categories', categories),
-          repository.upsertMany('incomes', incomes),
-          repository.upsertMany('templates', templates),
-          repository.upsertMany('expenses', expenses),
-          repository.upsertMany('investments', investments),
-          repository.upsertMany('loans', loans),
-        ]);
+        await repository.executeMutations(mutations);
       },
       () => {
-        this.categories.set(categories);
-        this.incomes.set(incomes);
-        this.templates.set(templates);
-        this.expenses.set(expenses);
-        this.investments.set(investments);
-        this.loans.set(loans);
+        this.categories.set(applyEntityMutations(this.categories(), mutations.categories!));
+        this.incomes.set(applyEntityMutations(this.incomes(), mutations.incomes!));
+        this.templates.set(applyEntityMutations(this.templates(), mutations.templates!));
+        this.expenses.set(applyEntityMutations(this.expenses(), mutations.expenses!));
+        this.investments.set(applyEntityMutations(this.investments(), mutations.investments!));
+        this.loans.set(applyEntityMutations(this.loans(), mutations.loans!));
       },
     );
 

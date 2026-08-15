@@ -2,185 +2,240 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isSignedIn() {
-      return request.auth != null && request.auth.token.email != null;
+    function signedIn() { return request.auth != null; }
+    function hasEmail() { return signedIn() && request.auth.token.email != null; }
+    function workspacePath(id) { return /databases/$(database)/documents/budgetWorkspaces/$(id); }
+    function workspace(id) { return get(workspacePath(id)).data; }
+    function legacyOwner(id) { return hasEmail() && request.auth.token.email == id; }
+    function memberData(data) {
+      return signedIn() && (
+        ('memberUids' in data && request.auth.uid in data.memberUids) ||
+        (hasEmail() && 'memberEmails' in data && request.auth.token.email in data.memberEmails)
+      );
+    }
+    function member(id) { return exists(workspacePath(id)) && memberData(workspace(id)); }
+    function owner(id) {
+      return exists(workspacePath(id)) && signedIn() && (
+        ('ownerUid' in workspace(id) && workspace(id).ownerUid == request.auth.uid) ||
+        (hasEmail() && workspace(id).ownerEmail == request.auth.token.email)
+      );
+    }
+    function optionalString(data, field) { return !(field in data) || data[field] is string; }
+    function validMonth(value) { return value is string && value.matches('^[0-9]{4}-[0-9]{2}$'); }
+    function validDate(value) { return value is string && value.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'); }
+    function validVersion(data) { return !('version' in data) || (data.version is int && data.version >= 0); }
+    function commonOwned(data) {
+      return validVersion(data) && optionalString(data, 'ownerUid') && optionalString(data, 'memberEmail');
+    }
+    function workspaceSchema(data) {
+      return data.keys().hasOnly(['name','ownerEmail','ownerUid','memberEmails','memberUids','members','createdDate','updatedDate','archivedDate','createdAt','updatedAt']);
+    }
+    function authOwns(data) {
+      return ('ownerUid' in data && data.ownerUid == request.auth.uid) ||
+        (!('ownerUid' in data) && hasEmail() && data.memberEmail == request.auth.token.email);
+    }
+    function validOwnedCreate(data) {
+      return ('ownerUid' in data || 'memberEmail' in data) && authOwns(data);
+    }
+    function immutableOwner() {
+      return ((!(('ownerUid') in resource.data) && !(('ownerUid') in request.resource.data)) ||
+          request.resource.data.ownerUid == resource.data.ownerUid) &&
+        ((!(('memberEmail') in resource.data) && !(('memberEmail') in request.resource.data)) ||
+          request.resource.data.memberEmail == resource.data.memberEmail);
+    }
+    function sameOwner(left, right) {
+      return ('ownerUid' in left && 'ownerUid' in right && left.ownerUid == right.ownerUid) ||
+        ('memberEmail' in left && 'memberEmail' in right && left.memberEmail == right.memberEmail);
+    }
+    function frequency(value) {
+      return value in ['weekly','monthly','quarterly','half-yearly','annual','one-time'];
+    }
+    function cash(id, data) {
+      return id == 'payment-mode-cash' && data.type == 'cash' && data.name == 'Cash' &&
+        data.workspaceGlobal == true &&
+        !('ownerUid' in data) && !('memberEmail' in data) &&
+        !('paymentAccountId' in data) && !('archivedDate' in data);
+    }
+    function accountPath(workspaceId, accountId) {
+      return /databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/paymentAccounts/$(accountId);
+    }
+    function modePath(workspaceId, modeId) {
+      return /databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/paymentModes/$(modeId);
+    }
+    function modeAccountValid(workspaceId, data) {
+      return !('paymentAccountId' in data) ||
+        (data.paymentAccountId is string && exists(accountPath(workspaceId, data.paymentAccountId)) &&
+          sameOwner(get(accountPath(workspaceId, data.paymentAccountId)).data, data));
+    }
+    function linkedModeValid(workspaceId, data, accountRequired) {
+      let path = modePath(workspaceId, data.paymentModeId);
+      return data.paymentModeId is string && exists(path) &&
+        (cash(data.paymentModeId, get(path).data) ||
+          (sameOwner(get(path).data, data) && (!accountRequired ||
+            ('paymentAccountId' in get(path).data &&
+              exists(accountPath(workspaceId, get(path).data.paymentAccountId)) &&
+              sameOwner(get(accountPath(workspaceId, get(path).data.paymentAccountId)).data, data)))));
+    }
+    function optionalLinkedMode(workspaceId, data) {
+      return !('paymentModeId' in data) || linkedModeValid(workspaceId, data, false);
+    }
+    function generatedExpenseOwnerValid(workspaceId, data) {
+      let templatePath = /databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/templates/$(data.templateId);
+      let loanPath = /databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/loans/$(data.sourceLoanId);
+      return ('templateId' in data && data.templateId is string && exists(templatePath) &&
+          sameOwner(get(templatePath).data, data)) ||
+        ('sourceLoanId' in data && data.sourceLoanId is string && exists(loanPath) &&
+          sameOwner(get(loanPath).data, data));
+    }
+    function generatedInvestmentOwnerValid(workspaceId, data) {
+      let sourcePath = /databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/investments/$(data.sourceInvestmentId);
+      return 'sourceInvestmentId' in data && data.sourceInvestmentId is string &&
+        exists(sourcePath) && sameOwner(get(sourcePath).data, data);
     }
 
-    function workspacePath(workspaceId) {
-      return /databases/$(database)/documents/budgetWorkspaces/$(workspaceId);
+    match /budgetUserDirectory/{uid} {
+      allow get, list: if signedIn();
+      allow create, update: if signedIn() && request.auth.uid == uid &&
+        request.resource.data.keys().hasOnly(['uid','email','displayName','photoUrl','updatedAt']) &&
+        request.resource.data.uid == uid && request.resource.data.email is string &&
+        request.resource.data.displayName is string && optionalString(request.resource.data, 'photoUrl');
+      allow delete: if signedIn() && request.auth.uid == uid;
     }
-
-    function workspaceExists(workspaceId) {
-      return exists(workspacePath(workspaceId));
+    match /budgetUserPrivate/{uid} {
+      allow read, delete: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn() && request.auth.uid == uid &&
+        request.resource.data.keys().hasOnly(['uid','onboarding','preferences','updatedDate','updatedAt']) &&
+        request.resource.data.uid == uid;
     }
-
-    function workspaceData(workspaceId) {
-      return get(workspacePath(workspaceId)).data;
-    }
-
-    function isLegacyOwner(workspaceId) {
-      return isSignedIn() && request.auth.token.email == workspaceId;
-    }
-
-    function isWorkspaceMemberData(data) {
-      return isSignedIn() && request.auth.token.email in data.memberEmails;
-    }
-
-    function isWorkspaceMember(workspaceId) {
-      return workspaceExists(workspaceId)
-        && isWorkspaceMemberData(workspaceData(workspaceId));
-    }
-
-    function isWorkspaceOwner(workspaceId) {
-      return workspaceExists(workspaceId)
-        && isSignedIn()
-        && workspaceData(workspaceId).ownerEmail == request.auth.token.email;
-    }
-
-    function hasRecordOwner(collectionName) {
-      return collectionName in [
-        'paymentAccounts',
-        'paymentModes',
-        'incomes',
-        'templates',
-        'expenses',
-        'investments',
-        'loans'
-      ];
-    }
-
-    function isWorkspaceGlobalCash(collectionName, recordId, data) {
-      return collectionName == 'paymentModes'
-        && recordId == 'payment-mode-cash'
-        && data.type == 'cash'
-        && data.workspaceGlobal == true
-        && !('memberEmail' in data)
-        && !('paymentAccountId' in data)
-        && !('archivedDate' in data);
-    }
-
-    function validOwnerOnCreate(collectionName, recordId) {
-      return !hasRecordOwner(collectionName)
-        || isWorkspaceGlobalCash(collectionName, recordId, request.resource.data)
-        || request.resource.data.memberEmail == request.auth.token.email;
-    }
-
-    function validOwnerOnUpdate(collectionName, recordId) {
-      return !hasRecordOwner(collectionName)
-        || (
-          isWorkspaceGlobalCash(collectionName, recordId, resource.data)
-          && isWorkspaceGlobalCash(collectionName, recordId, request.resource.data)
-        )
-        || (
-          recordId == 'payment-mode-cash'
-          && isWorkspaceGlobalCash(collectionName, recordId, request.resource.data)
-        )
-        || request.resource.data.memberEmail == resource.data.memberEmail;
-    }
-
-    function validPaymentModeType(collectionName, recordId) {
-      return collectionName != 'paymentModes'
-        || request.resource.data.type in ['upi', 'credit-card', 'debit-card', 'internet-banking']
-        || isWorkspaceGlobalCash(collectionName, recordId, request.resource.data);
-    }
-
-    function validPaymentModeAccountOwner(workspaceId, collectionName) {
-      return collectionName != 'paymentModes'
-        || !('paymentAccountId' in request.resource.data)
-        || (
-          request.resource.data.paymentAccountId is string
-          && exists(/databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/paymentAccounts/$(request.resource.data.paymentAccountId))
-          && get(/databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/paymentAccounts/$(request.resource.data.paymentAccountId)).data.memberEmail == request.resource.data.memberEmail
-        );
-    }
-
-    function requiresAccountBackedPayment(collectionName) {
-      return collectionName in ['investments', 'loans'];
-    }
-
-    function usesPaymentMode(collectionName) {
-      return collectionName in ['templates', 'expenses', 'investments', 'loans'];
-    }
-
-    function validLinkedRecordPaymentMode(workspaceId, collectionName) {
-      let modePath = /databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/paymentModes/$(request.resource.data.paymentModeId);
-      return request.resource.data.paymentModeId is string
-        && exists(modePath)
-        && (
-          isWorkspaceGlobalCash('paymentModes', request.resource.data.paymentModeId, get(modePath).data)
-          || (
-            get(modePath).data.memberEmail == request.resource.data.memberEmail
-            && (
-              !('paymentAccountId' in get(modePath).data)
-              || (
-                'paymentAccountId' in get(modePath).data
-                &&
-                get(modePath).data.paymentAccountId is string
-                && exists(/databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/paymentAccounts/$(get(modePath).data.paymentAccountId))
-                && get(/databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/paymentAccounts/$(get(modePath).data.paymentAccountId)).data.memberEmail == request.resource.data.memberEmail
-              )
-            )
-          )
-        )
-        && (
-          !requiresAccountBackedPayment(collectionName)
-          || (
-            'paymentAccountId' in get(modePath).data
-            &&
-            get(modePath).data.paymentAccountId is string
-            && exists(/databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/paymentAccounts/$(get(modePath).data.paymentAccountId))
-            && get(/databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/paymentAccounts/$(get(modePath).data.paymentAccountId)).data.memberEmail == request.resource.data.memberEmail
-          )
-        );
-    }
-
-    function validRecordPaymentMode(workspaceId, collectionName) {
-      return !usesPaymentMode(collectionName)
-        || (
-          requiresAccountBackedPayment(collectionName)
-          && 'paymentModeId' in request.resource.data
-          && validLinkedRecordPaymentMode(workspaceId, collectionName)
-        )
-        || (
-          !requiresAccountBackedPayment(collectionName)
-          && (
-            !('paymentModeId' in request.resource.data)
-            || validLinkedRecordPaymentMode(workspaceId, collectionName)
-          )
-        );
-    }
-
     match /budgetUserProfiles/{profileEmail} {
-      allow get: if isSignedIn();
-      allow list: if false;
-      allow create, update: if isSignedIn()
-        && request.auth.token.email == profileEmail
-        && request.resource.data.email == profileEmail;
-      allow delete: if isSignedIn() && request.auth.token.email == profileEmail;
+      allow read: if hasEmail() && request.auth.token.email == profileEmail;
+      allow create, update: if hasEmail() && request.auth.token.email == profileEmail &&
+        request.resource.data.email == profileEmail;
+      allow delete: if hasEmail() && request.auth.token.email == profileEmail;
     }
 
     match /budgetWorkspaces/{workspaceId} {
-      allow create: if isSignedIn()
-        && request.resource.data.ownerEmail == request.auth.token.email
-        && request.auth.token.email in request.resource.data.memberEmails;
-      allow read: if isLegacyOwner(workspaceId) || isWorkspaceMemberData(resource.data);
-      allow update, delete: if isWorkspaceOwner(workspaceId);
+      allow create: if signedIn() && workspaceSchema(request.resource.data) && request.resource.data.name is string &&
+        request.resource.data.ownerEmail is string && request.resource.data.members is list &&
+        request.resource.data.memberEmails is list &&
+        (('ownerUid' in request.resource.data && request.resource.data.ownerUid == request.auth.uid &&
+            request.auth.uid in request.resource.data.memberUids) ||
+          (hasEmail() && request.resource.data.ownerEmail == request.auth.token.email &&
+            request.auth.token.email in request.resource.data.memberEmails));
+      allow read: if legacyOwner(workspaceId) || memberData(resource.data);
+      allow update: if owner(workspaceId) && workspaceSchema(request.resource.data) && request.resource.data.ownerEmail == resource.data.ownerEmail &&
+        ((!('ownerUid' in resource.data) &&
+            (!('ownerUid' in request.resource.data) || request.resource.data.ownerUid == request.auth.uid)) ||
+          ('ownerUid' in resource.data && request.resource.data.ownerUid == resource.data.ownerUid));
+      allow delete: if owner(workspaceId);
 
-      match /{collectionName}/{recordId} {
-        allow read: if isLegacyOwner(workspaceId) || isWorkspaceMember(workspaceId);
-        allow create: if (isLegacyOwner(workspaceId) || isWorkspaceMember(workspaceId))
-          && validOwnerOnCreate(collectionName, recordId)
-          && validPaymentModeType(collectionName, recordId)
-          && validPaymentModeAccountOwner(workspaceId, collectionName)
-          && validRecordPaymentMode(workspaceId, collectionName);
-        allow update: if (isLegacyOwner(workspaceId) || isWorkspaceMember(workspaceId))
-          && validOwnerOnUpdate(collectionName, recordId)
-          && validPaymentModeType(collectionName, recordId)
-          && validPaymentModeAccountOwner(workspaceId, collectionName)
-          && validRecordPaymentMode(workspaceId, collectionName);
-        allow delete: if (isLegacyOwner(workspaceId) || isWorkspaceMember(workspaceId))
-          && !isWorkspaceGlobalCash(collectionName, recordId, resource.data);
+      match /paymentAccounts/{id} {
+        allow read: if member(workspaceId) || legacyOwner(workspaceId);
+        allow create: if member(workspaceId) && validOwnedCreate(request.resource.data) &&
+          commonOwned(request.resource.data) && request.resource.data.keys().hasOnly(['name','bankName','lastFour','ownerUid','memberEmail','createdDate','updatedDate','archivedDate','version','createdAt','updatedAt']) && request.resource.data.name is string &&
+          request.resource.data.bankName is string && request.resource.data.lastFour is string;
+        allow update: if member(workspaceId) && immutableOwner() && commonOwned(request.resource.data) && request.resource.data.keys().hasOnly(['name','bankName','lastFour','ownerUid','memberEmail','createdDate','updatedDate','archivedDate','version','createdAt','updatedAt']) &&
+          request.resource.data.name is string && request.resource.data.bankName is string &&
+          request.resource.data.lastFour is string;
+        allow delete: if member(workspaceId);
       }
+      match /paymentModes/{id} {
+        allow read: if member(workspaceId) || legacyOwner(workspaceId);
+        allow create: if member(workspaceId) && commonOwned(request.resource.data) &&
+          request.resource.data.keys().hasOnly(['type','name','provider','cardType','lastFour','bankName','paymentAccountId','ownerUid','memberEmail','workspaceGlobal','createdDate','updatedDate','archivedDate','version','createdAt','updatedAt']) &&
+          (request.resource.data.type in ['upi','credit-card','debit-card','internet-banking'] ||
+            cash(id, request.resource.data)) &&
+          request.resource.data.name is string &&
+          (cash(id, request.resource.data) || validOwnedCreate(request.resource.data)) &&
+          modeAccountValid(workspaceId, request.resource.data);
+        allow update: if member(workspaceId) &&
+          request.resource.data.keys().hasOnly(['type','name','provider','cardType','lastFour','bankName','paymentAccountId','ownerUid','memberEmail','workspaceGlobal','createdDate','updatedDate','archivedDate','version','createdAt','updatedAt']) &&
+          ((id == 'payment-mode-cash' && cash(id, request.resource.data)) ||
+            (id != 'payment-mode-cash' && immutableOwner())) &&
+          (request.resource.data.type in ['upi','credit-card','debit-card','internet-banking'] ||
+            cash(id, request.resource.data)) &&
+          modeAccountValid(workspaceId, request.resource.data);
+        allow delete: if member(workspaceId) && !cash(id, resource.data);
+      }
+      match /categories/{id} {
+        allow read: if member(workspaceId) || legacyOwner(workspaceId);
+        allow create, update: if member(workspaceId) && request.resource.data.name is string &&
+          request.resource.data.monthlyBudget is number && request.resource.data.monthlyBudget >= 0 &&
+          request.resource.data.color is string &&
+          request.resource.data.type in ['Income','Investments','Expenses'] && validVersion(request.resource.data) &&
+          (id != 'category-loan-emi' || (request.resource.data.name == 'Loan EMI' && request.resource.data.type == 'Expenses'));
+        allow delete: if member(workspaceId) && id != 'category-loan-emi';
+      }
+      match /incomes/{id} {
+        allow read: if member(workspaceId) || legacyOwner(workspaceId);
+        allow create: if member(workspaceId) && validOwnedCreate(request.resource.data) && validIncome(request.resource.data);
+        allow update: if member(workspaceId) && immutableOwner() && validIncome(request.resource.data);
+        allow delete: if member(workspaceId);
+      }
+      function validIncome(data) {
+        return commonOwned(data) && data.keys().hasOnly(['source','amount','cadence','categoryId','notes','month','createdDate','startDate','endDate','ownerUid','memberEmail','auditTrail','version','createdAt','updatedAt']) && data.source is string && data.amount is number && data.amount >= 0 &&
+          data.cadence in ['monthly','one-time'] && optionalString(data, 'categoryId') &&
+          optionalString(data, 'month') && optionalString(data, 'startDate') && optionalString(data, 'endDate');
+      }
+      match /templates/{id} {
+        allow read: if member(workspaceId) || legacyOwner(workspaceId);
+        allow create: if member(workspaceId) && validOwnedCreate(request.resource.data) &&
+          validTemplate(request.resource.data) && optionalLinkedMode(workspaceId, request.resource.data);
+        allow update: if member(workspaceId) && immutableOwner() && validTemplate(request.resource.data) &&
+          optionalLinkedMode(workspaceId, request.resource.data);
+        allow delete: if member(workspaceId);
+      }
+      function validTemplate(data) {
+        return commonOwned(data) && data.keys().hasOnly(['name','categoryId','amount','type','frequency','createdDate','startDate','effectiveStartDate','endDate','skippedMonths','archivedDate','ownerUid','memberEmail','paymentModeId','auditTrail','version','createdAt','updatedAt']) && data.name is string && data.categoryId is string &&
+          data.amount is number && data.amount >= 0 && data.type == 'recurring' &&
+          (!('frequency' in data) || frequency(data.frequency));
+      }
+      match /expenses/{id} {
+        allow read: if member(workspaceId) || legacyOwner(workspaceId);
+        allow create: if member(workspaceId) &&
+          (validOwnedCreate(request.resource.data) || generatedExpenseOwnerValid(workspaceId, request.resource.data)) &&
+          validExpense(request.resource.data) && optionalLinkedMode(workspaceId, request.resource.data);
+        allow update: if member(workspaceId) && immutableOwner() && validExpense(request.resource.data) &&
+          optionalLinkedMode(workspaceId, request.resource.data);
+        allow delete: if member(workspaceId);
+      }
+      function validExpense(data) {
+        return commonOwned(data) && data.keys().hasOnly(['month','date','name','categoryId','amount','type','note','templateId','sourceLoanId','ownerUid','memberEmail','paymentModeId','version','createdAt','updatedAt']) && data.name is string && data.categoryId is string &&
+          data.amount is number && data.amount >= 0 && data.type in ['recurring','one-time'] &&
+          data.note is string && validMonth(data.month) && (!('date' in data) || validDate(data.date));
+      }
+      match /investments/{id} {
+        allow read: if member(workspaceId) || legacyOwner(workspaceId);
+        allow create: if member(workspaceId) &&
+          (validOwnedCreate(request.resource.data) || generatedInvestmentOwnerValid(workspaceId, request.resource.data)) &&
+          validInvestment(request.resource.data) && linkedModeValid(workspaceId, request.resource.data, true);
+        allow update: if member(workspaceId) && immutableOwner() && validInvestment(request.resource.data) &&
+          linkedModeValid(workspaceId, request.resource.data, true);
+        allow delete: if member(workspaceId);
+      }
+      function validInvestment(data) {
+        return commonOwned(data) && data.keys().hasOnly(['name','amount','categoryId','frequency','date','startDate','effectiveStartDate','endDate','notes','createdDate','skippedMonths','sourceInvestmentId','ownerUid','memberEmail','paymentModeId','auditTrail','version','createdAt','updatedAt']) && data.name is string && data.amount is number && data.amount >= 0 &&
+          frequency(data.frequency) && data.notes is string;
+      }
+      match /loans/{id} {
+        allow read: if member(workspaceId) || legacyOwner(workspaceId);
+        allow create: if member(workspaceId) && validOwnedCreate(request.resource.data) &&
+          validLoan(request.resource.data) && linkedModeValid(workspaceId, request.resource.data, true);
+        allow update: if member(workspaceId) && immutableOwner() && validLoan(request.resource.data) &&
+          linkedModeValid(workspaceId, request.resource.data, true);
+        allow delete: if member(workspaceId);
+      }
+      function validLoan(data) {
+        return commonOwned(data) && data.keys().hasOnly(['lender','loanType','principal','outstanding','annualRate','emi','startDate','endDate','notes','ownerUid','memberEmail','paymentModeId','auditTrail','version','createdAt','updatedAt']) && data.lender is string && data.loanType is string &&
+          data.principal is number && data.principal >= 0 && data.outstanding is number && data.outstanding >= 0 &&
+          data.annualRate is number && data.annualRate >= 0 && data.emi is number && data.emi >= 0 &&
+          validDate(data.startDate) && validDate(data.endDate) && data.notes is string;
+      }
+      match /categoryRemapOperations/{id} {
+        allow read, create, update: if member(workspaceId);
+        allow delete: if owner(workspaceId);
+      }
+      match /{unknown}/{document=**} { allow read, write: if false; }
     }
   }
 }

@@ -34,8 +34,22 @@ export type PaymentModeProvider =
 export type PaymentCardType =
   'rupay' | 'maestro' | 'diners-club' | 'master-card' | 'american-express' | 'visa';
 
-export interface PaymentMode {
+export interface UserIdentity {
+  uid: string;
+  email: string;
+}
+
+export interface PersistedRecord {
   id: string;
+  version?: number;
+}
+
+export interface OwnedRecord extends PersistedRecord {
+  ownerUid?: string;
+  memberEmail?: string;
+}
+
+export interface PaymentMode extends OwnedRecord {
   type: PaymentModeType;
   name: string;
   provider?: PaymentModeProvider;
@@ -43,25 +57,23 @@ export interface PaymentMode {
   lastFour?: string;
   bankName?: PaymentBankName;
   paymentAccountId?: string;
-  memberEmail?: string;
   workspaceGlobal?: boolean;
   createdDate?: string;
   updatedDate?: string;
   archivedDate?: string;
 }
 
-export interface PaymentAccount {
-  id: string;
+export interface PaymentAccount extends OwnedRecord {
   name: string;
   bankName: PaymentBankName;
   lastFour: string;
-  memberEmail?: string;
   createdDate?: string;
   updatedDate?: string;
   archivedDate?: string;
 }
 
 export interface WorkspaceMember {
+  uid?: string;
   email: string;
   displayName: string;
   photoUrl?: string;
@@ -71,6 +83,7 @@ export interface WorkspaceMember {
 }
 
 export interface UserProfile {
+  uid?: string;
   email: string;
   displayName: string;
   photoUrl?: string;
@@ -90,6 +103,8 @@ export interface Workspace {
   id: string;
   name: string;
   ownerEmail: string;
+  ownerUid?: string;
+  memberUids?: string[];
   members: WorkspaceMember[];
   createdDate: string;
   updatedDate: string;
@@ -113,8 +128,7 @@ export interface IncomeAuditVersion {
   memberEmail?: string;
 }
 
-export interface IncomeSource {
-  id: string;
+export interface IncomeSource extends OwnedRecord {
   source: string;
   amount: number;
   cadence: Cadence;
@@ -124,12 +138,10 @@ export interface IncomeSource {
   createdDate?: string;
   startDate?: string;
   endDate?: string;
-  memberEmail?: string;
   auditTrail?: IncomeAuditVersion[];
 }
 
-export interface BudgetCategory {
-  id: string;
+export interface BudgetCategory extends PersistedRecord {
   name: string;
   monthlyBudget: number;
   color: string;
@@ -177,8 +189,7 @@ export interface ExpenseTemplateAuditVersion {
   paymentModeId?: string;
 }
 
-export interface ExpenseTemplate {
-  id: string;
+export interface ExpenseTemplate extends OwnedRecord {
   name: string;
   categoryId: string;
   amount: number;
@@ -190,13 +201,11 @@ export interface ExpenseTemplate {
   endDate?: string;
   skippedMonths?: string[];
   archivedDate?: string;
-  memberEmail?: string;
   paymentModeId?: string;
   auditTrail?: ExpenseTemplateAuditVersion[];
 }
 
-export interface ExpenseEntry {
-  id: string;
+export interface ExpenseEntry extends OwnedRecord {
   month: string;
   date?: string;
   name: string;
@@ -205,12 +214,11 @@ export interface ExpenseEntry {
   type: ExpenseType;
   note: string;
   templateId?: string;
-  memberEmail?: string;
+  sourceLoanId?: string;
   paymentModeId?: string;
 }
 
-export interface InvestmentEntry {
-  id: string;
+export interface InvestmentEntry extends OwnedRecord {
   name: string;
   amount: number;
   categoryId?: string;
@@ -223,7 +231,6 @@ export interface InvestmentEntry {
   createdDate?: string;
   skippedMonths?: string[];
   sourceInvestmentId?: string;
-  memberEmail?: string;
   paymentModeId?: string;
   auditTrail?: InvestmentAuditVersion[];
 }
@@ -246,8 +253,7 @@ export interface InvestmentAuditVersion {
   paymentModeId?: string;
 }
 
-export interface Loan {
-  id: string;
+export interface Loan extends OwnedRecord {
   lender: string;
   loanType: string;
   principal: number;
@@ -257,7 +263,6 @@ export interface Loan {
   startDate: string;
   endDate: string;
   notes: string;
-  memberEmail?: string;
   paymentModeId?: string;
   auditTrail?: LoanAuditVersion[];
 }
