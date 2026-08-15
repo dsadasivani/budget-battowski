@@ -88,7 +88,8 @@
                     type="number"
                     min="0"
                     step="1"
-                    [(ngModel)]="row.amount"
+                    [ngModel]="row.amount"
+                    (ngModelChange)="updateAmount(row, $event)"
                     [disabled]="!!row.pendingDelete"
                     [attr.aria-label]="'Amount for ' + row.label"
                   />

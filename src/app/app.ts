@@ -60,8 +60,6 @@ type LoginFeature = {
   highlights: string[];
 };
 
-export interface App extends BudgetFacade {}
-
 @Component({
   selector: 'app-root',
   imports: [
@@ -78,7 +76,7 @@ export interface App extends BudgetFacade {}
     MatProgressBarModule,
     MatTooltipModule,
   ],
-  providers: [BudgetFacade, { provide: BudgetStore, useExisting: BudgetFacade }],
+  providers: [BudgetStore, BudgetFacade],
   templateUrl: './app.html',
   styleUrl: './app.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -337,10 +335,11 @@ export class App {
       this.navItems[0]
     );
   });
-  readonly accountLabel = computed(() => this.userName() || this.userEmail() || 'Signed in');
+  readonly accountLabel = computed(
+    () => this.budget.userName() || this.budget.userEmail() || 'Signed in',
+  );
 
   constructor() {
-    this.exposeFacadeCompatibilityApi();
     this.activeRoutePath.set(this.normalizedRoutePath(this.router.url));
     this.router.events
       .pipe(
@@ -370,23 +369,6 @@ export class App {
 
     if (this.navFocusRestoreTimer) {
       clearTimeout(this.navFocusRestoreTimer);
-    }
-  }
-
-  private exposeFacadeCompatibilityApi(): void {
-    Object.assign(this, this.budget);
-    let prototype: object | null = Object.getPrototypeOf(this.budget);
-    while (prototype && prototype !== Object.prototype) {
-      for (const propertyName of Object.getOwnPropertyNames(prototype)) {
-        if (propertyName === 'constructor' || propertyName in this) {
-          continue;
-        }
-        const value = Reflect.get(prototype, propertyName, this.budget) as unknown;
-        if (typeof value === 'function') {
-          Reflect.set(this, propertyName, value.bind(this.budget));
-        }
-      }
-      prototype = Object.getPrototypeOf(prototype) as object | null;
     }
   }
 
@@ -431,15 +413,15 @@ export class App {
     }
 
     const { email, password } = this.qaLoginForm.getRawValue();
-    await this.loginWithEmailPassword(email.trim(), password);
+    await this.budget.loginWithEmailPassword(email.trim(), password);
   }
 
   private hydrateOnboardingWhenReady(): void {
-    const email = this.userEmail();
-    const workspaceId = this.workspaceId();
-    const progress = this.onboardingProgress();
-    const checking = this.isSessionChecking() || this.isWorkspaceDataLoading();
-    if (this.firebase.mode === 'firebase' && (!email || !workspaceId || checking)) {
+    const email = this.budget.userEmail();
+    const workspaceId = this.budget.workspaceId();
+    const progress = this.budget.onboardingProgress();
+    const checking = this.budget.isSessionChecking() || this.budget.isWorkspaceDataLoading();
+    if (this.budget.firebase.mode === 'firebase' && (!email || !workspaceId || checking)) {
       return;
     }
 
@@ -496,7 +478,7 @@ export class App {
   }
 
   private async persistOnboardingProgress(): Promise<void> {
-    const identity = this.userEmail() || 'local-user';
+    const identity = this.budget.userEmail() || 'local-user';
     const progress: OnboardingProgress = {
       activeStepId: this.activeOnboardingStep().id,
       steps: this.onboardingStatuses(),
@@ -506,7 +488,7 @@ export class App {
       `${App.onboardingStorageKey}:${identity}`,
       JSON.stringify(progress),
     );
-    await this.saveOnboardingProgress(progress);
+    await this.budget.saveOnboardingProgress(progress);
   }
 
   private readLocalOnboardingProgress(identity: string): OnboardingProgress | null {

@@ -12,6 +12,7 @@ import { routes } from './app.routes';
 import { BulkEditorDialog, type BulkEditorData } from './bulk-editor-dialog';
 import type { PaymentAccount, PaymentMode } from './budget.models';
 import { BudgetStore } from './budget.store';
+import { MonthlyReviewSourceConflictError } from './domain/errors';
 import {
   buildProcessedImportCsv,
   createBudgetImportTemplateCsv,
@@ -417,7 +418,7 @@ describe('App', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 5, 10));
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       selectedMonth: () => string;
       pickerYear: () => number;
       openMonthPicker: () => void;
@@ -431,7 +432,7 @@ describe('App', () => {
 
   it('should jump directly to a selected month and ignore invalid month input', () => {
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       selectedMonth: () => string;
       setSelectedMonth: (month: string) => void;
     };
@@ -458,7 +459,7 @@ describe('App', () => {
 
   it('should render exactly five primary labels in the mobile bottom nav', async () => {
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       firebase: { mode: string };
       isSessionChecking: { set: (checking: boolean) => void };
     };
@@ -478,7 +479,7 @@ describe('App', () => {
   it('should expose the active navigation destination to assistive technology', async () => {
     const fixture = TestBed.createComponent(App);
     const router = TestBed.inject(Router);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       firebase: { mode: string };
       isSessionChecking: { set: (checking: boolean) => void };
     };
@@ -499,7 +500,7 @@ describe('App', () => {
   it('should expose the selected member filter as a pressed button', async () => {
     const fixture = TestBed.createComponent(App);
     const router = TestBed.inject(Router);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       firebase: { mode: string };
       isSessionChecking: { set: (checking: boolean) => void };
     };
@@ -526,7 +527,7 @@ describe('App', () => {
     globalThis.localStorage?.setItem('budget-battowski-onboarding-v1', 'seen');
     const fixture = TestBed.createComponent(App);
     const router = TestBed.inject(Router);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       firebase: { mode: string };
       isSessionChecking: { set: (checking: boolean) => void };
     };
@@ -561,14 +562,14 @@ describe('App', () => {
   it('should expose responsive navigation state and close it with Escape', async () => {
     const fixture = TestBed.createComponent(App);
     const router = TestBed.inject(Router);
-    const app = fixture.componentInstance as unknown as {
+    const store = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       firebase: { mode: string };
       isSessionChecking: { set: (checking: boolean) => void };
-      navOpen: () => boolean;
     };
+    const app = fixture.componentInstance;
 
-    app.firebase.mode = 'local';
-    app.isSessionChecking.set(false);
+    store.firebase.mode = 'local';
+    store.isSessionChecking.set(false);
     await router.navigateByUrl('/dashboard');
     fixture.detectChanges();
     await fixture.whenStable();
@@ -595,7 +596,7 @@ describe('App', () => {
   it('should render payment modes inside the mobile utility menu', async () => {
     const fixture = TestBed.createComponent(App);
     const router = TestBed.inject(Router);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       firebase: { mode: string };
       isSessionChecking: { set: (checking: boolean) => void };
       userPhoto: { set: (photo: string | null) => void };
@@ -631,7 +632,7 @@ describe('App', () => {
   it('should keep the mobile profile trigger available across authenticated routes', async () => {
     const fixture = TestBed.createComponent(App);
     const router = TestBed.inject(Router);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       firebase: { mode: string };
       isSessionChecking: { set: (checking: boolean) => void };
     };
@@ -669,7 +670,7 @@ describe('App', () => {
   ])('should render the branded mobile shell for %s', async (path, icon, label) => {
     const fixture = TestBed.createComponent(App);
     const router = TestBed.inject(Router);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       firebase: { mode: string };
       isSessionChecking: { set: (checking: boolean) => void };
     };
@@ -709,7 +710,7 @@ describe('App', () => {
 
   it('should keep the branded loader for explicit login transitions only', async () => {
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       firebase: { mode: string };
       isSessionChecking: { set: (checking: boolean) => void };
       loginLoaderActive: { set: (active: boolean) => void };
@@ -742,7 +743,7 @@ describe('App', () => {
 
   it('should stop showing page skeletons after workspace data loading completes', () => {
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       firebase: { mode: string };
       isSessionChecking: { set: (checking: boolean) => void };
       isWorkspaceDataLoading: { set: (loading: boolean) => void };
@@ -766,7 +767,7 @@ describe('App', () => {
 
   it('should carry the latest monthly income into future months', () => {
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       incomes: { set: (records: unknown[]) => void };
       monthlyIncome: () => number;
       selectedMonth: { set: (month: string) => void };
@@ -789,7 +790,7 @@ describe('App', () => {
 
   it('should treat legacy expenses without an explicit type as one-time entries', () => {
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       expenses: {
         set: (records: unknown[]) => void;
       };
@@ -817,7 +818,7 @@ describe('App', () => {
 
   it('should filter financial data by selected workspace member', () => {
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       expenses: { set: (records: unknown[]) => void };
       incomes: { set: (records: unknown[]) => void };
       monthlyIncome: () => number;
@@ -887,11 +888,89 @@ describe('App', () => {
     expect(app.outflowTotal()).toBe(30000);
   });
 
+  it('should filter migrated records by member UID after an email change', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
+      expenses: { set: (records: unknown[]) => void };
+      selectedEntries: () => Array<{ id: string }>;
+      selectedMemberEmail: { set: (email: string) => void };
+      selectedMonth: { set: (month: string) => void };
+      workspaceId: { set: (id: string) => void };
+      workspaces: { set: (records: unknown[]) => void };
+    };
+    app.workspaceId.set('workspace-identity');
+    app.workspaces.set([
+      {
+        id: 'workspace-identity',
+        name: 'Identity',
+        ownerEmail: 'owner@example.com',
+        members: [
+          {
+            uid: 'member-uid',
+            email: 'new@example.com',
+            displayName: 'Member',
+            role: 'editor',
+            createdDate: '2026-01-01',
+          },
+        ],
+        createdDate: '2026-01-01',
+        updatedDate: '2026-01-01',
+      },
+    ]);
+    app.selectedMonth.set('2026-08');
+    app.selectedMemberEmail.set('new@example.com');
+    app.expenses.set([
+      {
+        id: 'migrated-expense',
+        name: 'Migrated',
+        categoryId: 'food',
+        amount: 100,
+        month: '2026-08',
+        type: 'one-time',
+        note: '',
+        ownerUid: 'member-uid',
+        memberEmail: 'old@example.com',
+      },
+    ]);
+
+    expect(app.selectedEntries().map((record) => record.id)).toEqual(['migrated-expense']);
+  });
+
+  it('should administer a migrated workspace by UID rather than matching legacy email', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
+      canManageWorkspace: () => boolean;
+      userEmail: { set: (email: string) => void };
+      userUid: { set: (uid: string) => void };
+      workspaceId: { set: (id: string) => void };
+      workspaces: { set: (records: unknown[]) => void };
+    };
+    app.workspaceId.set('workspace-owner-identity');
+    app.workspaces.set([
+      {
+        id: 'workspace-owner-identity',
+        name: 'Identity',
+        ownerUid: 'owner-uid',
+        ownerEmail: 'old@example.com',
+        members: [],
+        createdDate: '2026-01-01',
+        updatedDate: '2026-01-01',
+      },
+    ]);
+    app.userUid.set('owner-uid');
+    app.userEmail.set('new@example.com');
+    expect(app.canManageWorkspace()).toBe(true);
+
+    app.userUid.set('wrong-uid');
+    app.userEmail.set('old@example.com');
+    expect(app.canManageWorkspace()).toBe(false);
+  });
+
   it('should approve reviewed recurring expenses into the selected month', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 5, 11));
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       applyMonthlyReview: (result: unknown) => Promise<void>;
       buildMonthlyReviewRows: (month: string) => Array<{ sourceId: string; sourceType: string }>;
       expenses: {
@@ -928,6 +1007,8 @@ describe('App', () => {
           label: 'Rent',
           categoryName: 'Home',
           amount: 26000,
+          originalAmount: 25000,
+          amountModified: true,
         },
       ],
     });
@@ -943,11 +1024,214 @@ describe('App', () => {
     expect(app.hasMonthlyReviewRows()).toBe(false);
   });
 
+  it('uses the latest recurring expense amount when the reviewer did not edit the row', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 11));
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
+      applyMonthlyReview: (result: unknown) => Promise<void>;
+      buildMonthlyReviewRows: (month: string) => Array<Record<string, unknown>>;
+      expenses: { (): Array<{ amount: number; templateId?: string }> };
+      firebase: { mode: string };
+      selectedMonth: { set: (month: string) => void };
+      templates: { set: (records: unknown[]) => void };
+    };
+    app.firebase.mode = 'local';
+    app.selectedMonth.set('2026-06');
+    app.templates.set([
+      {
+        id: 'concurrent-rent',
+        name: 'Rent',
+        categoryId: 'category-home',
+        amount: 10000,
+        type: 'recurring',
+        startDate: '2026-01-01',
+        version: 1,
+      },
+    ]);
+    const [row] = app.buildMonthlyReviewRows('2026-06');
+
+    app.templates.set([
+      {
+        id: 'concurrent-rent',
+        name: 'Rent',
+        categoryId: 'category-home',
+        amount: 12000,
+        type: 'recurring',
+        startDate: '2026-01-01',
+        version: 2,
+      },
+    ]);
+    await app.applyMonthlyReview({ rows: [row] });
+
+    expect(app.expenses().find((expense) => expense.templateId === 'concurrent-rent')?.amount).toBe(
+      12000,
+    );
+  });
+
+  it('preserves an explicit review override when the recurring expense source changes', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 11));
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
+      applyMonthlyReview: (result: unknown) => Promise<void>;
+      buildMonthlyReviewRows: (month: string) => Array<Record<string, unknown>>;
+      expenses: { (): Array<{ amount: number; templateId?: string }> };
+      firebase: { mode: string };
+      selectedMonth: { set: (month: string) => void };
+      templates: { set: (records: unknown[]) => void };
+    };
+    app.firebase.mode = 'local';
+    app.selectedMonth.set('2026-06');
+    app.templates.set([
+      {
+        id: 'override-rent',
+        name: 'Rent',
+        categoryId: 'category-home',
+        amount: 10000,
+        type: 'recurring',
+        startDate: '2026-01-01',
+        version: 1,
+      },
+    ]);
+    const [row] = app.buildMonthlyReviewRows('2026-06');
+    app.templates.set([
+      {
+        id: 'override-rent',
+        name: 'Rent',
+        categoryId: 'category-home',
+        amount: 12000,
+        type: 'recurring',
+        startDate: '2026-01-01',
+        version: 2,
+      },
+    ]);
+
+    await app.applyMonthlyReview({
+      rows: [{ ...row, amount: 9500, amountModified: true }],
+    });
+
+    expect(app.expenses().find((expense) => expense.templateId === 'override-rent')?.amount).toBe(
+      9500,
+    );
+  });
+
+  it('fails safely when a recurring expense source is removed while review is open', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 11));
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
+      applyMonthlyReview: (result: unknown) => Promise<void>;
+      buildMonthlyReviewRows: (month: string) => Array<Record<string, unknown>>;
+      expenses: { (): unknown[] };
+      firebase: { mode: string };
+      selectedMonth: { set: (month: string) => void };
+      templates: { set: (records: unknown[]) => void };
+    };
+    app.firebase.mode = 'local';
+    app.selectedMonth.set('2026-06');
+    app.templates.set([
+      {
+        id: 'deleted-rent',
+        name: 'Rent',
+        categoryId: 'category-home',
+        amount: 10000,
+        type: 'recurring',
+        startDate: '2026-01-01',
+        version: 1,
+      },
+    ]);
+    const [row] = app.buildMonthlyReviewRows('2026-06');
+    app.templates.set([]);
+
+    await expect(app.applyMonthlyReview({ rows: [row] })).rejects.toBeInstanceOf(
+      MonthlyReviewSourceConflictError,
+    );
+    expect(app.expenses()).toHaveLength(0);
+  });
+
+  it('applies the same latest-source and explicit-override semantics to investments', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 11));
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
+      applyMonthlyReview: (result: unknown) => Promise<void>;
+      buildMonthlyReviewRows: (month: string) => Array<Record<string, unknown>>;
+      firebase: { mode: string };
+      investments: {
+        (): Array<{ amount: number; sourceInvestmentId?: string }>;
+        set: (records: unknown[]) => void;
+      };
+      selectedMonth: { set: (month: string) => void };
+    };
+    app.firebase.mode = 'local';
+    app.selectedMonth.set('2026-06');
+    app.investments.set([
+      {
+        id: 'concurrent-sip',
+        name: 'Index SIP',
+        amount: 10000,
+        frequency: 'monthly',
+        startDate: '2026-01-01',
+        notes: '',
+        version: 1,
+      },
+    ]);
+    const [unchangedRow] = app.buildMonthlyReviewRows('2026-06');
+    app.investments.set([
+      {
+        id: 'concurrent-sip',
+        name: 'Index SIP',
+        amount: 12000,
+        frequency: 'monthly',
+        startDate: '2026-01-01',
+        notes: '',
+        version: 2,
+      },
+    ]);
+    await app.applyMonthlyReview({ rows: [unchangedRow] });
+    expect(
+      app.investments().find((investment) => investment.sourceInvestmentId === 'concurrent-sip')
+        ?.amount,
+    ).toBe(12000);
+
+    app.investments.set([
+      {
+        id: 'override-sip',
+        name: 'Override SIP',
+        amount: 10000,
+        frequency: 'monthly',
+        startDate: '2026-01-01',
+        notes: '',
+        version: 1,
+      },
+    ]);
+    const [overrideRow] = app.buildMonthlyReviewRows('2026-06');
+    app.investments.set([
+      {
+        id: 'override-sip',
+        name: 'Override SIP',
+        amount: 12000,
+        frequency: 'monthly',
+        startDate: '2026-01-01',
+        notes: '',
+        version: 2,
+      },
+    ]);
+    await app.applyMonthlyReview({
+      rows: [{ ...overrideRow, amount: 9500, amountModified: true }],
+    });
+    expect(
+      app.investments().find((investment) => investment.sourceInvestmentId === 'override-sip')
+        ?.amount,
+    ).toBe(9500);
+  });
+
   it('should preserve member ownership on generated recurring and loan expenses', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 5, 11));
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       buildDefaultMonthEntries: (
         month: string,
       ) => Array<{ memberEmail?: string; paymentModeId?: string; templateId?: string }>;
@@ -1006,7 +1290,7 @@ describe('App', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 5, 11));
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       applyMonthlyReview: (result: unknown) => Promise<void>;
       buildMonthlyReviewRows: (month: string) => Array<{ sourceId: string; sourceType: string }>;
       firebase: { mode: string };
@@ -1050,6 +1334,8 @@ describe('App', () => {
           label: 'Index SIP',
           categoryName: 'Investments',
           amount: 15000,
+          originalAmount: 12000,
+          amountModified: true,
         },
       ],
     });
@@ -1075,7 +1361,7 @@ describe('App', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 5, 11));
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       buildMonthlyReviewRows: (
         month: string,
       ) => Array<{ amount: number; sourceId: string; sourceType: string }>;
@@ -1114,7 +1400,7 @@ describe('App', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 5, 11));
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       buildMonthlyReviewRows: (
         month: string,
       ) => Array<{ amount: number; sourceId: string; sourceType: string }>;
@@ -1150,7 +1436,7 @@ describe('App', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 5, 11));
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       buildMonthlyReviewRows: (
         month: string,
       ) => Array<{ amount: number; sourceId: string; sourceType: string }>;
@@ -1189,7 +1475,7 @@ describe('App', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 5, 11));
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       buildMonthlyReviewRows: (
         month: string,
       ) => Array<{ amount: number; sourceId: string; sourceType: string }>;
@@ -1225,7 +1511,7 @@ describe('App', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 5, 11));
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       applyMonthlyReview: (result: unknown) => Promise<void>;
       expenses: { (): unknown[] };
       firebase: { mode: string };
@@ -1268,7 +1554,7 @@ describe('App', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 5, 11));
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       applyMonthlyReview: (result: unknown) => Promise<void>;
       buildMonthlyReviewRows: (month: string) => Array<{
         sourceId: string;
@@ -1319,7 +1605,7 @@ describe('App', () => {
 
   it('should build monthly review rows for the whole workspace regardless of member filter', () => {
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       buildMonthlyReviewRows: (month: string) => Array<{ sourceId: string }>;
       selectedMemberEmail: { set: (email: string) => void };
       templates: { set: (records: unknown[]) => void };
@@ -1356,7 +1642,7 @@ describe('App', () => {
 
   it('should retain the prior category budget before an effective-dated change', () => {
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       categoryBudgetForMonth: (category: unknown, month: string) => number;
       normalizeCategoryBudget: (category: unknown, previous: unknown, month: string) => unknown;
     };
@@ -1380,7 +1666,7 @@ describe('App', () => {
 
   it('should version recurring parent updates from the selected month forward', () => {
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       normalizeMonthlyTemplate: (
         next: unknown,
         previous: unknown,
@@ -1414,7 +1700,7 @@ describe('App', () => {
 
   it('should keep the old recurring version until a future selected start date', () => {
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       normalizeMonthlyTemplate: (
         next: unknown,
         previous: unknown,
@@ -1448,7 +1734,7 @@ describe('App', () => {
 
   it('should keep recurring parent name and category immutable during updates', () => {
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       normalizeMonthlyTemplate: (
         next: unknown,
         previous: unknown,
@@ -1481,7 +1767,7 @@ describe('App', () => {
 
   it('should avoid duplicate recurring update audit rows', () => {
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       normalizeMonthlyTemplate: (
         next: unknown,
         previous: unknown,
@@ -1526,7 +1812,7 @@ describe('App', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 5, 11));
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       applyBulkChanges: (result: unknown) => Promise<void>;
       categories: { set: (records: unknown[]) => void };
       expenses: {
@@ -1614,7 +1900,7 @@ describe('App', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 5, 11));
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       applyBulkChanges: (result: unknown) => Promise<void>;
       expenses: {
         set: (records: unknown[]) => void;
@@ -1703,7 +1989,7 @@ describe('App', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 5, 11));
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       applyBulkChanges: (result: unknown) => Promise<void>;
       firebase: { mode: string };
       loans: {
@@ -1750,7 +2036,7 @@ describe('App', () => {
 
   it('should show generated loan EMI expenses with the special display category', () => {
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       categoryName: (categoryId: string) => string;
       buildDefaultMonthEntries: (month: string) => Array<{ categoryId: string; name: string }>;
       loans: { set: (records: unknown[]) => void };
@@ -1783,7 +2069,7 @@ describe('App', () => {
 
   it('should clamp loan EMIs to the last valid day and restore the nominal day', () => {
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       buildDefaultMonthEntries: (month: string) => Array<{
         date?: string;
         templateId?: string;
@@ -1831,7 +2117,7 @@ describe('App', () => {
 
   it('should not generate a clamped EMI after the exact loan end date', () => {
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       buildDefaultMonthEntries: (month: string) => Array<{ templateId?: string }>;
       loans: { set: (records: unknown[]) => void };
     };
@@ -1859,7 +2145,7 @@ describe('App', () => {
 
   it('should resolve payment mode labels including archived modes', () => {
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       activePaymentModes: () => PaymentMode[];
       paymentModeLabel: (paymentModeId: string | undefined) => string;
       paymentModeMeta: (
@@ -1908,7 +2194,7 @@ describe('App', () => {
 
   it('should total selected-month payment mode usage across expenses investments and loan EMIs', () => {
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       expenses: { set: (records: unknown[]) => void };
       investments: { set: (records: unknown[]) => void };
       loans: { set: (records: unknown[]) => void };
@@ -1969,7 +2255,7 @@ describe('App', () => {
 
   it('should total selected-month usage at payment account level', () => {
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       expenses: { set: (records: unknown[]) => void };
       paymentAccountCards: () => Array<{
         id: string;
@@ -2053,7 +2339,7 @@ describe('App', () => {
 
   it('should block archiving payment accounts that still have active mapped modes', async () => {
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       archivePaymentAccount: (paymentAccountId: string) => Promise<boolean>;
       canArchivePaymentAccount: (paymentAccountId: string) => boolean;
       paymentAccounts: { set: (records: PaymentAccount[]) => void };
@@ -2084,7 +2370,7 @@ describe('App', () => {
 
   it('should restore archived payment modes and accounts', async () => {
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       activePaymentAccounts: () => PaymentAccount[];
       activePaymentModes: () => PaymentMode[];
       archivedPaymentAccounts: () => PaymentAccount[];
@@ -2145,7 +2431,7 @@ describe('App', () => {
 
   it('should expose icon and label metadata for tagged financial rows', () => {
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       expenseRows: () => Array<{ paymentModeMeta?: { iconSrc: string; label: string } | null }>;
       expenses: { set: (records: unknown[]) => void };
       investments: { set: (records: unknown[]) => void };
@@ -2211,7 +2497,7 @@ describe('App', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 5, 11));
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       buildDefaultMonthEntries: (
         month: string,
       ) => Array<{ name: string; templateId?: string; type: string }>;
@@ -4121,7 +4407,7 @@ describe('BudgetStore bulk editor launcher', () => {
 
     const fixture = TestBed.createComponent(App);
 
-    await fixture.componentInstance.openBulkEditor('monthly');
+    await fixture.debugElement.injector.get(BudgetStore).openBulkEditor('monthly');
 
     expect(bottomSheetOpen).toHaveBeenCalled();
     expect(dialogOpen).not.toHaveBeenCalled();
@@ -4143,7 +4429,7 @@ describe('App accessibility', () => {
 
   it('should pass axe checks on the login screen', async () => {
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance as unknown as {
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       firebase: { mode: string };
       isSessionChecking: { set: (checking: boolean) => void };
       workspaceId: { set: (workspaceId: string | null) => void };
@@ -4177,7 +4463,7 @@ describe('App accessibility', () => {
     async (path) => {
       const fixture = TestBed.createComponent(App);
       const router = TestBed.inject(Router);
-      const app = fixture.componentInstance as unknown as {
+      const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
         firebase: { mode: string };
         isSessionChecking: { set: (checking: boolean) => void };
       };

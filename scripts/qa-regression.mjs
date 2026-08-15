@@ -341,7 +341,8 @@ async function login(page, email) {
     await waitFor(
       page,
       `(() => {
-        const app = globalThis.ng?.getComponent?.(document.querySelector('app-root'));
+        const shell = globalThis.ng?.getComponent?.(document.querySelector('app-root'));
+        const app = shell?.budget?.store ?? shell;
         return app?.userEmail?.() === ${JSON.stringify(email)}
           && app?.workspaces?.().some((workspace) => workspace.id === ${JSON.stringify(QA_WORKSPACE_ID)});
       })()`,
@@ -351,7 +352,8 @@ async function login(page, email) {
     const authState = await evaluate(
       page,
       `(() => {
-        const app = globalThis.ng?.getComponent?.(document.querySelector('app-root'));
+        const shell = globalThis.ng?.getComponent?.(document.querySelector('app-root'));
+        const app = shell?.budget?.store ?? shell;
         return {
           userEmail: app?.userEmail?.() ?? null,
           workspaceIds: app?.workspaces?.().map((workspace) => workspace.id) ?? [],
@@ -370,7 +372,8 @@ async function ensureQaWorkspace(page) {
   await waitFor(
     page,
     `(() => {
-      const app = globalThis.ng?.getComponent?.(document.querySelector('app-root'));
+      const shell = globalThis.ng?.getComponent?.(document.querySelector('app-root'));
+      const app = shell?.budget?.store ?? shell;
       return app?.userEmail?.()
         && app?.workspaces?.().some((workspace) => workspace.id === ${JSON.stringify(QA_WORKSPACE_ID)});
     })()`,
@@ -379,7 +382,8 @@ async function ensureQaWorkspace(page) {
   await evaluate(
     page,
     `(async () => {
-      const app = globalThis.ng.getComponent(document.querySelector('app-root'));
+      const shell = globalThis.ng.getComponent(document.querySelector('app-root'));
+      const app = shell?.budget?.store ?? shell;
       await app.selectWorkspace(${JSON.stringify(QA_WORKSPACE_ID)});
       return true;
     })()`,
@@ -388,7 +392,8 @@ async function ensureQaWorkspace(page) {
   await waitFor(
     page,
     `(() => {
-      const app = globalThis.ng?.getComponent?.(document.querySelector('app-root'));
+      const shell = globalThis.ng?.getComponent?.(document.querySelector('app-root'));
+      const app = shell?.budget?.store ?? shell;
       return app?.workspaceId?.() === ${JSON.stringify(QA_WORKSPACE_ID)}
         && !app?.showPageSkeleton?.()
         && app?.categories?.().length >= 8
@@ -402,7 +407,8 @@ async function logout(page) {
   await evaluate(
     page,
     `(async () => {
-      const app = globalThis.ng?.getComponent?.(document.querySelector('app-root'));
+      const shell = globalThis.ng?.getComponent?.(document.querySelector('app-root'));
+      const app = shell?.budget?.store ?? shell;
       if (app?.userEmail?.()) {
         await app.logout();
       }
@@ -460,7 +466,8 @@ async function runOwnerBehaviorChecks(page) {
   const result = await evaluate(
     page,
     `(async () => {
-      const app = globalThis.ng.getComponent(document.querySelector('app-root'));
+      const shell = globalThis.ng.getComponent(document.querySelector('app-root'));
+      const app = shell?.budget?.store ?? shell;
       const out = [];
       const add = (scenario, ok, notes = '') => out.push({ scenario, ok, notes });
       const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -521,6 +528,7 @@ async function runOwnerBehaviorChecks(page) {
         const selectedReviewRows = reviewRows.slice(0, 4).map((row, index) => ({
           ...row,
           amount: index === 0 ? row.amount + 111 : row.amount,
+          amountModified: index === 0,
           pendingDelete: index === 1,
         }));
         await app.applyMonthlyReview({ rows: selectedReviewRows });
@@ -637,7 +645,8 @@ async function runRoleChecks(page, email) {
   const result = await evaluate(
     page,
     `(async () => {
-      const app = globalThis.ng.getComponent(document.querySelector('app-root'));
+      const shell = globalThis.ng.getComponent(document.querySelector('app-root'));
+      const app = shell?.budget?.store ?? shell;
       const out = [];
       const add = (scenario, ok, notes = '') => out.push({ scenario, ok, notes });
       const repo = app.repository?.();

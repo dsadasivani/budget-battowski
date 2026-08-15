@@ -1,4 +1,4 @@
-@if (showGlobalLoader()) {
+@if (budget.showGlobalLoader()) {
   <main class="global-loader-shell" id="main-content" aria-live="polite" aria-busy="true">
     <section class="global-loader-panel" aria-labelledby="global-loader-title">
       <div class="loader-mark" aria-hidden="true">
@@ -19,7 +19,9 @@
       </p>
     </section>
   </main>
-} @else if (firebase.mode === 'firebase' && !workspaceId() && !isSessionChecking()) {
+} @else if (
+  budget.firebase.mode === 'firebase' && !budget.workspaceId() && !budget.isSessionChecking()
+) {
   <main class="login-shell login-showcase-shell" id="main-content">
     <section class="login-showcase" aria-labelledby="login-showcase-title">
       <header class="login-showcase-top">
@@ -162,8 +164,8 @@
       <div>
         <h2 id="login-title">Open your budget workspace</h2>
         <p aria-live="polite">
-          @if (syncError()) {
-            {{ syncError() }}
+          @if (budget.syncError()) {
+            {{ budget.syncError() }}
           } @else {
             Secure sign in keeps household finance data private.
           }
@@ -175,8 +177,8 @@
           class="google-login"
           mat-flat-button
           type="button"
-          (click)="loginWithGoogle()"
-          [disabled]="isSyncing()"
+          (click)="budget.loginWithGoogle()"
+          [disabled]="budget.isSyncing()"
           aria-label="Continue with Google to open Budget Battowski"
         >
           <span class="google-mark" aria-hidden="true">G</span>
@@ -207,7 +209,7 @@
             <button
               mat-stroked-button
               type="submit"
-              [disabled]="isSyncing() || qaLoginForm.invalid"
+              [disabled]="budget.isSyncing() || qaLoginForm.invalid"
             >
               Sign in
             </button>
@@ -249,21 +251,21 @@
       <button class="workspace-pill" type="button" [matMenuTriggerFor]="workspaceMenu">
         <span class="sync-dot" aria-hidden="true"></span>
         <span>
-          <strong>{{ activeWorkspace()?.name || 'Battowski Home' }}</strong>
-          <small>{{ syncError() || (isSyncing() ? 'Syncing' : 'Synced') }}</small>
+          <strong>{{ budget.activeWorkspace()?.name || 'Battowski Home' }}</strong>
+          <small>{{ budget.syncError() || (budget.isSyncing() ? 'Syncing' : 'Synced') }}</small>
         </span>
         <mat-icon aria-hidden="true">expand_more</mat-icon>
       </button>
 
       <mat-menu #workspaceMenu="matMenu" class="workspace-menu">
-        @for (workspace of activeWorkspaces(); track workspace.id) {
-          <button mat-menu-item type="button" (click)="selectWorkspace(workspace.id)">
+        @for (workspace of budget.activeWorkspaces(); track workspace.id) {
+          <button mat-menu-item type="button" (click)="budget.selectWorkspace(workspace.id)">
             <mat-icon aria-hidden="true">home_work</mat-icon>
             <span>{{ workspace.name }}</span>
           </button>
         }
-        @if (canManageWorkspace()) {
-          <button mat-menu-item type="button" (click)="createWorkspace()">
+        @if (budget.canManageWorkspace()) {
+          <button mat-menu-item type="button" (click)="budget.createWorkspace()">
             <mat-icon aria-hidden="true">add_business</mat-icon>
             <span>Create workspace</span>
           </button>
@@ -288,23 +290,23 @@
 
       <div class="sidebar-account">
         <span class="avatar profile-avatar" aria-hidden="true">
-          @if (userPhoto(); as photo) {
+          @if (budget.userPhoto(); as photo) {
             <img [src]="photo" alt="" referrerpolicy="no-referrer" />
           } @else {
-            {{ memberInitial(userEmail() || undefined) }}
+            {{ budget.memberInitial(budget.userEmail() || undefined) }}
           }
         </span>
         <span>
           <strong>{{ accountLabel() }}</strong>
-          <small>{{ userEmail() ? 'Signed in' : 'Local mode' }}</small>
+          <small>{{ budget.userEmail() ? 'Signed in' : 'Local mode' }}</small>
         </span>
         <button
           mat-icon-button
           type="button"
           aria-label="Log out"
           matTooltip="Log out"
-          (click)="logout()"
-          [disabled]="firebase.mode !== 'firebase' || isSyncing()"
+          (click)="budget.logout()"
+          [disabled]="budget.firebase.mode !== 'firebase' || budget.isSyncing()"
         >
           <mat-icon aria-hidden="true">logout</mat-icon>
         </button>
@@ -341,10 +343,10 @@
           matTooltip="Account and utilities"
           [matMenuTriggerFor]="mobileUtilityMenu"
         >
-          @if (userPhoto(); as photo) {
+          @if (budget.userPhoto(); as photo) {
             <img [src]="photo" alt="" referrerpolicy="no-referrer" />
           } @else {
-            {{ memberInitial(userEmail() || undefined) }}
+            {{ budget.memberInitial(budget.userEmail() || undefined) }}
           }
         </button>
 
@@ -358,8 +360,8 @@
           <button
             mat-menu-item
             type="button"
-            (click)="logout()"
-            [disabled]="firebase.mode !== 'firebase' || isSyncing()"
+            (click)="budget.logout()"
+            [disabled]="budget.firebase.mode !== 'firebase' || budget.isSyncing()"
           >
             <mat-icon aria-hidden="true">logout</mat-icon>
             <span>Log out</span>
