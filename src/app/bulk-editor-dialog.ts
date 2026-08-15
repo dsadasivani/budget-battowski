@@ -21,6 +21,7 @@ import type {
   ExpenseEntry,
   ExpenseTemplate,
   ExpenseTemplateAuditVersion,
+  ExpenseType,
   IncomeAuditVersion,
   IncomeSource,
   InvestmentAuditVersion,
@@ -28,6 +29,7 @@ import type {
   InvestmentFrequency,
   Loan,
   LoanAuditVersion,
+  PaymentAccount,
   PaymentMode,
   WorkspaceMember,
 } from './budget.models';
@@ -70,14 +72,115 @@ type PaymentModeMeta = {
   iconSrc: string;
   label: string;
 };
+type BulkTableKey = 'expenses' | 'templates' | 'incomes' | 'categories' | 'loans' | 'investments';
+type SortDirection = 'asc' | 'desc';
+type RowStatusFilter = 'all' | 'active' | 'new' | 'suggested' | 'marked-delete' | 'modified';
+type BulkSortColumn =
+  | ''
+  | 'amount'
+  | 'annualRate'
+  | 'cadence'
+  | 'category'
+  | 'color'
+  | 'date'
+  | 'emi'
+  | 'endDate'
+  | 'frequency'
+  | 'lender'
+  | 'loanType'
+  | 'monthlyBudget'
+  | 'month'
+  | 'name'
+  | 'note'
+  | 'outstanding'
+  | 'paymentMode'
+  | 'principal'
+  | 'source'
+  | 'startDate'
+  | 'status'
+  | 'type';
+type BulkFilterKey = keyof BulkTableFilterState;
+type BulkDisplayRow =
+  | DraftExpense
+  | DraftTemplate
+  | DraftRow<IncomeSource>
+  | DraftRow<BudgetCategory>
+  | DraftRow<Loan>
+  | DraftRow<InvestmentEntry>;
+type SelectOption<T extends string = string> = {
+  label: string;
+  value: T;
+};
+type BulkTableFilterState = {
+  cadence: Cadence | '';
+  categoryId: string;
+  categoryType: CategoryType | '';
+  expenseType: ExpenseType | '';
+  frequency: InvestmentFrequency | '';
+  paymentModeId: string;
+  query: string;
+  status: RowStatusFilter;
+};
+type BulkTableSortState = {
+  column: BulkSortColumn;
+  direction: SortDirection;
+};
+type SortOption = SelectOption<`${Exclude<BulkSortColumn, ''>}:${SortDirection}` | ''>;
+type BulkHeaderValueKind =
+  | 'category'
+  | 'categoryType'
+  | 'color'
+  | 'date'
+  | 'number'
+  | 'paymentMode'
+  | 'select'
+  | 'text';
+type BulkHeaderField =
+  | ''
+  | 'amount'
+  | 'annualRate'
+  | 'cadence'
+  | 'categoryId'
+  | 'color'
+  | 'date'
+  | 'emi'
+  | 'endDate'
+  | 'frequency'
+  | 'lender'
+  | 'loanType'
+  | 'monthlyBudget'
+  | 'month'
+  | 'name'
+  | 'note'
+  | 'notes'
+  | 'outstanding'
+  | 'paymentModeId'
+  | 'principal'
+  | 'source'
+  | 'startDate'
+  | 'type';
+type BulkHeaderEditableField = Exclude<BulkHeaderField, ''>;
+type BulkHeaderFieldOption = SelectOption<BulkHeaderEditableField> & {
+  categoryType?: CategoryType;
+  kind: BulkHeaderValueKind;
+  newRowsOnly?: boolean;
+};
+type BulkHeaderEditState = {
+  result: string;
+  touched: Partial<Record<BulkHeaderEditableField, boolean>>;
+  values: Partial<Record<BulkHeaderEditableField, string>>;
+};
 export type BulkEditorScope = 'monthly' | 'planning' | 'loans';
 
 export interface BulkEditorData {
   scope: BulkEditorScope;
   initialTabIndex?: number;
+  initialEditingRowId?: string;
   selectedMonth: string;
   members?: WorkspaceMember[];
   selectedMemberEmail?: string;
+  actingMemberEmail?: string;
+  paymentAccounts?: PaymentAccount[];
   paymentModes?: PaymentMode[];
   categories: BudgetCategory[];
   incomes: IncomeSource[];
@@ -145,6 +248,10 @@ function requiredDate(value: unknown): string {
   return dateValue(value) ?? '';
 }
 
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value : String(value ?? '');
+}
+
 function todayDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -209,9 +316,265 @@ const PAYMENT_CARD_ICONS: Record<string, string> = {
 };
 const DEFAULT_CARD_ICON = '/payment-icons/cards_default.svg';
 const DEFAULT_BANK_ICON = '/bank-icons/bank-building-icon.svg';
+const UNCATEGORIZED_FILTER_VALUE = '__uncategorized';
+const NO_PAYMENT_MODE_FILTER_VALUE = '__none';
 const PAYMENT_BANK_ICON_BY_NAME = new Map(
   PAYMENT_BANK_OPTIONS.map((bank) => [bank.name, bank.iconSrc] as const),
 );
+const BULK_SORT_COLUMNS: ReadonlySet<string> = new Set<BulkSortColumn>([
+  '',
+  'amount',
+  'annualRate',
+  'cadence',
+  'category',
+  'color',
+  'date',
+  'emi',
+  'endDate',
+  'frequency',
+  'lender',
+  'loanType',
+  'monthlyBudget',
+  'month',
+  'name',
+  'note',
+  'outstanding',
+  'paymentMode',
+  'principal',
+  'source',
+  'startDate',
+  'status',
+  'type',
+]);
+const STATUS_FILTER_OPTIONS: Record<
+  'base' | 'suggested',
+  readonly SelectOption<RowStatusFilter>[]
+> = {
+  base: [
+    { value: 'all', label: 'All statuses' },
+    { value: 'active', label: 'Active' },
+    { value: 'new', label: 'New' },
+    { value: 'modified', label: 'Modified' },
+    { value: 'marked-delete', label: 'Marked delete' },
+  ],
+  suggested: [
+    { value: 'all', label: 'All statuses' },
+    { value: 'active', label: 'Active' },
+    { value: 'new', label: 'New' },
+    { value: 'suggested', label: 'Suggested' },
+    { value: 'modified', label: 'Modified' },
+    { value: 'marked-delete', label: 'Marked delete' },
+  ],
+};
+const TABLE_SORT_OPTIONS = {
+  expenses: [
+    { value: '', label: 'Default order' },
+    { value: 'name:asc', label: 'Name A-Z' },
+    { value: 'name:desc', label: 'Name Z-A' },
+    { value: 'date:desc', label: 'Date newest' },
+    { value: 'date:asc', label: 'Date oldest' },
+    { value: 'amount:desc', label: 'Amount high-low' },
+    { value: 'amount:asc', label: 'Amount low-high' },
+    { value: 'category:asc', label: 'Category A-Z' },
+    { value: 'paymentMode:asc', label: 'Paid via A-Z' },
+  ],
+  templates: [
+    { value: '', label: 'Default order' },
+    { value: 'name:asc', label: 'Name A-Z' },
+    { value: 'name:desc', label: 'Name Z-A' },
+    { value: 'amount:desc', label: 'Amount high-low' },
+    { value: 'amount:asc', label: 'Amount low-high' },
+    { value: 'category:asc', label: 'Category A-Z' },
+    { value: 'frequency:asc', label: 'Frequency A-Z' },
+    { value: 'startDate:asc', label: 'Start oldest' },
+    { value: 'startDate:desc', label: 'Start newest' },
+  ],
+  incomes: [
+    { value: '', label: 'Default order' },
+    { value: 'source:asc', label: 'Source A-Z' },
+    { value: 'source:desc', label: 'Source Z-A' },
+    { value: 'amount:desc', label: 'Amount high-low' },
+    { value: 'amount:asc', label: 'Amount low-high' },
+    { value: 'category:asc', label: 'Category A-Z' },
+    { value: 'cadence:asc', label: 'Cadence A-Z' },
+    { value: 'month:desc', label: 'Month newest' },
+  ],
+  categories: [
+    { value: '', label: 'Default order' },
+    { value: 'name:asc', label: 'Name A-Z' },
+    { value: 'name:desc', label: 'Name Z-A' },
+    { value: 'type:asc', label: 'Type A-Z' },
+    { value: 'monthlyBudget:desc', label: 'Budget high-low' },
+    { value: 'monthlyBudget:asc', label: 'Budget low-high' },
+  ],
+  loans: [
+    { value: '', label: 'Default order' },
+    { value: 'lender:asc', label: 'Lender A-Z' },
+    { value: 'lender:desc', label: 'Lender Z-A' },
+    { value: 'outstanding:desc', label: 'Outstanding high-low' },
+    { value: 'outstanding:asc', label: 'Outstanding low-high' },
+    { value: 'emi:desc', label: 'EMI high-low' },
+    { value: 'emi:asc', label: 'EMI low-high' },
+    { value: 'startDate:asc', label: 'Start oldest' },
+    { value: 'endDate:asc', label: 'End soonest' },
+  ],
+  investments: [
+    { value: '', label: 'Default order' },
+    { value: 'name:asc', label: 'Name A-Z' },
+    { value: 'name:desc', label: 'Name Z-A' },
+    { value: 'amount:desc', label: 'Amount high-low' },
+    { value: 'amount:asc', label: 'Amount low-high' },
+    { value: 'category:asc', label: 'Category A-Z' },
+    { value: 'frequency:asc', label: 'Frequency A-Z' },
+    { value: 'date:desc', label: 'Date newest' },
+    { value: 'paymentMode:asc', label: 'Paid via A-Z' },
+  ],
+} satisfies Record<BulkTableKey, readonly SortOption[]>;
+const BULK_HEADER_FIELDS = {
+  expenses: [
+    { value: 'name', label: 'Name', kind: 'text' },
+    { value: 'date', label: 'Date', kind: 'date' },
+    { value: 'categoryId', label: 'Category', kind: 'category', categoryType: 'Expenses' },
+    { value: 'amount', label: 'Amount', kind: 'number' },
+    { value: 'note', label: 'Note', kind: 'text' },
+    { value: 'paymentModeId', label: 'Paid via', kind: 'paymentMode' },
+  ],
+  templates: [
+    { value: 'name', label: 'Name', kind: 'text', newRowsOnly: true },
+    {
+      value: 'categoryId',
+      label: 'Category',
+      kind: 'category',
+      categoryType: 'Expenses',
+      newRowsOnly: true,
+    },
+    { value: 'amount', label: 'Amount', kind: 'number' },
+    { value: 'frequency', label: 'Frequency', kind: 'select' },
+    { value: 'startDate', label: 'Start', kind: 'date' },
+    { value: 'endDate', label: 'End', kind: 'date' },
+    { value: 'paymentModeId', label: 'Paid via', kind: 'paymentMode' },
+  ],
+  incomes: [
+    { value: 'source', label: 'Source', kind: 'text', newRowsOnly: true },
+    { value: 'amount', label: 'Amount', kind: 'number' },
+    { value: 'categoryId', label: 'Category', kind: 'category', categoryType: 'Income' },
+    { value: 'cadence', label: 'Cadence', kind: 'select', newRowsOnly: true },
+    { value: 'month', label: 'Month', kind: 'date' },
+    { value: 'notes', label: 'Notes', kind: 'text' },
+  ],
+  categories: [
+    { value: 'name', label: 'Name', kind: 'text' },
+    { value: 'type', label: 'Type', kind: 'categoryType' },
+    { value: 'monthlyBudget', label: 'Monthly budget', kind: 'number' },
+    { value: 'color', label: 'Color', kind: 'color' },
+  ],
+  loans: [
+    { value: 'lender', label: 'Lender', kind: 'text', newRowsOnly: true },
+    { value: 'loanType', label: 'Type', kind: 'text', newRowsOnly: true },
+    { value: 'principal', label: 'Principal', kind: 'number' },
+    { value: 'outstanding', label: 'Outstanding', kind: 'number' },
+    { value: 'annualRate', label: 'Rate', kind: 'number' },
+    { value: 'emi', label: 'EMI', kind: 'number' },
+    { value: 'startDate', label: 'Start', kind: 'date' },
+    { value: 'endDate', label: 'End', kind: 'date' },
+    { value: 'notes', label: 'Notes', kind: 'text' },
+    { value: 'paymentModeId', label: 'EMI paid via', kind: 'paymentMode' },
+  ],
+  investments: [
+    { value: 'name', label: 'Name', kind: 'text', newRowsOnly: true },
+    { value: 'amount', label: 'Amount', kind: 'number' },
+    { value: 'categoryId', label: 'Category', kind: 'category', categoryType: 'Investments' },
+    { value: 'frequency', label: 'Frequency', kind: 'select' },
+    { value: 'date', label: 'Date', kind: 'date' },
+    { value: 'startDate', label: 'Start', kind: 'date' },
+    { value: 'endDate', label: 'End', kind: 'date' },
+    { value: 'notes', label: 'Notes', kind: 'text' },
+    { value: 'paymentModeId', label: 'Paid via', kind: 'paymentMode' },
+  ],
+} satisfies Record<BulkTableKey, readonly BulkHeaderFieldOption[]>;
+
+function isBulkSortColumn(value: string): value is BulkSortColumn {
+  return BULK_SORT_COLUMNS.has(value);
+}
+
+function defaultFilterState(): BulkTableFilterState {
+  return {
+    cadence: '',
+    categoryId: '',
+    categoryType: '',
+    expenseType: '',
+    frequency: '',
+    paymentModeId: '',
+    query: '',
+    status: 'all',
+  };
+}
+
+function defaultTableFilters(): Record<BulkTableKey, BulkTableFilterState> {
+  return {
+    expenses: defaultFilterState(),
+    templates: defaultFilterState(),
+    incomes: defaultFilterState(),
+    categories: defaultFilterState(),
+    loans: defaultFilterState(),
+    investments: defaultFilterState(),
+  };
+}
+
+function defaultTableSorts(): Record<BulkTableKey, BulkTableSortState> {
+  return {
+    expenses: { column: '', direction: 'asc' },
+    templates: { column: '', direction: 'asc' },
+    incomes: { column: '', direction: 'asc' },
+    categories: { column: '', direction: 'asc' },
+    loans: { column: '', direction: 'asc' },
+    investments: { column: '', direction: 'asc' },
+  };
+}
+
+function defaultTableSelections(): Record<BulkTableKey, Set<string>> {
+  return {
+    expenses: new Set<string>(),
+    templates: new Set<string>(),
+    incomes: new Set<string>(),
+    categories: new Set<string>(),
+    loans: new Set<string>(),
+    investments: new Set<string>(),
+  };
+}
+
+function defaultBulkHeaderEditState(): BulkHeaderEditState {
+  return {
+    result: '',
+    touched: {},
+    values: {},
+  };
+}
+
+function defaultBulkHeaderEditStates(): Record<BulkTableKey, BulkHeaderEditState> {
+  return {
+    expenses: defaultBulkHeaderEditState(),
+    templates: defaultBulkHeaderEditState(),
+    incomes: defaultBulkHeaderEditState(),
+    categories: defaultBulkHeaderEditState(),
+    loans: defaultBulkHeaderEditState(),
+    investments: defaultBulkHeaderEditState(),
+  };
+}
+
+function defaultModifiedCells(): Record<
+  BulkTableKey,
+  Record<string, Set<BulkHeaderEditableField>>
+> {
+  return {
+    expenses: {},
+    templates: {},
+    incomes: {},
+    categories: {},
+    loans: {},
+    investments: {},
+  };
+}
 
 @Component({
   selector: 'app-bulk-editor-dialog',
@@ -261,6 +624,7 @@ export class BulkEditorDialog {
     'annual',
     'one-time',
   ];
+  protected readonly expenseTypes: ExpenseType[] = ['one-time', 'recurring'];
   protected readonly investmentFrequencies: InvestmentFrequency[] = [
     'weekly',
     'monthly',
@@ -272,12 +636,19 @@ export class BulkEditorDialog {
   protected readonly recurringFrequencies: InvestmentFrequency[] = this.investmentFrequencies;
   protected readonly categoryTypes: CategoryType[] = ['Income', 'Investments', 'Expenses'];
   protected readonly members = this.data.members ?? [];
+  protected readonly paymentAccounts = this.data.paymentAccounts ?? [];
   protected readonly paymentModes = this.data.paymentModes ?? [];
   protected readonly activePaymentModes = this.paymentModes.filter(
     (paymentMode) => !paymentMode.archivedDate,
   );
 
   private readonly sourceTemplates = cloneRows(this.data.templates);
+  private readonly originalCategoriesById = new Map(
+    this.data.categories.map((category) => [category.id, { ...category }]),
+  );
+  private readonly originalExpensesById = new Map(
+    this.data.expenses.map((expense) => [expense.id, { ...expense }]),
+  );
   private readonly originalIncomesById = new Map(
     this.data.incomes.map((income) => [income.id, { ...income }]),
   );
@@ -356,6 +727,23 @@ export class BulkEditorDialog {
   protected readonly expandedTemplateIds = signal(new Set<string>());
   protected readonly expandedAuditIds = signal(new Set<string>());
   protected readonly validationError = signal('');
+  protected readonly tableFilters = signal(defaultTableFilters());
+  protected readonly tableSorts = signal(defaultTableSorts());
+  protected readonly selectedRowIds = signal(defaultTableSelections());
+  protected readonly bulkHeaderEditState = signal(defaultBulkHeaderEditStates());
+  protected readonly modifiedCells = signal(defaultModifiedCells());
+  protected readonly filteredExpenses = computed(() => this.tableRows('expenses', this.expenses()));
+  protected readonly filteredTemplates = computed(() =>
+    this.tableRows('templates', this.templates()),
+  );
+  protected readonly filteredIncomes = computed(() => this.tableRows('incomes', this.incomes()));
+  protected readonly filteredCategories = computed(() =>
+    this.tableRows('categories', this.categories()),
+  );
+  protected readonly filteredLoans = computed(() => this.tableRows('loans', this.loans()));
+  protected readonly filteredInvestments = computed(() =>
+    this.tableRows('investments', this.investments()),
+  );
 
   private buildExpenseRows(): DraftExpense[] {
     const currentMonthExpenses = cloneRows(this.data.expenses)
@@ -529,15 +917,454 @@ export class BulkEditorDialog {
     ]);
   }
 
+  protected bulkActionLabel(table: BulkTableKey): string {
+    const labels: Record<BulkTableKey, string> = {
+      expenses: 'Expense bulk actions',
+      templates: 'Recurring expense bulk actions',
+      incomes: 'Income bulk actions',
+      categories: 'Category bulk actions',
+      loans: 'Loan bulk actions',
+      investments: 'Investment bulk actions',
+    };
+
+    return labels[table];
+  }
+
+  protected selectedCount(table: BulkTableKey): number {
+    return this.selectedRows(table).length;
+  }
+
+  protected selectionSummary(table: BulkTableKey): string {
+    const count = this.selectedCount(table);
+    return `${count} selected`;
+  }
+
+  protected isRowSelected(table: BulkTableKey, rowId: string): boolean {
+    return this.selectedRowIds()[table].has(rowId);
+  }
+
+  protected toggleRowSelection(table: BulkTableKey, rowId: string, event: Event): void {
+    const checked =
+      event.target instanceof HTMLInputElement
+        ? event.target.checked
+        : !this.isRowSelected(table, rowId);
+    this.setRowSelection(table, rowId, checked);
+  }
+
+  protected toggleFilteredRowsSelection(table: BulkTableKey, event: Event): void {
+    const checked = event.target instanceof HTMLInputElement ? event.target.checked : true;
+    const visibleRowIds = this.filteredRowsForTable(table).map((row) => row.id);
+
+    this.selectedRowIds.update((selections) => {
+      const nextSelection = new Set(selections[table]);
+      for (const rowId of visibleRowIds) {
+        checked ? nextSelection.add(rowId) : nextSelection.delete(rowId);
+      }
+
+      return {
+        ...selections,
+        [table]: nextSelection,
+      };
+    });
+    this.clearBulkResult(table);
+  }
+
+  protected allFilteredRowsSelected(table: BulkTableKey): boolean {
+    const rows = this.filteredRowsForTable(table);
+    const selectedIds = this.selectedRowIds()[table];
+
+    return rows.length > 0 && rows.every((row) => selectedIds.has(row.id));
+  }
+
+  protected someFilteredRowsSelected(table: BulkTableKey): boolean {
+    const rows = this.filteredRowsForTable(table);
+    const selectedIds = this.selectedRowIds()[table];
+
+    return rows.some((row) => selectedIds.has(row.id)) && !this.allFilteredRowsSelected(table);
+  }
+
+  protected clearSelection(table: BulkTableKey): void {
+    this.selectedRowIds.update((selections) => ({
+      ...selections,
+      [table]: new Set<string>(),
+    }));
+    this.clearBulkResult(table);
+  }
+
+  protected markSelectedForDelete(table: BulkTableKey): void {
+    const selectedRows = this.selectedRows(table);
+    if (!selectedRows.length) {
+      return;
+    }
+
+    const selectedIds = new Set(selectedRows.map((row) => row.id));
+    for (const row of selectedRows) {
+      row.pendingDelete = true;
+    }
+    this.editingRowIds.update((ids) => {
+      const next = new Set(ids);
+      for (const rowId of selectedIds) {
+        next.delete(rowId);
+      }
+      return next;
+    });
+    this.refreshRows();
+    this.pruneSelectionToFilteredRows(table);
+    this.setBulkHeaderResult(
+      table,
+      `Marked ${selectedRows.length} row${selectedRows.length === 1 ? '' : 's'} for delete.`,
+    );
+  }
+
+  protected keepSelectedRows(table: BulkTableKey): void {
+    const selectedRows = this.selectedRows(table);
+    if (!selectedRows.length) {
+      return;
+    }
+
+    for (const row of selectedRows) {
+      row.pendingDelete = false;
+    }
+    this.refreshRows();
+    this.pruneSelectionToFilteredRows(table);
+    this.setBulkHeaderResult(
+      table,
+      `Kept ${selectedRows.length} row${selectedRows.length === 1 ? '' : 's'}.`,
+    );
+  }
+
+  protected bulkHeaderEditActive(table: BulkTableKey): boolean {
+    return this.selectedCount(table) > 1;
+  }
+
+  protected showBulkHeaderEditor(table: BulkTableKey, field: BulkHeaderEditableField): boolean {
+    if (!this.bulkHeaderEditActive(table)) {
+      return false;
+    }
+
+    const option = this.bulkHeaderFieldOption(table, field);
+    if (!option) {
+      return false;
+    }
+
+    const selectedRows = this.selectedRows(table);
+    if (!selectedRows.length) {
+      return false;
+    }
+
+    return !option.newRowsOnly || selectedRows.every((row) => this.canBulkUpdateRow(row, option));
+  }
+
+  protected bulkHeaderInputLabel(table: BulkTableKey, label: string): string {
+    const tableLabels: Record<BulkTableKey, string> = {
+      expenses: 'selected expenses',
+      templates: 'selected recurring expenses',
+      incomes: 'selected income rows',
+      categories: 'selected categories',
+      loans: 'selected loans',
+      investments: 'selected investments',
+    };
+
+    return `Set ${label.toLowerCase()} for ${tableLabels[table]}`;
+  }
+
+  protected bulkHeaderValue(table: BulkTableKey, field: BulkHeaderEditableField): string {
+    return this.bulkHeaderEditState()[table].values[field] ?? '';
+  }
+
+  protected isBulkHeaderFieldTouched(table: BulkTableKey, field: BulkHeaderEditableField): boolean {
+    return !!this.bulkHeaderEditState()[table].touched[field];
+  }
+
+  protected isBulkHeaderFieldInvalid(table: BulkTableKey, field: BulkHeaderEditableField): boolean {
+    return (
+      this.isBulkHeaderFieldTouched(table, field) && !this.isBulkHeaderValueValid(table, field)
+    );
+  }
+
+  protected setBulkHeaderValue(
+    table: BulkTableKey,
+    field: BulkHeaderEditableField,
+    value: string,
+  ): void {
+    this.bulkHeaderEditState.update((state) => ({
+      ...state,
+      [table]: {
+        result: '',
+        touched: {
+          ...state[table].touched,
+          [field]: true,
+        },
+        values: {
+          ...state[table].values,
+          [field]: value,
+        },
+      },
+    }));
+  }
+
+  protected setBulkHeaderValueFromEvent(
+    table: BulkTableKey,
+    field: BulkHeaderEditableField,
+    event: Event,
+  ): void {
+    if (!(event.target instanceof HTMLInputElement)) {
+      return;
+    }
+
+    this.setBulkHeaderValue(table, field, event.target.value);
+  }
+
+  protected setBulkHeaderDateValue(
+    table: BulkTableKey,
+    field: BulkHeaderEditableField,
+    value: unknown,
+  ): void {
+    this.setBulkHeaderValue(table, field, dateValue(value) ?? '');
+  }
+
+  protected bulkHeaderValueKind(
+    table: BulkTableKey,
+    field: BulkHeaderEditableField,
+  ): BulkHeaderValueKind | '' {
+    return this.bulkHeaderFieldOption(table, field)?.kind ?? '';
+  }
+
+  protected bulkHeaderValueOptions(
+    table: BulkTableKey,
+    field: BulkHeaderEditableField,
+  ): readonly SelectOption[] {
+    const option = this.bulkHeaderFieldOption(table, field);
+    if (!option) {
+      return [];
+    }
+
+    return this.valueOptionsForBulkField(table, option);
+  }
+
+  protected bulkHeaderResult(table: BulkTableKey): string {
+    return this.bulkHeaderEditState()[table].result;
+  }
+
+  protected canApplyBulkHeaderEdit(table: BulkTableKey): boolean {
+    return this.bulkHeaderEditActive(table) && this.validStagedBulkHeaderOptions(table).length > 0;
+  }
+
+  protected applyBulkHeaderEdit(table: BulkTableKey): void {
+    const stagedOptions = this.validStagedBulkHeaderOptions(table);
+    const selectedRows = this.selectedRows(table);
+    if (!stagedOptions.length || selectedRows.length < 2) {
+      return;
+    }
+
+    const updatedRowIds = new Set<string>();
+    let updatedCellCount = 0;
+
+    for (const row of selectedRows) {
+      for (const option of stagedOptions) {
+        if (!this.canBulkUpdateRow(row, option)) {
+          continue;
+        }
+
+        const value = this.normalizedBulkValue(table, option);
+        const previousValue = this.readBulkFieldValue(row, option.value);
+        if (
+          this.comparableValue(option.value, previousValue) ===
+          this.comparableValue(option.value, value)
+        ) {
+          continue;
+        }
+
+        this.assignBulkValue(row, option.value, value);
+        this.trackModifiedCellIfNeeded(table, row, option.value);
+        updatedRowIds.add(row.id);
+        updatedCellCount += 1;
+      }
+    }
+
+    this.refreshRows();
+    this.setBulkHeaderResultAndClearValues(
+      table,
+      `Updated ${updatedCellCount} field${updatedCellCount === 1 ? '' : 's'} across ${updatedRowIds.size} of ${selectedRows.length} selected row${selectedRows.length === 1 ? '' : 's'}.`,
+    );
+  }
+
+  protected isRowModified(table: BulkTableKey, row: BulkDisplayRow): boolean {
+    return BULK_HEADER_FIELDS[table].some((option) =>
+      this.isFieldModified(table, row, option.value),
+    );
+  }
+
+  protected isFieldModified(
+    table: BulkTableKey,
+    row: BulkDisplayRow,
+    field: BulkHeaderEditableField,
+  ): boolean {
+    const trackedFields = this.modifiedCells()[table][row.id];
+    if (trackedFields?.has(field)) {
+      return true;
+    }
+
+    const option = this.bulkHeaderFieldOption(table, field);
+    if (option?.newRowsOnly && !row.isNew) {
+      return false;
+    }
+
+    const originalValue = this.originalBulkFieldValue(table, row, field);
+    if (originalValue === undefined) {
+      return false;
+    }
+
+    return (
+      this.comparableValue(field, this.readBulkFieldValue(row, field)) !==
+      this.comparableValue(field, originalValue)
+    );
+  }
+
+  protected tableQuery(table: BulkTableKey): string {
+    return this.tableFilters()[table].query;
+  }
+
+  protected filterValue(table: BulkTableKey, key: BulkFilterKey): string {
+    return this.tableFilters()[table][key];
+  }
+
+  protected setTableQuery(table: BulkTableKey, event: Event): void {
+    if (!(event.target instanceof HTMLInputElement)) {
+      return;
+    }
+
+    this.setTableFilter(table, 'query', event.target.value);
+  }
+
+  protected setTableFilter(table: BulkTableKey, key: BulkFilterKey, value: string): void {
+    this.tableFilters.update((filters) => ({
+      ...filters,
+      [table]: {
+        ...filters[table],
+        [key]: value,
+      } as BulkTableFilterState,
+    }));
+    this.pruneSelectionToFilteredRows(table);
+  }
+
+  protected clearTableFilters(table: BulkTableKey): void {
+    this.tableFilters.update((filters) => ({
+      ...filters,
+      [table]: defaultFilterState(),
+    }));
+    this.pruneSelectionToFilteredRows(table);
+  }
+
+  protected hasActiveFilters(table: BulkTableKey): boolean {
+    const filters = this.tableFilters()[table];
+    const defaults = defaultFilterState();
+
+    return (Object.keys(defaults) as BulkFilterKey[]).some((key) => filters[key] !== defaults[key]);
+  }
+
+  protected statusFilterOptions(table: BulkTableKey): readonly SelectOption<RowStatusFilter>[] {
+    return table === 'expenses' ? STATUS_FILTER_OPTIONS.suggested : STATUS_FILTER_OPTIONS.base;
+  }
+
+  protected tableSortOptions(table: BulkTableKey): readonly SortOption[] {
+    return TABLE_SORT_OPTIONS[table];
+  }
+
+  protected sortValue(table: BulkTableKey): string {
+    const sort = this.tableSorts()[table];
+    return sort.column ? `${sort.column}:${sort.direction}` : '';
+  }
+
+  protected setSortFromValue(table: BulkTableKey, value: string): void {
+    if (!value) {
+      this.tableSorts.update((sorts) => ({
+        ...sorts,
+        [table]: { column: '', direction: 'asc' },
+      }));
+      return;
+    }
+
+    const [column, direction] = value.split(':');
+    if (!isBulkSortColumn(column) || (direction !== 'asc' && direction !== 'desc')) {
+      return;
+    }
+
+    this.tableSorts.update((sorts) => ({
+      ...sorts,
+      [table]: { column, direction },
+    }));
+  }
+
+  protected toggleSort(table: BulkTableKey, column: BulkSortColumn): void {
+    this.tableSorts.update((sorts) => {
+      const current = sorts[table];
+      const direction: SortDirection =
+        current.column === column && current.direction === 'asc' ? 'desc' : 'asc';
+
+      return {
+        ...sorts,
+        [table]: { column, direction },
+      };
+    });
+  }
+
+  protected isSorted(table: BulkTableKey, column: BulkSortColumn): boolean {
+    return this.tableSorts()[table].column === column;
+  }
+
+  protected sortAria(
+    table: BulkTableKey,
+    column: BulkSortColumn,
+  ): 'ascending' | 'descending' | null {
+    const sort = this.tableSorts()[table];
+    if (sort.column !== column) {
+      return null;
+    }
+
+    return sort.direction === 'asc' ? 'ascending' : 'descending';
+  }
+
+  protected sortIcon(table: BulkTableKey, column: BulkSortColumn): string {
+    const sort = this.tableSorts()[table];
+    if (sort.column !== column) {
+      return 'swap_vert';
+    }
+
+    return sort.direction === 'asc' ? 'arrow_upward' : 'arrow_downward';
+  }
+
+  protected sortButtonLabel(table: BulkTableKey, label: string, column: BulkSortColumn): string {
+    const sort = this.tableSorts()[table];
+    if (sort.column !== column) {
+      return `Sort by ${label}`;
+    }
+
+    return `Sort by ${label}, currently ${sort.direction === 'asc' ? 'ascending' : 'descending'}`;
+  }
+
+  protected emptyTableMessage(table: BulkTableKey): string {
+    if (this.hasActiveFilters(table)) {
+      return 'No rows match these filters.';
+    }
+
+    const labels: Record<BulkTableKey, string> = {
+      expenses: 'No expenses available.',
+      templates: 'No recurring expenses available.',
+      incomes: 'No income sources available.',
+      categories: 'No categories available.',
+      loans: 'No loan accounts available.',
+      investments: 'No investments available.',
+    };
+
+    return labels[table];
+  }
+
   protected visibleRowCount(): number {
     return this.visibleRows().length;
   }
 
   protected activeRowCount(): number {
-    if (this.showMonthlyTables()) {
-      return [...this.expenses(), ...this.templates()].filter((row) => !row.pendingDelete).length;
-    }
-
     return this.visibleRows().filter((row) => !row.pendingDelete).length;
   }
 
@@ -626,6 +1453,323 @@ export class BulkEditorDialog {
     this.expenses.update((rows) => [...rows]);
     this.investments.update((rows) => [...rows]);
     this.loans.update((rows) => [...rows]);
+  }
+
+  private setRowSelection(table: BulkTableKey, rowId: string, checked: boolean): void {
+    this.selectedRowIds.update((selections) => {
+      const nextSelection = new Set(selections[table]);
+      checked ? nextSelection.add(rowId) : nextSelection.delete(rowId);
+
+      return {
+        ...selections,
+        [table]: nextSelection,
+      };
+    });
+    this.clearBulkResult(table);
+  }
+
+  private selectedRows(table: BulkTableKey): BulkDisplayRow[] {
+    const selectedIds = this.selectedRowIds()[table];
+    return this.rowsForTable(table).filter((row) => selectedIds.has(row.id));
+  }
+
+  private bulkHeaderFieldOption(
+    table: BulkTableKey,
+    field: BulkHeaderEditableField,
+  ): BulkHeaderFieldOption | undefined {
+    return BULK_HEADER_FIELDS[table].find((option) => option.value === field);
+  }
+
+  private validStagedBulkHeaderOptions(table: BulkTableKey): BulkHeaderFieldOption[] {
+    return BULK_HEADER_FIELDS[table].filter(
+      (option) =>
+        this.isBulkHeaderFieldTouched(table, option.value) &&
+        this.showBulkHeaderEditor(table, option.value) &&
+        this.isBulkHeaderValueValid(table, option.value),
+    );
+  }
+
+  private isBulkHeaderValueValid(table: BulkTableKey, field: BulkHeaderEditableField): boolean {
+    const option = this.bulkHeaderFieldOption(table, field);
+    if (!option) {
+      return false;
+    }
+
+    const value = this.bulkHeaderValue(table, field);
+    if (option.kind === 'number') {
+      const amount = Number(value);
+      return Number.isFinite(amount) && amount >= 0;
+    }
+
+    if (option.kind === 'date') {
+      return !!dateValue(value);
+    }
+
+    if (option.kind === 'color') {
+      return /^#[\da-f]{6}$/i.test(value);
+    }
+
+    if (
+      option.kind === 'category' ||
+      option.kind === 'categoryType' ||
+      option.kind === 'paymentMode' ||
+      option.kind === 'select'
+    ) {
+      return !!value;
+    }
+
+    return !!value.trim();
+  }
+
+  private normalizedBulkValue(
+    table: BulkTableKey,
+    option: BulkHeaderFieldOption,
+  ): number | string | undefined {
+    const value = this.bulkHeaderValue(table, option.value);
+
+    if (option.kind === 'number') {
+      return toNumber(value);
+    }
+
+    if (option.kind === 'date') {
+      return dateValue(value);
+    }
+
+    if (option.kind === 'category') {
+      return value === UNCATEGORIZED_FILTER_VALUE ? '' : value;
+    }
+
+    if (option.kind === 'paymentMode') {
+      return value === NO_PAYMENT_MODE_FILTER_VALUE ? '' : value;
+    }
+
+    return value;
+  }
+
+  private valueOptionsForBulkField(
+    table: BulkTableKey,
+    option: BulkHeaderFieldOption,
+  ): readonly SelectOption[] {
+    if (option.kind === 'category') {
+      return [
+        { value: UNCATEGORIZED_FILTER_VALUE, label: 'Uncategorized' },
+        ...this.categoriesByType(option.categoryType ?? 'Expenses').map((category) => ({
+          value: category.id,
+          label: category.name,
+        })),
+      ];
+    }
+
+    if (option.kind === 'paymentMode') {
+      return [
+        { value: NO_PAYMENT_MODE_FILTER_VALUE, label: 'Not set' },
+        ...this.activePaymentModes.map((paymentMode) => ({
+          value: paymentMode.id,
+          label: this.paymentModeShortLabel(paymentMode),
+        })),
+      ];
+    }
+
+    if (option.kind === 'categoryType') {
+      return this.categoryTypes.map((categoryType) => ({
+        value: categoryType,
+        label: categoryType,
+      }));
+    }
+
+    if (option.value === 'cadence') {
+      return this.incomeCadences.map((cadence) => ({ value: cadence, label: cadence }));
+    }
+
+    if (option.value === 'frequency') {
+      const frequencies =
+        table === 'templates' ? this.recurringFrequencies : this.investmentFrequencies;
+      return frequencies.map((frequency) => ({ value: frequency, label: frequency }));
+    }
+
+    return [];
+  }
+
+  private canBulkUpdateRow(row: BulkDisplayRow, option: BulkHeaderFieldOption): boolean {
+    if (row.pendingDelete) {
+      return false;
+    }
+
+    return !option.newRowsOnly || !!row.isNew;
+  }
+
+  private assignBulkValue(
+    row: BulkDisplayRow,
+    field: BulkHeaderEditableField,
+    value: number | string | undefined,
+  ): void {
+    (row as unknown as Record<string, number | string | undefined>)[field] = value;
+  }
+
+  private setBulkHeaderResult(table: BulkTableKey, result: string): void {
+    this.bulkHeaderEditState.update((state) => ({
+      ...state,
+      [table]: {
+        ...state[table],
+        result,
+      },
+    }));
+  }
+
+  private setBulkHeaderResultAndClearValues(table: BulkTableKey, result: string): void {
+    this.bulkHeaderEditState.update((state) => ({
+      ...state,
+      [table]: {
+        result,
+        touched: {},
+        values: {},
+      },
+    }));
+  }
+
+  private clearBulkResult(table: BulkTableKey): void {
+    this.setBulkHeaderResult(table, '');
+  }
+
+  private readBulkFieldValue(row: BulkDisplayRow, field: BulkHeaderEditableField): unknown {
+    return (row as unknown as Record<string, unknown>)[field];
+  }
+
+  private originalBulkFieldValue(
+    table: BulkTableKey,
+    row: BulkDisplayRow,
+    field: BulkHeaderEditableField,
+  ): unknown {
+    switch (table) {
+      case 'expenses': {
+        const original = this.originalExpensesById.get(row.id);
+        if (!original) {
+          return undefined;
+        }
+
+        if (field === 'date') {
+          return original.date || monthStartDate(original.month || this.data.selectedMonth);
+        }
+
+        return (original as unknown as Record<string, unknown>)[field];
+      }
+      case 'templates':
+        return (this.originalTemplatesById.get(row.id) as unknown as Record<string, unknown>)?.[
+          field
+        ];
+      case 'incomes':
+        return (this.originalIncomesById.get(row.id) as unknown as Record<string, unknown>)?.[
+          field
+        ];
+      case 'categories':
+        return (this.originalCategoriesById.get(row.id) as unknown as Record<string, unknown>)?.[
+          field
+        ];
+      case 'loans':
+        return (this.originalLoansById.get(row.id) as unknown as Record<string, unknown>)?.[field];
+      case 'investments':
+        return (this.originalInvestmentsById.get(row.id) as unknown as Record<string, unknown>)?.[
+          field
+        ];
+    }
+  }
+
+  private comparableValue(
+    field: BulkHeaderEditableField,
+    value: unknown,
+  ): number | string | undefined {
+    if (
+      field === 'amount' ||
+      field === 'annualRate' ||
+      field === 'emi' ||
+      field === 'monthlyBudget' ||
+      field === 'outstanding' ||
+      field === 'principal'
+    ) {
+      return toNumber(value);
+    }
+
+    if (field === 'date' || field === 'endDate' || field === 'startDate') {
+      return optionalDate(dateValue(value)) || '';
+    }
+
+    if (field === 'month') {
+      return dateMonthKey(dateValue(value)) || stringValue(value);
+    }
+
+    return stringValue(value);
+  }
+
+  private trackModifiedCellIfNeeded(
+    table: BulkTableKey,
+    row: BulkDisplayRow,
+    field: BulkHeaderEditableField,
+  ): void {
+    if (this.originalBulkFieldValue(table, row, field) !== undefined) {
+      return;
+    }
+
+    this.modifiedCells.update((state) => {
+      const tableCells = state[table];
+      const rowCells = new Set(tableCells[row.id] ?? []);
+      rowCells.add(field);
+
+      return {
+        ...state,
+        [table]: {
+          ...tableCells,
+          [row.id]: rowCells,
+        },
+      };
+    });
+  }
+
+  private rowsForTable(table: BulkTableKey): BulkDisplayRow[] {
+    switch (table) {
+      case 'expenses':
+        return this.expenses();
+      case 'templates':
+        return this.templates();
+      case 'incomes':
+        return this.incomes();
+      case 'categories':
+        return this.categories();
+      case 'loans':
+        return this.loans();
+      case 'investments':
+        return this.investments();
+    }
+  }
+
+  private filteredRowsForTable(table: BulkTableKey): BulkDisplayRow[] {
+    switch (table) {
+      case 'expenses':
+        return this.filteredExpenses();
+      case 'templates':
+        return this.filteredTemplates();
+      case 'incomes':
+        return this.filteredIncomes();
+      case 'categories':
+        return this.filteredCategories();
+      case 'loans':
+        return this.filteredLoans();
+      case 'investments':
+        return this.filteredInvestments();
+    }
+  }
+
+  private pruneSelectionToFilteredRows(table: BulkTableKey): void {
+    const filteredRowIds = new Set(this.filteredRowsForTable(table).map((row) => row.id));
+    this.selectedRowIds.update((selections) => {
+      const nextSelection = new Set(
+        [...selections[table]].filter((rowId) => filteredRowIds.has(rowId)),
+      );
+
+      return {
+        ...selections,
+        [table]: nextSelection,
+      };
+    });
   }
 
   protected toggleTemplateAudit(templateId: string): void {
@@ -735,15 +1879,16 @@ export class BulkEditorDialog {
       return 'Not set';
     }
 
-    return (
-      this.paymentModes.find((paymentMode) => paymentMode.id === paymentModeId)?.name ??
-      'Saved payment mode'
-    );
+    const paymentMode = this.paymentModes.find((mode) => mode.id === paymentModeId);
+    return paymentMode ? this.paymentModeDisplayLabel(paymentMode) : 'Saved payment mode';
   }
 
   protected paymentModeIconSrc(paymentMode: PaymentMode): string {
     if (paymentMode.type === 'internet-banking') {
-      return PAYMENT_BANK_ICON_BY_NAME.get(paymentMode.bankName ?? 'Default') ?? DEFAULT_BANK_ICON;
+      const account = this.paymentAccountForMode(paymentMode);
+      return account
+        ? this.paymentAccountIconSrc(account)
+        : (PAYMENT_BANK_ICON_BY_NAME.get(paymentMode.bankName ?? 'Default') ?? DEFAULT_BANK_ICON);
     }
 
     if (paymentMode.type === 'cash') {
@@ -778,8 +1923,54 @@ export class BulkEditorDialog {
 
     return {
       iconSrc: this.paymentModeIconSrc(paymentMode),
-      label: paymentMode.name,
+      label: this.paymentModeShortLabel(paymentMode),
     };
+  }
+
+  protected paymentModeDisplayLabel(paymentMode: PaymentMode): string {
+    if (paymentMode.type === 'cash') {
+      return 'Cash';
+    }
+
+    const account = this.paymentAccountForMode(paymentMode);
+    const ownerTag = this.memberTag(paymentMode.memberEmail ?? account?.memberEmail);
+
+    if (paymentMode.type === 'upi' || paymentMode.type === 'wallet') {
+      return `${this.paymentProviderLabel(paymentMode.provider) ?? paymentMode.type} ${ownerTag}`;
+    }
+
+    if (paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card') {
+      return `${ownerTag} ${this.lastFourLabel(paymentMode.lastFour)}`;
+    }
+
+    if (paymentMode.type === 'internet-banking') {
+      return `${ownerTag} ${this.lastFourLabel(account?.lastFour)}`;
+    }
+
+    return ownerTag;
+  }
+
+  protected paymentModeShortLabel(paymentMode: PaymentMode): string {
+    if (paymentMode.type === 'cash') {
+      return 'Cash';
+    }
+
+    const account = this.paymentAccountForMode(paymentMode);
+    const ownerTag = this.memberTag(paymentMode.memberEmail ?? account?.memberEmail);
+
+    if (paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card') {
+      return `${ownerTag} ${this.lastFourLabel(paymentMode.lastFour)}`;
+    }
+
+    if (paymentMode.type === 'internet-banking') {
+      return `${ownerTag} ${this.lastFourLabel(account?.lastFour)}`;
+    }
+
+    return ownerTag;
+  }
+
+  protected paymentAccountIconSrc(account: Pick<PaymentAccount, 'bankName'>): string {
+    return PAYMENT_BANK_ICON_BY_NAME.get(account.bankName) ?? DEFAULT_BANK_ICON;
   }
 
   protected memberDisplayName(member: WorkspaceMember): string {
@@ -878,11 +2069,11 @@ export class BulkEditorDialog {
   }
 
   protected defaultMemberEmail(): string | undefined {
-    return this.isMemberLocked() ? this.data.selectedMemberEmail : undefined;
+    return this.data.actingMemberEmail ?? this.lockedMemberEmail();
   }
 
   protected userFieldDisabled(row: { pendingDelete?: boolean }): boolean {
-    return !!row.pendingDelete || this.isMemberLocked();
+    return !!row.pendingDelete || !!this.defaultMemberEmail();
   }
 
   protected auditMonthLabel(date: string | undefined, fallback: string): string {
@@ -1101,30 +2292,545 @@ export class BulkEditorDialog {
   }
 
   private initialEditingRowIds(): Set<string> {
-    return new Set(
-      [
-        ...this.expenses(),
-        ...this.templates(),
-        ...this.incomes(),
-        ...this.categories(),
-        ...this.loans(),
-        ...this.investments(),
-      ]
-        .filter((row) => row.isNew || ('isSuggested' in row && row.isSuggested))
-        .map((row) => row.id),
+    const editingRowIds = new Set<string>();
+    if (this.data.initialEditingRowId) {
+      editingRowIds.add(this.data.initialEditingRowId);
+    }
+
+    for (const row of [
+      ...this.expenses(),
+      ...this.templates(),
+      ...this.incomes(),
+      ...this.categories(),
+      ...this.loans(),
+      ...this.investments(),
+    ]) {
+      if (row.isNew || ('isSuggested' in row && row.isSuggested)) {
+        editingRowIds.add(row.id);
+      }
+    }
+
+    return editingRowIds;
+  }
+
+  private tableRows<T extends BulkDisplayRow>(table: BulkTableKey, rows: T[]): T[] {
+    const filters = this.tableFilters()[table];
+    const filteredRows = rows.filter(
+      (row) =>
+        this.matchesStatus(table, row, filters.status) &&
+        this.matchesQuery(table, row, filters.query) &&
+        this.matchesCategory(table, row, filters.categoryId) &&
+        this.matchesCategoryType(table, row, filters.categoryType) &&
+        this.matchesExpenseType(table, row, filters.expenseType) &&
+        this.matchesFrequency(table, row, filters.frequency) &&
+        this.matchesCadence(table, row, filters.cadence) &&
+        this.matchesPaymentMode(table, row, filters.paymentModeId),
+    );
+
+    return this.sortedRows(table, filteredRows);
+  }
+
+  private matchesStatus(
+    table: BulkTableKey,
+    row: BulkDisplayRow,
+    status: RowStatusFilter,
+  ): boolean {
+    if (status === 'all') {
+      return true;
+    }
+
+    if (status === 'active') {
+      return !row.pendingDelete;
+    }
+
+    if (status === 'new') {
+      return !!row.isNew;
+    }
+
+    if (status === 'suggested') {
+      return 'isSuggested' in row && !!row.isSuggested;
+    }
+
+    if (status === 'modified') {
+      return this.isRowModified(table, row);
+    }
+
+    return !!row.pendingDelete;
+  }
+
+  private matchesQuery(table: BulkTableKey, row: BulkDisplayRow, query: string): boolean {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) {
+      return true;
+    }
+
+    return this.rowSearchText(table, row).toLowerCase().includes(normalizedQuery);
+  }
+
+  private matchesCategory(table: BulkTableKey, row: BulkDisplayRow, categoryId: string): boolean {
+    if (!categoryId) {
+      return true;
+    }
+
+    const rowCategoryId = this.rowCategoryId(table, row);
+    return categoryId === UNCATEGORIZED_FILTER_VALUE
+      ? !rowCategoryId
+      : rowCategoryId === categoryId;
+  }
+
+  private matchesCategoryType(
+    table: BulkTableKey,
+    row: BulkDisplayRow,
+    categoryType: CategoryType | '',
+  ): boolean {
+    return !categoryType || this.rowCategoryType(table, row) === categoryType;
+  }
+
+  private matchesExpenseType(
+    table: BulkTableKey,
+    row: BulkDisplayRow,
+    expenseType: ExpenseType | '',
+  ): boolean {
+    return !expenseType || this.rowExpenseType(table, row) === expenseType;
+  }
+
+  private matchesFrequency(
+    table: BulkTableKey,
+    row: BulkDisplayRow,
+    frequency: InvestmentFrequency | '',
+  ): boolean {
+    return !frequency || this.rowFrequency(table, row) === frequency;
+  }
+
+  private matchesCadence(table: BulkTableKey, row: BulkDisplayRow, cadence: Cadence | ''): boolean {
+    return !cadence || this.rowCadence(table, row) === cadence;
+  }
+
+  private matchesPaymentMode(
+    table: BulkTableKey,
+    row: BulkDisplayRow,
+    paymentModeId: string,
+  ): boolean {
+    if (!paymentModeId) {
+      return true;
+    }
+
+    const rowPaymentModeId = this.rowPaymentModeId(table, row);
+    return paymentModeId === NO_PAYMENT_MODE_FILTER_VALUE
+      ? !rowPaymentModeId
+      : rowPaymentModeId === paymentModeId;
+  }
+
+  private sortedRows<T extends BulkDisplayRow>(table: BulkTableKey, rows: T[]): T[] {
+    const sort = this.tableSorts()[table];
+    if (!sort.column) {
+      return rows;
+    }
+
+    return rows
+      .map((row, index) => ({ index, row }))
+      .sort((left, right) => {
+        const comparison = this.compareRows(table, left.row, right.row, sort.column);
+        const directedComparison = sort.direction === 'asc' ? comparison : -comparison;
+        return directedComparison || left.index - right.index;
+      })
+      .map(({ row }) => row);
+  }
+
+  private compareRows(
+    table: BulkTableKey,
+    left: BulkDisplayRow,
+    right: BulkDisplayRow,
+    column: BulkSortColumn,
+  ): number {
+    return this.compareSortValues(
+      this.rowSortValue(table, left, column),
+      this.rowSortValue(table, right, column),
     );
   }
 
-  private visibleRows(): Array<DraftRow<{ id: string }>> {
+  private compareSortValues(left: number | string, right: number | string): number {
+    if (typeof left === 'number' && typeof right === 'number') {
+      return left - right;
+    }
+
+    return String(left).localeCompare(String(right), 'en-IN', {
+      numeric: true,
+      sensitivity: 'base',
+    });
+  }
+
+  private rowSearchText(table: BulkTableKey, row: BulkDisplayRow): string {
+    switch (table) {
+      case 'expenses': {
+        const expense = row as DraftExpense;
+        return [
+          expense.name,
+          this.categoryName(expense.categoryId),
+          expense.amount,
+          expense.type,
+          expense.date,
+          expense.note,
+          this.paymentModeName(expense.paymentModeId),
+          this.rowStatusLabel(expense),
+        ].join(' ');
+      }
+      case 'templates': {
+        const template = row as DraftTemplate;
+        return [
+          template.name,
+          this.categoryName(template.categoryId),
+          template.amount,
+          template.frequency,
+          template.startDate,
+          template.endDate,
+          this.paymentModeName(template.paymentModeId),
+          this.rowStatusLabel(template),
+        ].join(' ');
+      }
+      case 'incomes': {
+        const income = row as DraftRow<IncomeSource>;
+        return [
+          income.source,
+          this.categoryName(income.categoryId),
+          income.amount,
+          income.cadence,
+          income.month,
+          income.notes,
+          this.rowStatusLabel(income),
+        ].join(' ');
+      }
+      case 'categories': {
+        const category = row as DraftRow<BudgetCategory>;
+        return [
+          category.name,
+          category.type,
+          category.monthlyBudget,
+          category.color,
+          this.rowStatusLabel(category),
+        ].join(' ');
+      }
+      case 'loans': {
+        const loan = row as DraftRow<Loan>;
+        return [
+          loan.lender,
+          loan.loanType,
+          loan.principal,
+          loan.outstanding,
+          loan.annualRate,
+          loan.emi,
+          loan.startDate,
+          loan.endDate,
+          loan.notes,
+          this.paymentModeName(loan.paymentModeId),
+          this.rowStatusLabel(loan),
+        ].join(' ');
+      }
+      case 'investments': {
+        const investment = row as DraftRow<InvestmentEntry>;
+        return [
+          investment.name,
+          this.categoryName(investment.categoryId),
+          investment.amount,
+          investment.frequency,
+          investment.date,
+          investment.startDate,
+          investment.endDate,
+          investment.notes,
+          this.paymentModeName(investment.paymentModeId),
+          this.rowStatusLabel(investment),
+        ].join(' ');
+      }
+    }
+  }
+
+  private rowSortValue(
+    table: BulkTableKey,
+    row: BulkDisplayRow,
+    column: BulkSortColumn,
+  ): number | string {
+    if (column === 'status') {
+      return this.rowStatusLabel(row);
+    }
+
+    if (column === 'category') {
+      return this.categoryName(this.rowCategoryId(table, row));
+    }
+
+    if (column === 'paymentMode') {
+      return this.paymentModeName(this.rowPaymentModeId(table, row));
+    }
+
+    switch (table) {
+      case 'expenses': {
+        const expense = row as DraftExpense;
+        return this.expenseSortValue(expense, column);
+      }
+      case 'templates': {
+        const template = row as DraftTemplate;
+        return this.templateSortValue(template, column);
+      }
+      case 'incomes': {
+        const income = row as DraftRow<IncomeSource>;
+        return this.incomeSortValue(income, column);
+      }
+      case 'categories': {
+        const category = row as DraftRow<BudgetCategory>;
+        return this.categorySortValue(category, column);
+      }
+      case 'loans': {
+        const loan = row as DraftRow<Loan>;
+        return this.loanSortValue(loan, column);
+      }
+      case 'investments': {
+        const investment = row as DraftRow<InvestmentEntry>;
+        return this.investmentSortValue(investment, column);
+      }
+    }
+  }
+
+  private expenseSortValue(expense: DraftExpense, column: BulkSortColumn): number | string {
+    if (column === 'amount') {
+      return toNumber(expense.amount);
+    }
+
+    if (column === 'date') {
+      return dateValue(expense.date) ?? '';
+    }
+
+    if (column === 'type') {
+      return expense.type;
+    }
+
+    if (column === 'note') {
+      return expense.note ?? '';
+    }
+
+    return expense.name ?? '';
+  }
+
+  private templateSortValue(template: DraftTemplate, column: BulkSortColumn): number | string {
+    if (column === 'amount') {
+      return toNumber(template.amount);
+    }
+
+    if (column === 'frequency') {
+      return template.frequency ?? '';
+    }
+
+    if (column === 'startDate') {
+      return dateValue(template.startDate) ?? '';
+    }
+
+    if (column === 'endDate') {
+      return dateValue(template.endDate) ?? '';
+    }
+
+    return template.name ?? '';
+  }
+
+  private incomeSortValue(income: DraftRow<IncomeSource>, column: BulkSortColumn): number | string {
+    if (column === 'amount') {
+      return toNumber(income.amount);
+    }
+
+    if (column === 'cadence') {
+      return income.cadence ?? '';
+    }
+
+    if (column === 'month') {
+      return dateMonthKey(dateValue(income.month) ?? income.month) ?? '';
+    }
+
+    if (column === 'note') {
+      return income.notes ?? '';
+    }
+
+    return income.source ?? '';
+  }
+
+  private categorySortValue(
+    category: DraftRow<BudgetCategory>,
+    column: BulkSortColumn,
+  ): number | string {
+    if (column === 'monthlyBudget') {
+      return toNumber(category.monthlyBudget);
+    }
+
+    if (column === 'type') {
+      return category.type ?? 'Expenses';
+    }
+
+    if (column === 'color') {
+      return category.color ?? '';
+    }
+
+    return category.name ?? '';
+  }
+
+  private loanSortValue(loan: DraftRow<Loan>, column: BulkSortColumn): number | string {
+    if (column === 'principal') {
+      return toNumber(loan.principal);
+    }
+
+    if (column === 'outstanding') {
+      return toNumber(loan.outstanding);
+    }
+
+    if (column === 'annualRate') {
+      return toNumber(loan.annualRate);
+    }
+
+    if (column === 'emi') {
+      return toNumber(loan.emi);
+    }
+
+    if (column === 'startDate') {
+      return dateValue(loan.startDate) ?? '';
+    }
+
+    if (column === 'endDate') {
+      return dateValue(loan.endDate) ?? '';
+    }
+
+    if (column === 'loanType') {
+      return loan.loanType ?? '';
+    }
+
+    if (column === 'note') {
+      return loan.notes ?? '';
+    }
+
+    return loan.lender ?? '';
+  }
+
+  private investmentSortValue(
+    investment: DraftRow<InvestmentEntry>,
+    column: BulkSortColumn,
+  ): number | string {
+    if (column === 'amount') {
+      return toNumber(investment.amount);
+    }
+
+    if (column === 'frequency') {
+      return investment.frequency ?? '';
+    }
+
+    if (column === 'date') {
+      return dateValue(investment.date) ?? '';
+    }
+
+    if (column === 'startDate') {
+      return dateValue(investment.startDate) ?? '';
+    }
+
+    if (column === 'endDate') {
+      return dateValue(investment.endDate) ?? '';
+    }
+
+    if (column === 'note') {
+      return investment.notes ?? '';
+    }
+
+    return investment.name ?? '';
+  }
+
+  private rowCategoryId(table: BulkTableKey, row: BulkDisplayRow): string | undefined {
+    if (table === 'expenses') {
+      return (row as DraftExpense).categoryId;
+    }
+
+    if (table === 'templates') {
+      return (row as DraftTemplate).categoryId;
+    }
+
+    if (table === 'incomes') {
+      return (row as DraftRow<IncomeSource>).categoryId;
+    }
+
+    if (table === 'investments') {
+      return (row as DraftRow<InvestmentEntry>).categoryId;
+    }
+
+    return undefined;
+  }
+
+  private rowCategoryType(table: BulkTableKey, row: BulkDisplayRow): CategoryType | undefined {
+    return table === 'categories'
+      ? ((row as DraftRow<BudgetCategory>).type ?? 'Expenses')
+      : undefined;
+  }
+
+  private rowExpenseType(table: BulkTableKey, row: BulkDisplayRow): ExpenseType | undefined {
+    return table === 'expenses' ? (row as DraftExpense).type : undefined;
+  }
+
+  private rowFrequency(table: BulkTableKey, row: BulkDisplayRow): InvestmentFrequency | undefined {
+    if (table === 'templates') {
+      return (row as DraftTemplate).frequency ?? 'monthly';
+    }
+
+    if (table === 'investments') {
+      return (row as DraftRow<InvestmentEntry>).frequency;
+    }
+
+    return undefined;
+  }
+
+  private rowCadence(table: BulkTableKey, row: BulkDisplayRow): Cadence | undefined {
+    return table === 'incomes' ? (row as DraftRow<IncomeSource>).cadence : undefined;
+  }
+
+  private rowPaymentModeId(table: BulkTableKey, row: BulkDisplayRow): string | undefined {
+    if (table === 'expenses') {
+      return (row as DraftExpense).paymentModeId;
+    }
+
+    if (table === 'templates') {
+      return (row as DraftTemplate).paymentModeId;
+    }
+
+    if (table === 'loans') {
+      return (row as DraftRow<Loan>).paymentModeId;
+    }
+
+    if (table === 'investments') {
+      return (row as DraftRow<InvestmentEntry>).paymentModeId;
+    }
+
+    return undefined;
+  }
+
+  private rowStatusLabel(row: BulkDisplayRow): string {
+    if (row.pendingDelete) {
+      return 'marked delete';
+    }
+
+    if (row.isNew) {
+      return 'new';
+    }
+
+    if ('isSuggested' in row && row.isSuggested) {
+      return 'suggested';
+    }
+
+    return 'active';
+  }
+
+  private visibleRows(): BulkDisplayRow[] {
     if (this.showMonthlyTables()) {
-      return [...this.expenses(), ...this.templates()];
+      return [...this.filteredExpenses(), ...this.filteredTemplates()];
     }
 
     if (this.showPlanningTables()) {
-      return [...this.incomes(), ...this.investments(), ...this.categories()];
+      return [
+        ...this.filteredIncomes(),
+        ...this.filteredInvestments(),
+        ...this.filteredCategories(),
+      ];
     }
 
-    return this.loans();
+    return this.filteredLoans();
   }
 
   private rowLabel(
@@ -1215,32 +2921,64 @@ export class BulkEditorDialog {
   }
 
   private memberValidationError(): string {
-    if (this.isMemberLocked() || !this.members.length) {
-      return '';
-    }
-
-    const newFinancialRows = [
-      ...this.expenses().filter(
-        (row) =>
-          !row.pendingDelete && (row.isNew || row.isSuggested) && this.isSuggestedExpenseReady(row),
-      ),
-      ...this.templates().filter((row) => !row.pendingDelete && row.isNew),
-      ...this.incomes().filter((row) => !row.pendingDelete && row.isNew),
-      ...this.investments().filter((row) => !row.pendingDelete && row.isNew),
-      ...this.loans().filter((row) => !row.pendingDelete && row.isNew),
-    ];
-
-    return newFinancialRows.some((row) => !row.memberEmail)
-      ? 'Choose a user for every new financial row when viewing all members.'
-      : '';
+    return '';
   }
 
   private recordMemberEmail(record: { memberEmail?: string }): string | undefined {
-    return this.isMemberLocked() ? this.data.selectedMemberEmail! : record.memberEmail || undefined;
+    return this.defaultMemberEmail() ?? record.memberEmail ?? undefined;
   }
 
   private isMemberLocked(): boolean {
-    return !!this.data.selectedMemberEmail && this.data.selectedMemberEmail !== 'ALL';
+    return !!this.defaultMemberEmail();
+  }
+
+  private lockedMemberEmail(): string | undefined {
+    return this.data.selectedMemberEmail && this.data.selectedMemberEmail !== 'ALL'
+      ? this.data.selectedMemberEmail
+      : undefined;
+  }
+
+  private paymentAccountForMode(paymentMode: PaymentMode): PaymentAccount | undefined {
+    if (!paymentMode.paymentAccountId) {
+      return undefined;
+    }
+
+    return this.paymentAccounts.find((account) => account.id === paymentMode.paymentAccountId);
+  }
+
+  private memberTag(memberEmail: string | undefined): string {
+    if (!memberEmail) {
+      return 'Legacy';
+    }
+
+    return this.shortMemberName(this.memberName(memberEmail));
+  }
+
+  private shortMemberName(name: string): string {
+    const [firstName, secondName] = name.split(/\s+/).filter(Boolean);
+    if (!firstName) {
+      return 'Unassigned';
+    }
+
+    return secondName ? `${firstName} ${secondName[0].toUpperCase()}` : firstName;
+  }
+
+  private lastFourLabel(lastFour: string | undefined): string {
+    return lastFour?.replace(/\D/g, '').slice(-4) || '----';
+  }
+
+  private paymentProviderLabel(
+    provider: PaymentMode['provider'] | string | undefined,
+  ): string | undefined {
+    if (provider === 'GPay') {
+      return 'Google Pay';
+    }
+
+    if (provider === 'SamsungPay') {
+      return 'Samsung Pay';
+    }
+
+    return provider;
   }
 
   private isRecurringDraftChanged(template: DraftTemplate, original: ExpenseTemplate): boolean {

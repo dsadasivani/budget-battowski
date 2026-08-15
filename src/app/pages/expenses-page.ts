@@ -1,13 +1,5 @@
 import { CommonModule, NgOptimizedImage } from '@angular/common';
-import {
-  ChangeDetectionStrategy,
-  Component,
-  ElementRef,
-  computed,
-  inject,
-  signal,
-  viewChild,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
@@ -34,25 +26,6 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
       <app-page-skeleton variant="expenses" />
     } @else {
       <section class="page mobile-expenses-page">
-        <header class="mobile-page-hero expenses-hero">
-          <div class="mobile-title-row">
-            <span class="mobile-page-mark" aria-hidden="true">
-              <mat-icon>credit_card</mat-icon>
-            </span>
-            <h1>Monthly Expenses</h1>
-            <button
-              class="mobile-filter-button"
-              mat-icon-button
-              type="button"
-              aria-label="Focus expense search"
-              (click)="focusSearch()"
-            >
-              <mat-icon aria-hidden="true">tune</mat-icon>
-            </button>
-          </div>
-          <app-month-member-controls />
-        </header>
-
         <header class="page-header desktop-page-header">
           <div>
             <h1>Monthly Expenses</h1>
@@ -63,13 +36,17 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
           </div>
         </header>
 
+        <div class="mobile-page-controls mobile-filter-strip">
+          <app-month-member-controls />
+        </div>
+
         <section
           class="stat-grid"
           [class.three]="!store.hasMonthlyReviewRows()"
           aria-label="Expense summary"
         >
           @if (store.hasMonthlyReviewRows()) {
-            <article class="stat-card">
+            <article class="stat-card review-stat-card">
               <span class="icon-chip blue"><mat-icon aria-hidden="true">fact_check</mat-icon></span>
               <p>Pending Review</p>
               <strong>{{ store.monthlyReviewRows().length }}</strong>
@@ -85,21 +62,21 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
               </button>
             </article>
           }
-          <article class="stat-card">
+          <article class="stat-card expense-total-card">
             <span class="icon-chip red"><mat-icon aria-hidden="true">credit_card</mat-icon></span>
             <p>Total Expenses</p>
             <strong>{{
               store.outflowTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
             }}</strong>
           </article>
-          <article class="stat-card">
+          <article class="stat-card recurring-total-card">
             <span class="icon-chip orange"><mat-icon aria-hidden="true">sync</mat-icon></span>
             <p>Recurring</p>
             <strong>{{
               store.recurringTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
             }}</strong>
           </article>
-          <article class="stat-card">
+          <article class="stat-card one-time-total-card">
             <span class="icon-chip purple"
               ><mat-icon aria-hidden="true">shopping_bag</mat-icon></span
             >
@@ -110,19 +87,29 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
           </article>
         </section>
 
+        <label class="search-box mobile-search-box mobile-transaction-search">
+          <mat-icon aria-hidden="true">search</mat-icon>
+          <span class="sr-only">Search expenses</span>
+          <input
+            type="search"
+            placeholder="Search transactions"
+            [value]="query()"
+            (input)="setQuery($event)"
+          />
+        </label>
+
         <section class="content-grid two-one">
           <article class="panel-card">
             <header class="panel-heading split">
               <div>
-                <h2>All Expenses</h2>
+                <h2>Recent Transactions</h2>
                 <p>Search, review, and manage monthly transactions</p>
               </div>
               <div class="table-actions">
-                <label class="search-box">
+                <label class="search-box desktop-search-box">
                   <mat-icon aria-hidden="true">search</mat-icon>
                   <span class="sr-only">Search expenses</span>
                   <input
-                    #expenseSearchInput
                     type="search"
                     placeholder="Search expenses"
                     [value]="query()"
@@ -147,10 +134,13 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                   <span>{{ expense.dayLabel }}</span>
                   <strong>{{ expense.name }}</strong>
                   <span class="badge">
-                    <span class="dot" [style.background]="expense.categoryColor" aria-hidden="true"></span>
+                    <span
+                      class="dot"
+                      [style.background]="expense.categoryColor"
+                      aria-hidden="true"
+                    ></span>
                     {{ expense.categoryName }}
                   </span>
-                  <span class="avatar mini">{{ expense.memberInitial }}</span>
                   <b>{{ expense.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</b>
                   <span class="badge neutral">
                     {{ expense.typeLabel === 'recurring' ? 'Recur' : '1x' }}
@@ -182,7 +172,6 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                     <th>Date</th>
                     <th>Description</th>
                     <th>Category</th>
-                    <th>Member</th>
                     <th>Amount</th>
                     <th>Paid via</th>
                     <th>Type</th>
@@ -198,12 +187,13 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                       </td>
                       <td>
                         <span class="badge">
-                          <span class="dot" [style.background]="expense.categoryColor" aria-hidden="true"></span>
+                          <span
+                            class="dot"
+                            [style.background]="expense.categoryColor"
+                            aria-hidden="true"
+                          ></span>
                           {{ expense.categoryName }}
                         </span>
-                      </td>
-                      <td>
-                        <span class="avatar mini">{{ expense.memberInitial }}</span>
                       </td>
                       <td>
                         <b>{{ expense.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</b>
@@ -225,9 +215,9 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                         <button
                           mat-icon-button
                           type="button"
-                          aria-label="Edit expenses"
-                          matTooltip="Edit expenses"
-                          (click)="store.openBulkEditor('monthly')"
+                          [attr.aria-label]="'Edit expense ' + expense.name"
+                          matTooltip="Edit expense"
+                          (click)="store.openBulkEditor('monthly', 0, expense.id)"
                           [disabled]="!store.canWrite()"
                         >
                           <mat-icon aria-hidden="true">edit</mat-icon>
@@ -236,7 +226,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                     </tr>
                   } @empty {
                     <tr>
-                      <td colspan="8">
+                      <td colspan="7">
                         <div class="empty-state">No expenses match this view</div>
                       </td>
                     </tr>
@@ -320,7 +310,6 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 })
 export class ExpensesPage {
   readonly store = inject(BudgetStore);
-  readonly expenseSearchInput = viewChild<ElementRef<HTMLInputElement>>('expenseSearchInput');
   readonly query = signal('');
   readonly showAllRows = signal(false);
   readonly filteredRows = computed(() => {
@@ -332,7 +321,7 @@ export class ExpensesPage {
     return this.store
       .expenseRows()
       .filter((expense) =>
-        [expense.name, expense.categoryName, expense.memberName, expense.typeLabel]
+        [expense.name, expense.categoryName, expense.typeLabel]
           .join(' ')
           .toLowerCase()
           .includes(query),
@@ -344,10 +333,6 @@ export class ExpensesPage {
 
   setQuery(event: Event): void {
     this.query.set((event.target as HTMLInputElement).value);
-  }
-
-  focusSearch(): void {
-    this.expenseSearchInput()?.nativeElement.focus();
   }
 
   toggleExpenseRows(): void {

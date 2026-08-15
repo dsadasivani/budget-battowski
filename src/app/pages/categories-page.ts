@@ -6,6 +6,7 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { BudgetStore } from '../budget.store';
+import { MonthMemberControls } from '../shared/month-member-controls';
 import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 
 @Component({
@@ -16,126 +17,154 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
     MatIconModule,
     MatProgressBarModule,
     MatTooltipModule,
+    MonthMemberControls,
     AppPageSkeletonComponent,
   ],
   template: `
     @if (store.showPageSkeleton()) {
       <app-page-skeleton variant="categories" />
     } @else {
-    <section class="page mobile-categories-page">
-      <header class="mobile-page-hero compact-hero">
-        <div class="mobile-title-row">
-          <h1>Categories</h1>
-          <button
-            mat-flat-button
-            type="button"
-            (click)="store.openBulkEditor('planning', 1)"
-            [disabled]="!store.canWrite()"
-          >
-            <mat-icon aria-hidden="true">add</mat-icon>
-            Add Category
-          </button>
-        </div>
-      </header>
+      <section class="page mobile-categories-page">
+        <header class="page-header desktop-page-header">
+          <div>
+            <h1>Categories</h1>
+            <p>Organize and budget your spending categories.</p>
+          </div>
+          <div class="header-actions">
+            <app-month-member-controls />
+            <label class="search-box wide">
+              <mat-icon aria-hidden="true">search</mat-icon>
+              <span class="sr-only">Search categories</span>
+              <input
+                type="search"
+                placeholder="Search categories..."
+                [value]="query()"
+                (input)="setQuery($event)"
+              />
+            </label>
+            <button
+              mat-flat-button
+              type="button"
+              (click)="store.openBulkEditor('planning', 1)"
+              [disabled]="!store.canWrite()"
+            >
+              <mat-icon aria-hidden="true">add</mat-icon>
+              Add Category
+            </button>
+          </div>
+        </header>
 
-      <header class="page-header desktop-page-header">
-        <div>
-          <h1>Categories</h1>
-          <p>Organize and budget your spending categories.</p>
+        <div class="mobile-page-controls mobile-category-controls">
+          <app-month-member-controls />
+          <div class="mobile-search-action-strip">
+            <label class="search-box mobile-search-box">
+              <mat-icon aria-hidden="true">search</mat-icon>
+              <span class="sr-only">Search categories</span>
+              <input
+                type="search"
+                placeholder="Search categories"
+                [value]="query()"
+                (input)="setQuery($event)"
+              />
+            </label>
+            <button
+              class="mobile-panel-add-button"
+              mat-icon-button
+              type="button"
+              aria-label="Add category"
+              matTooltip="Add category"
+              (click)="store.openBulkEditor('planning', 1)"
+              [disabled]="!store.canWrite()"
+            >
+              <mat-icon aria-hidden="true">add</mat-icon>
+            </button>
+          </div>
         </div>
-        <div class="header-actions">
-          <label class="search-box wide">
-            <mat-icon aria-hidden="true">search</mat-icon>
-            <span class="sr-only">Search categories</span>
-            <input
-              type="search"
-              placeholder="Search categories..."
-              [value]="query()"
-              (input)="setQuery($event)"
-            />
-          </label>
-          <button
-            mat-flat-button
-            type="button"
-            (click)="store.openBulkEditor('planning', 1)"
-            [disabled]="!store.canWrite()"
-          >
-            <mat-icon aria-hidden="true">add</mat-icon>
-            Add Category
-          </button>
-        </div>
-      </header>
 
-      <aside class="category-stat-tags" aria-label="Category summary">
-        <span class="category-stat-tag blue">
-          <span class="category-stat-icon" aria-hidden="true">
-            <mat-icon>sell</mat-icon>
+        <aside class="category-stat-tags" aria-label="Category summary">
+          <span class="category-stat-tag blue">
+            <span class="category-stat-icon" aria-hidden="true">
+              <mat-icon>sell</mat-icon>
+            </span>
+            <span class="category-stat-copy">
+              <span>Total Categories</span>
+              <strong>{{ store.expenseCategories().length }}</strong>
+            </span>
           </span>
-          <span class="category-stat-copy">
-            <span>Total Categories</span>
-            <strong>{{ store.expenseCategories().length }}</strong>
+          <span class="category-stat-tag red">
+            <span class="category-stat-icon" aria-hidden="true">
+              <mat-icon>warning</mat-icon>
+            </span>
+            <span class="category-stat-copy">
+              <span>Over Budget</span>
+              <strong>{{ store.overBudgetCategoryCount() }}</strong>
+            </span>
           </span>
-        </span>
-        <span class="category-stat-tag red">
-          <span class="category-stat-icon" aria-hidden="true">
-            <mat-icon>warning</mat-icon>
+          <span class="category-stat-tag green">
+            <span class="category-stat-icon" aria-hidden="true">
+              <mat-icon>check_circle</mat-icon>
+            </span>
+            <span class="category-stat-copy">
+              <span>Within Budget</span>
+              <strong>{{ store.withinBudgetCategoryCount() }}</strong>
+            </span>
           </span>
-          <span class="category-stat-copy">
-            <span>Over Budget</span>
-            <strong>{{ store.overBudgetCategoryCount() }}</strong>
-          </span>
-        </span>
-        <span class="category-stat-tag green">
-          <span class="category-stat-icon" aria-hidden="true">
-            <mat-icon>check_circle</mat-icon>
-          </span>
-          <span class="category-stat-copy">
-            <span>Within Budget</span>
-            <strong>{{ store.withinBudgetCategoryCount() }}</strong>
-          </span>
-        </span>
-      </aside>
+        </aside>
 
-      <section class="category-grid" aria-label="Budget categories">
-        @for (category of filteredRows(); track category.id) {
-          <article class="category-card" [class.warn]="category.statusTone === 'warning'" [class.danger]="category.statusTone === 'danger'">
-            <header>
-              <span class="category-icon {{ category.tone }}">
-                <mat-icon aria-hidden="true">{{ category.icon }}</mat-icon>
-              </span>
-              <div>
-                <h2>{{ category.name }}</h2>
-                <p>Monthly budget {{ category.monthlyBudget | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</p>
+        <section class="category-grid" aria-label="Budget categories">
+          @for (category of filteredRows(); track category.id) {
+            <article
+              class="category-card"
+              [class.warn]="category.statusTone === 'warning'"
+              [class.danger]="category.statusTone === 'danger'"
+            >
+              <header>
+                <span class="category-icon {{ category.tone }}">
+                  <mat-icon aria-hidden="true">{{ category.icon }}</mat-icon>
+                </span>
+                <div>
+                  <h2>{{ category.name }}</h2>
+                  <p>
+                    Monthly budget
+                    {{ category.monthlyBudget | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}
+                  </p>
+                </div>
+                <button
+                  mat-icon-button
+                  type="button"
+                  [attr.aria-label]="'Edit category ' + category.name"
+                  matTooltip="Edit category"
+                  (click)="store.openBulkEditor('planning', 1, category.id)"
+                  [disabled]="!store.canWrite()"
+                >
+                  <mat-icon aria-hidden="true">edit</mat-icon>
+                </button>
+              </header>
+              <div class="category-card-body">
+                <span
+                  >Spent {{ category.spent | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span
+                >
+                <span
+                  class="badge"
+                  [class.success]="category.statusTone === 'success'"
+                  [class.warning]="category.statusTone === 'warning'"
+                  [class.danger]="category.statusTone === 'danger'"
+                >
+                  {{ category.statusLabel }}
+                </span>
               </div>
-              <button
-                mat-icon-button
-                type="button"
-                aria-label="Edit categories"
-                matTooltip="Edit categories"
-                (click)="store.openBulkEditor('planning', 1)"
-                [disabled]="!store.canWrite()"
-              >
-                <mat-icon aria-hidden="true">edit</mat-icon>
-              </button>
-            </header>
-            <div class="category-card-body">
-              <span>Spent {{ category.spent | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span>
-              <span class="badge" [class.success]="category.statusTone === 'success'" [class.warning]="category.statusTone === 'warning'" [class.danger]="category.statusTone === 'danger'">
-                {{ category.statusLabel }}
-              </span>
-            </div>
-            <mat-progress-bar
-              mode="determinate"
-              [value]="category.percent"
-              [attr.aria-label]="category.name + ' budget used'"
-            ></mat-progress-bar>
-            <b>{{ category.used | percent: '1.0-0' }}</b>
-          </article>
-        } @empty {
-          <div class="empty-state">No categories match this view</div>
-        }
+              <mat-progress-bar
+                mode="determinate"
+                [value]="category.percent"
+                [attr.aria-label]="category.name + ' budget used'"
+              ></mat-progress-bar>
+              <b>{{ category.used | percent: '1.0-0' }}</b>
+            </article>
+          } @empty {
+            <div class="empty-state">No categories match this view</div>
+          }
+        </section>
       </section>
-    </section>
     }
   `,
   styles: [

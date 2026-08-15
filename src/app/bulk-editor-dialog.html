@@ -34,6 +34,205 @@
     </div>
   </section>
 
+  <ng-template #bulkActionBar let-table="table">
+    <div
+      class="bulk-action-bar desktop-bulk-only"
+      [class.header-editing]="bulkHeaderEditActive(table)"
+      [attr.aria-label]="bulkActionLabel(table)"
+    >
+      <span class="selection-count" aria-live="polite">{{ selectionSummary(table) }}</span>
+      <button
+        mat-stroked-button
+        type="button"
+        [disabled]="selectedCount(table) === 0"
+        (click)="clearSelection(table)"
+      >
+        Clear
+      </button>
+      <button
+        mat-stroked-button
+        type="button"
+        [disabled]="selectedCount(table) === 0"
+        (click)="markSelectedForDelete(table)"
+      >
+        <mat-icon aria-hidden="true">delete</mat-icon>
+        Mark Delete
+      </button>
+      <button
+        mat-stroked-button
+        type="button"
+        [disabled]="selectedCount(table) === 0"
+        (click)="keepSelectedRows(table)"
+      >
+        <mat-icon aria-hidden="true">undo</mat-icon>
+        Keep
+      </button>
+      @if (bulkHeaderEditActive(table)) {
+        <span class="bulk-header-hint">Edit headers, then apply.</span>
+      }
+      <button
+        mat-flat-button
+        type="button"
+        class="bulk-apply-button"
+        [disabled]="!canApplyBulkHeaderEdit(table)"
+        (click)="applyBulkHeaderEdit(table)"
+      >
+        <mat-icon aria-hidden="true">done_all</mat-icon>
+        Apply
+      </button>
+      @if (bulkHeaderResult(table)) {
+        <span class="bulk-result" aria-live="polite">{{ bulkHeaderResult(table) }}</span>
+      }
+    </div>
+  </ng-template>
+
+  <ng-template
+    #bulkHeaderCell
+    let-table="table"
+    let-field="field"
+    let-label="label"
+    let-sortColumn="sortColumn"
+  >
+    <th
+      scope="col"
+      [class.bulk-header-edit-col]="showBulkHeaderEditor(table, field)"
+      [attr.aria-sort]="showBulkHeaderEditor(table, field) ? null : sortAria(table, sortColumn)"
+    >
+      @if (showBulkHeaderEditor(table, field)) {
+        <div
+          class="bulk-header-editor"
+          [class.has-value]="isBulkHeaderFieldTouched(table, field)"
+          [class.invalid]="isBulkHeaderFieldInvalid(table, field)"
+        >
+          <span class="header-edit-label">{{ label }}</span>
+          @switch (bulkHeaderValueKind(table, field)) {
+            @case ('category') {
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <mat-select
+                  [attr.aria-label]="bulkHeaderInputLabel(table, label)"
+                  [placeholder]="label"
+                  [value]="bulkHeaderValue(table, field)"
+                  (selectionChange)="setBulkHeaderValue(table, field, $event.value)"
+                >
+                  @for (option of bulkHeaderValueOptions(table, field); track option.value) {
+                    <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            }
+            @case ('paymentMode') {
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <mat-select
+                  [attr.aria-label]="bulkHeaderInputLabel(table, label)"
+                  [placeholder]="label"
+                  [value]="bulkHeaderValue(table, field)"
+                  (selectionChange)="setBulkHeaderValue(table, field, $event.value)"
+                >
+                  @for (option of bulkHeaderValueOptions(table, field); track option.value) {
+                    <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            }
+            @case ('categoryType') {
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <mat-select
+                  [attr.aria-label]="bulkHeaderInputLabel(table, label)"
+                  [placeholder]="label"
+                  [value]="bulkHeaderValue(table, field)"
+                  (selectionChange)="setBulkHeaderValue(table, field, $event.value)"
+                >
+                  @for (option of bulkHeaderValueOptions(table, field); track option.value) {
+                    <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            }
+            @case ('select') {
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <mat-select
+                  [attr.aria-label]="bulkHeaderInputLabel(table, label)"
+                  [placeholder]="label"
+                  [value]="bulkHeaderValue(table, field)"
+                  (selectionChange)="setBulkHeaderValue(table, field, $event.value)"
+                >
+                  @for (option of bulkHeaderValueOptions(table, field); track option.value) {
+                    <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            }
+            @case ('date') {
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <input
+                  matInput
+                  [attr.aria-label]="bulkHeaderInputLabel(table, label)"
+                  [matDatepicker]="bulkHeaderDatePicker"
+                  [placeholder]="label"
+                  [value]="bulkHeaderValue(table, field)"
+                  (input)="setBulkHeaderValueFromEvent(table, field, $event)"
+                  (dateInput)="setBulkHeaderDateValue(table, field, $event.value)"
+                  (dateChange)="setBulkHeaderDateValue(table, field, $event.value)"
+                />
+                <mat-datepicker-toggle
+                  matIconSuffix
+                  [for]="bulkHeaderDatePicker"
+                ></mat-datepicker-toggle>
+                <mat-datepicker #bulkHeaderDatePicker></mat-datepicker>
+              </mat-form-field>
+            }
+            @case ('number') {
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <input
+                  matInput
+                  [attr.aria-label]="bulkHeaderInputLabel(table, label)"
+                  type="number"
+                  min="0"
+                  [placeholder]="label"
+                  [value]="bulkHeaderValue(table, field)"
+                  (input)="setBulkHeaderValueFromEvent(table, field, $event)"
+                />
+              </mat-form-field>
+            }
+            @case ('color') {
+              <label class="bulk-header-color-control">
+                <span class="sr-only">{{ bulkHeaderInputLabel(table, label) }}</span>
+                <input
+                  type="color"
+                  [value]="bulkHeaderValue(table, field) || '#1f7a8c'"
+                  (input)="setBulkHeaderValueFromEvent(table, field, $event)"
+                />
+                <span>{{ bulkHeaderValue(table, field) || '#1f7a8c' }}</span>
+              </label>
+            }
+            @default {
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <input
+                  matInput
+                  [attr.aria-label]="bulkHeaderInputLabel(table, label)"
+                  [placeholder]="label"
+                  [value]="bulkHeaderValue(table, field)"
+                  (input)="setBulkHeaderValueFromEvent(table, field, $event)"
+                />
+              </mat-form-field>
+            }
+          }
+        </div>
+      } @else {
+        <button
+          class="sort-header-button"
+          type="button"
+          [class.active]="isSorted(table, sortColumn)"
+          [attr.aria-label]="sortButtonLabel(table, label, sortColumn)"
+          (click)="toggleSort(table, sortColumn)"
+        >
+          {{ label }}
+          <mat-icon aria-hidden="true">{{ sortIcon(table, sortColumn) }}</mat-icon>
+        </button>
+      }
+    </th>
+  </ng-template>
+
   <mat-tab-group
     class="bulk-tabs"
     [selectedIndex]="initialTabIndex()"
@@ -57,6 +256,99 @@
             </button>
           </div>
 
+          <div class="bulk-filter-bar" aria-label="Expense table filters">
+            <label class="filter-search">
+              <mat-icon aria-hidden="true">search</mat-icon>
+              <span class="sr-only">Search expenses</span>
+              <input
+                type="search"
+                placeholder="Search expenses"
+                [value]="tableQuery('expenses')"
+                (input)="setTableQuery('expenses', $event)"
+              />
+            </label>
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-field">
+              <mat-select
+                aria-label="Filter expenses by status"
+                [value]="filterValue('expenses', 'status')"
+                (selectionChange)="setTableFilter('expenses', 'status', $event.value)"
+              >
+                @for (option of statusFilterOptions('expenses'); track option.value) {
+                  <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-field">
+              <mat-select
+                aria-label="Filter expenses by category"
+                [value]="filterValue('expenses', 'categoryId')"
+                (selectionChange)="setTableFilter('expenses', 'categoryId', $event.value)"
+              >
+                <mat-option value="">All categories</mat-option>
+                <mat-option value="__uncategorized">Uncategorized</mat-option>
+                @for (category of categoriesByType('Expenses'); track category.id) {
+                  <mat-option [value]="category.id">{{ category.name }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-field">
+              <mat-select
+                aria-label="Filter expenses by type"
+                [value]="filterValue('expenses', 'expenseType')"
+                (selectionChange)="setTableFilter('expenses', 'expenseType', $event.value)"
+              >
+                <mat-option value="">All types</mat-option>
+                @for (expenseType of expenseTypes; track expenseType) {
+                  <mat-option [value]="expenseType">{{ expenseType }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-field">
+              <mat-select
+                aria-label="Filter expenses by payment mode"
+                [value]="filterValue('expenses', 'paymentModeId')"
+                (selectionChange)="setTableFilter('expenses', 'paymentModeId', $event.value)"
+              >
+                <mat-option value="">All payment modes</mat-option>
+                <mat-option value="__none">Not set</mat-option>
+                @for (paymentMode of paymentModes; track paymentMode.id) {
+                  <mat-option [value]="paymentMode.id">{{
+                    paymentModeShortLabel(paymentMode)
+                  }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field
+              appearance="outline"
+              subscriptSizing="dynamic"
+              class="filter-field mobile-sort-field"
+            >
+              <mat-select
+                aria-label="Sort expenses"
+                [value]="sortValue('expenses')"
+                (selectionChange)="setSortFromValue('expenses', $event.value)"
+              >
+                @for (option of tableSortOptions('expenses'); track option.value) {
+                  <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <button
+              mat-stroked-button
+              type="button"
+              class="clear-filters-button"
+              [disabled]="!hasActiveFilters('expenses')"
+              (click)="clearTableFilters('expenses')"
+            >
+              Clear
+            </button>
+          </div>
+
+          <ng-container
+            [ngTemplateOutlet]="bulkActionBar"
+            [ngTemplateOutletContext]="{ table: 'expenses' }"
+          ></ng-container>
+
           <div class="table-wrap desktop-table-region">
             <table class="bulk-table">
               <caption>
@@ -64,27 +356,112 @@
               </caption>
               <thead>
                 <tr>
+                  <th class="row-select-col desktop-bulk-only" scope="col">
+                    <input
+                      class="row-select-input"
+                      type="checkbox"
+                      aria-label="Select all filtered expenses"
+                      [checked]="allFilteredRowsSelected('expenses')"
+                      [indeterminate]="someFilteredRowsSelected('expenses')"
+                      [attr.aria-checked]="
+                        someFilteredRowsSelected('expenses')
+                          ? 'mixed'
+                          : allFilteredRowsSelected('expenses')
+                            ? 'true'
+                            : 'false'
+                      "
+                      (change)="toggleFilteredRowsSelection('expenses', $event)"
+                    />
+                  </th>
                   <th class="row-number-col" scope="col">#</th>
-                  <th scope="col">Name</th>
-                  <th scope="col">Date</th>
-                  <th scope="col">Category</th>
-                  <th scope="col">Amount</th>
-                  <th scope="col">Type</th>
-                  <th scope="col">Note</th>
-                  <th scope="col">Paid via</th>
-                  <th scope="col">User</th>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'expenses',
+                      field: 'name',
+                      label: 'Name',
+                      sortColumn: 'name',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'expenses',
+                      field: 'date',
+                      label: 'Date',
+                      sortColumn: 'date',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'expenses',
+                      field: 'categoryId',
+                      label: 'Category',
+                      sortColumn: 'category',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'expenses',
+                      field: 'amount',
+                      label: 'Amount',
+                      sortColumn: 'amount',
+                    }"
+                  ></ng-container>
+                  <th scope="col" [attr.aria-sort]="sortAria('expenses', 'type')">
+                    <button
+                      class="sort-header-button"
+                      type="button"
+                      [class.active]="isSorted('expenses', 'type')"
+                      [attr.aria-label]="sortButtonLabel('expenses', 'Type', 'type')"
+                      (click)="toggleSort('expenses', 'type')"
+                    >
+                      Type
+                      <mat-icon aria-hidden="true">{{ sortIcon('expenses', 'type') }}</mat-icon>
+                    </button>
+                  </th>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'expenses',
+                      field: 'note',
+                      label: 'Note',
+                      sortColumn: 'note',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'expenses',
+                      field: 'paymentModeId',
+                      label: 'Paid via',
+                      sortColumn: 'paymentMode',
+                    }"
+                  ></ng-container>
                   <th scope="col">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                @for (expense of expenses(); track expense.id; let rowIndex = $index) {
+                @for (expense of filteredExpenses(); track expense.id; let rowIndex = $index) {
                   <tr
                     [attr.data-row-id]="expense.id"
                     [class.row-editing]="isRowEditing(expense)"
                     [class.marked-delete]="expense.pendingDelete"
+                    [class.modified-row]="isRowModified('expenses', expense)"
                     [class.new-row]="expense.isNew"
                     [class.suggested-row]="expense.isSuggested"
                   >
+                    <td class="row-select desktop-bulk-only">
+                      <input
+                        class="row-select-input"
+                        type="checkbox"
+                        [checked]="isRowSelected('expenses', expense.id)"
+                        [attr.aria-label]="'Select expense row ' + (expense.name || 'Expense')"
+                        (change)="toggleRowSelection('expenses', expense.id, $event)"
+                      />
+                    </td>
                     <td class="row-number">
                       @if (expense.isNew) {
                         <span class="row-status">New</span>
@@ -94,7 +471,7 @@
                         {{ rowIndex + 1 }}
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('expenses', expense, 'name')">
                       @if (isRowEditing(expense)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -114,7 +491,7 @@
                         </small>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('expenses', expense, 'date')">
                       @if (isRowEditing(expense)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -135,7 +512,7 @@
                         <span class="cell-muted">{{ dateLabel(expense.date) }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('expenses', expense, 'categoryId')">
                       @if (isRowEditing(expense)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <mat-select
@@ -156,7 +533,7 @@
                         }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('expenses', expense, 'amount')">
                       @if (isRowEditing(expense)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -178,7 +555,7 @@
                         {{ expense.type === 'recurring' ? 'recurring' : 'one-time' }}
                       </span>
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('expenses', expense, 'note')">
                       @if (isRowEditing(expense)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -193,7 +570,9 @@
                         <span class="cell-note">{{ noteLabel(expense.note) }}</span>
                       }
                     </td>
-                    <td>
+                    <td
+                      [class.modified-cell]="isFieldModified('expenses', expense, 'paymentModeId')"
+                    >
                       @if (isRowEditing(expense)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <mat-select
@@ -212,7 +591,7 @@
                                     height="24"
                                     alt=""
                                   />
-                                  <span>{{ paymentMode.name }}</span>
+                                  <span>{{ paymentModeShortLabel(paymentMode) }}</span>
                                 </span>
                               </mat-option>
                             }
@@ -227,27 +606,6 @@
                         } @else {
                           <span class="cell-muted">Not set</span>
                         }
-                      }
-                    </td>
-                    <td>
-                      @if (isRowEditing(expense)) {
-                        <mat-form-field appearance="outline" subscriptSizing="dynamic">
-                          <mat-select
-                            aria-label="Expense user"
-                            placeholder="User"
-                            [(ngModel)]="expense.memberEmail"
-                            [disabled]="userFieldDisabled(expense)"
-                          >
-                            <mat-option [value]="undefined">Unassigned</mat-option>
-                            @for (member of members; track member.email) {
-                              <mat-option [value]="member.email">{{
-                                memberDisplayName(member)
-                              }}</mat-option>
-                            }
-                          </mat-select>
-                        </mat-form-field>
-                      } @else {
-                        <span class="cell-muted">{{ memberName(expense.memberEmail) }}</span>
                       }
                     </td>
                     <td>
@@ -289,13 +647,19 @@
                       </div>
                     </td>
                   </tr>
+                } @empty {
+                  <tr>
+                    <td colspan="10">
+                      <div class="empty-state">{{ emptyTableMessage('expenses') }}</div>
+                    </td>
+                  </tr>
                 }
               </tbody>
             </table>
           </div>
 
           <section class="mobile-card-list" aria-label="Expense entry cards">
-            @for (expense of expenses(); track expense.id; let rowIndex = $index) {
+            @for (expense of filteredExpenses(); track expense.id; let rowIndex = $index) {
               <article
                 class="mobile-row-card"
                 [attr.data-row-id]="expense.id"
@@ -450,24 +814,9 @@
                               height="24"
                               alt=""
                             />
-                            <span>{{ paymentMode.name }}</span>
+                            <span>{{ paymentModeShortLabel(paymentMode) }}</span>
                           </span>
                         </mat-option>
-                      }
-                    </mat-select>
-                  </mat-form-field>
-                  <mat-form-field appearance="outline" subscriptSizing="dynamic">
-                    <mat-select
-                      aria-label="Expense user"
-                      placeholder="User"
-                      [(ngModel)]="expense.memberEmail"
-                      [disabled]="userFieldDisabled(expense)"
-                    >
-                      <mat-option [value]="undefined">Unassigned</mat-option>
-                      @for (member of members; track member.email) {
-                        <mat-option [value]="member.email">{{
-                          memberDisplayName(member)
-                        }}</mat-option>
                       }
                     </mat-select>
                   </mat-form-field>
@@ -510,6 +859,10 @@
                   </p>
                 }
               </article>
+            } @empty {
+              <article class="mobile-row-card empty-filter-state">
+                {{ emptyTableMessage('expenses') }}
+              </article>
             }
           </section>
         </section>
@@ -531,6 +884,99 @@
             </button>
           </div>
 
+          <div class="bulk-filter-bar" aria-label="Recurring expense table filters">
+            <label class="filter-search">
+              <mat-icon aria-hidden="true">search</mat-icon>
+              <span class="sr-only">Search recurring expenses</span>
+              <input
+                type="search"
+                placeholder="Search recurring"
+                [value]="tableQuery('templates')"
+                (input)="setTableQuery('templates', $event)"
+              />
+            </label>
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-field">
+              <mat-select
+                aria-label="Filter recurring expenses by status"
+                [value]="filterValue('templates', 'status')"
+                (selectionChange)="setTableFilter('templates', 'status', $event.value)"
+              >
+                @for (option of statusFilterOptions('templates'); track option.value) {
+                  <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-field">
+              <mat-select
+                aria-label="Filter recurring expenses by category"
+                [value]="filterValue('templates', 'categoryId')"
+                (selectionChange)="setTableFilter('templates', 'categoryId', $event.value)"
+              >
+                <mat-option value="">All categories</mat-option>
+                <mat-option value="__uncategorized">Uncategorized</mat-option>
+                @for (category of categoriesByType('Expenses'); track category.id) {
+                  <mat-option [value]="category.id">{{ category.name }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-field">
+              <mat-select
+                aria-label="Filter recurring expenses by frequency"
+                [value]="filterValue('templates', 'frequency')"
+                (selectionChange)="setTableFilter('templates', 'frequency', $event.value)"
+              >
+                <mat-option value="">All frequencies</mat-option>
+                @for (frequency of recurringFrequencies; track frequency) {
+                  <mat-option [value]="frequency">{{ frequency }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-field">
+              <mat-select
+                aria-label="Filter recurring expenses by payment mode"
+                [value]="filterValue('templates', 'paymentModeId')"
+                (selectionChange)="setTableFilter('templates', 'paymentModeId', $event.value)"
+              >
+                <mat-option value="">All payment modes</mat-option>
+                <mat-option value="__none">Not set</mat-option>
+                @for (paymentMode of paymentModes; track paymentMode.id) {
+                  <mat-option [value]="paymentMode.id">{{
+                    paymentModeShortLabel(paymentMode)
+                  }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field
+              appearance="outline"
+              subscriptSizing="dynamic"
+              class="filter-field mobile-sort-field"
+            >
+              <mat-select
+                aria-label="Sort recurring expenses"
+                [value]="sortValue('templates')"
+                (selectionChange)="setSortFromValue('templates', $event.value)"
+              >
+                @for (option of tableSortOptions('templates'); track option.value) {
+                  <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <button
+              mat-stroked-button
+              type="button"
+              class="clear-filters-button"
+              [disabled]="!hasActiveFilters('templates')"
+              (click)="clearTableFilters('templates')"
+            >
+              Clear
+            </button>
+          </div>
+
+          <ng-container
+            [ngTemplateOutlet]="bulkActionBar"
+            [ngTemplateOutletContext]="{ table: 'templates' }"
+          ></ng-container>
+
           <div class="table-wrap desktop-table-region">
             <table class="bulk-table recurring-table">
               <caption>
@@ -538,26 +984,110 @@
               </caption>
               <thead>
                 <tr>
+                  <th class="row-select-col desktop-bulk-only" scope="col">
+                    <input
+                      class="row-select-input"
+                      type="checkbox"
+                      aria-label="Select all filtered recurring expenses"
+                      [checked]="allFilteredRowsSelected('templates')"
+                      [indeterminate]="someFilteredRowsSelected('templates')"
+                      [attr.aria-checked]="
+                        someFilteredRowsSelected('templates')
+                          ? 'mixed'
+                          : allFilteredRowsSelected('templates')
+                            ? 'true'
+                            : 'false'
+                      "
+                      (change)="toggleFilteredRowsSelection('templates', $event)"
+                    />
+                  </th>
                   <th class="row-number-col" scope="col">#</th>
-                  <th scope="col">Name</th>
-                  <th scope="col">Category</th>
-                  <th scope="col">Amount</th>
-                  <th scope="col">Frequency</th>
-                  <th scope="col">Start</th>
-                  <th scope="col">End optional</th>
-                  <th scope="col">Paid via</th>
-                  <th scope="col">User</th>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'templates',
+                      field: 'name',
+                      label: 'Name',
+                      sortColumn: 'name',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'templates',
+                      field: 'categoryId',
+                      label: 'Category',
+                      sortColumn: 'category',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'templates',
+                      field: 'amount',
+                      label: 'Amount',
+                      sortColumn: 'amount',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'templates',
+                      field: 'frequency',
+                      label: 'Frequency',
+                      sortColumn: 'frequency',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'templates',
+                      field: 'startDate',
+                      label: 'Start',
+                      sortColumn: 'startDate',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'templates',
+                      field: 'endDate',
+                      label: 'End optional',
+                      sortColumn: 'endDate',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'templates',
+                      field: 'paymentModeId',
+                      label: 'Paid via',
+                      sortColumn: 'paymentMode',
+                    }"
+                  ></ng-container>
                   <th scope="col">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                @for (template of templates(); track template.id; let rowIndex = $index) {
+                @for (template of filteredTemplates(); track template.id; let rowIndex = $index) {
                   <tr
                     [attr.data-row-id]="template.id"
                     [class.row-editing]="isRowEditing(template)"
                     [class.marked-delete]="template.pendingDelete"
+                    [class.modified-row]="isRowModified('templates', template)"
                     [class.new-row]="template.isNew"
                   >
+                    <td class="row-select desktop-bulk-only">
+                      <input
+                        class="row-select-input"
+                        type="checkbox"
+                        [checked]="isRowSelected('templates', template.id)"
+                        [attr.aria-label]="
+                          'Select recurring expense row ' + (template.name || 'Recurring expense')
+                        "
+                        (change)="toggleRowSelection('templates', template.id, $event)"
+                      />
+                    </td>
                     <td class="row-number">
                       @if (template.isNew) {
                         <span class="row-status">New</span>
@@ -565,7 +1095,7 @@
                         {{ rowIndex + 1 }}
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('templates', template, 'name')">
                       @if (isRowEditing(template)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -582,7 +1112,9 @@
                         }}</span>
                       }
                     </td>
-                    <td>
+                    <td
+                      [class.modified-cell]="isFieldModified('templates', template, 'categoryId')"
+                    >
                       @if (isRowEditing(template)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <mat-select
@@ -603,7 +1135,7 @@
                         }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('templates', template, 'amount')">
                       @if (isRowEditing(template)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -620,7 +1152,7 @@
                         <span class="cell-amount">{{ amountLabel(template.amount) }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('templates', template, 'frequency')">
                       @if (isRowEditing(template)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <mat-select
@@ -640,7 +1172,7 @@
                         }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('templates', template, 'startDate')">
                       @if (isRowEditing(template)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -661,7 +1193,7 @@
                         <span class="cell-muted">{{ dateLabel(template.startDate) }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('templates', template, 'endDate')">
                       @if (isRowEditing(template)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -682,7 +1214,11 @@
                         <span class="cell-muted">{{ dateLabel(template.endDate, 'Future') }}</span>
                       }
                     </td>
-                    <td>
+                    <td
+                      [class.modified-cell]="
+                        isFieldModified('templates', template, 'paymentModeId')
+                      "
+                    >
                       @if (isRowEditing(template)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <mat-select
@@ -701,7 +1237,7 @@
                                     height="24"
                                     alt=""
                                   />
-                                  <span>{{ paymentMode.name }}</span>
+                                  <span>{{ paymentModeShortLabel(paymentMode) }}</span>
                                 </span>
                               </mat-option>
                             }
@@ -716,27 +1252,6 @@
                         } @else {
                           <span class="cell-muted">Not set</span>
                         }
-                      }
-                    </td>
-                    <td>
-                      @if (isRowEditing(template)) {
-                        <mat-form-field appearance="outline" subscriptSizing="dynamic">
-                          <mat-select
-                            aria-label="Recurring expense user"
-                            placeholder="User"
-                            [(ngModel)]="template.memberEmail"
-                            [disabled]="userFieldDisabled(template)"
-                          >
-                            <mat-option [value]="undefined">Unassigned</mat-option>
-                            @for (member of members; track member.email) {
-                              <mat-option [value]="member.email">{{
-                                memberDisplayName(member)
-                              }}</mat-option>
-                            }
-                          </mat-select>
-                        </mat-form-field>
-                      } @else {
-                        <span class="cell-muted">{{ memberName(template.memberEmail) }}</span>
                       }
                     </td>
                     <td>
@@ -825,13 +1340,19 @@
                       </td>
                     </tr>
                   }
+                } @empty {
+                  <tr>
+                    <td colspan="10">
+                      <div class="empty-state">{{ emptyTableMessage('templates') }}</div>
+                    </td>
+                  </tr>
                 }
               </tbody>
             </table>
           </div>
 
           <section class="mobile-card-list" aria-label="Recurring expense cards">
-            @for (template of templates(); track template.id; let rowIndex = $index) {
+            @for (template of filteredTemplates(); track template.id; let rowIndex = $index) {
               <article
                 class="mobile-row-card"
                 [attr.data-row-id]="template.id"
@@ -975,24 +1496,9 @@
                                 height="24"
                                 alt=""
                               />
-                              <span>{{ paymentMode.name }}</span>
+                              <span>{{ paymentModeShortLabel(paymentMode) }}</span>
                             </span>
                           </mat-option>
-                        }
-                      </mat-select>
-                    </mat-form-field>
-                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
-                      <mat-select
-                        aria-label="Recurring expense user"
-                        placeholder="User"
-                        [(ngModel)]="template.memberEmail"
-                        [disabled]="userFieldDisabled(template)"
-                      >
-                        <mat-option [value]="undefined">Unassigned</mat-option>
-                        @for (member of members; track member.email) {
-                          <mat-option [value]="member.email">{{
-                            memberDisplayName(member)
-                          }}</mat-option>
                         }
                       </mat-select>
                     </mat-form-field>
@@ -1079,6 +1585,10 @@
                   </div>
                 }
               </article>
+            } @empty {
+              <article class="mobile-row-card empty-filter-state">
+                {{ emptyTableMessage('templates') }}
+              </article>
             }
           </section>
         </section>
@@ -1102,6 +1612,84 @@
             </button>
           </div>
 
+          <div class="bulk-filter-bar" aria-label="Income table filters">
+            <label class="filter-search">
+              <mat-icon aria-hidden="true">search</mat-icon>
+              <span class="sr-only">Search income sources</span>
+              <input
+                type="search"
+                placeholder="Search income"
+                [value]="tableQuery('incomes')"
+                (input)="setTableQuery('incomes', $event)"
+              />
+            </label>
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-field">
+              <mat-select
+                aria-label="Filter income by status"
+                [value]="filterValue('incomes', 'status')"
+                (selectionChange)="setTableFilter('incomes', 'status', $event.value)"
+              >
+                @for (option of statusFilterOptions('incomes'); track option.value) {
+                  <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-field">
+              <mat-select
+                aria-label="Filter income by category"
+                [value]="filterValue('incomes', 'categoryId')"
+                (selectionChange)="setTableFilter('incomes', 'categoryId', $event.value)"
+              >
+                <mat-option value="">All categories</mat-option>
+                <mat-option value="__uncategorized">Uncategorized</mat-option>
+                @for (category of categoriesByType('Income'); track category.id) {
+                  <mat-option [value]="category.id">{{ category.name }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-field">
+              <mat-select
+                aria-label="Filter income by cadence"
+                [value]="filterValue('incomes', 'cadence')"
+                (selectionChange)="setTableFilter('incomes', 'cadence', $event.value)"
+              >
+                <mat-option value="">All cadences</mat-option>
+                @for (cadence of incomeCadences; track cadence) {
+                  <mat-option [value]="cadence">{{ cadence }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field
+              appearance="outline"
+              subscriptSizing="dynamic"
+              class="filter-field mobile-sort-field"
+            >
+              <mat-select
+                aria-label="Sort income"
+                [value]="sortValue('incomes')"
+                (selectionChange)="setSortFromValue('incomes', $event.value)"
+              >
+                @for (option of tableSortOptions('incomes'); track option.value) {
+                  <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <button
+              mat-stroked-button
+              type="button"
+              class="clear-filters-button"
+              [disabled]="!hasActiveFilters('incomes')"
+              (click)="clearTableFilters('incomes')"
+            >
+              Clear
+            </button>
+          </div>
+
+          <ng-container
+            [ngTemplateOutlet]="bulkActionBar"
+            [ngTemplateOutletContext]="{ table: 'incomes' }"
+          ></ng-container>
+
           <div class="table-wrap desktop-table-region">
             <table class="bulk-table">
               <caption>
@@ -1109,25 +1697,99 @@
               </caption>
               <thead>
                 <tr>
+                  <th class="row-select-col desktop-bulk-only" scope="col">
+                    <input
+                      class="row-select-input"
+                      type="checkbox"
+                      aria-label="Select all filtered income rows"
+                      [checked]="allFilteredRowsSelected('incomes')"
+                      [indeterminate]="someFilteredRowsSelected('incomes')"
+                      [attr.aria-checked]="
+                        someFilteredRowsSelected('incomes')
+                          ? 'mixed'
+                          : allFilteredRowsSelected('incomes')
+                            ? 'true'
+                            : 'false'
+                      "
+                      (change)="toggleFilteredRowsSelection('incomes', $event)"
+                    />
+                  </th>
                   <th class="row-number-col" scope="col">#</th>
-                  <th scope="col">Source</th>
-                  <th scope="col">Amount</th>
-                  <th scope="col">Category</th>
-                  <th scope="col">Cadence</th>
-                  <th scope="col">Month</th>
-                  <th scope="col">Notes</th>
-                  <th scope="col">User</th>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'incomes',
+                      field: 'source',
+                      label: 'Source',
+                      sortColumn: 'source',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'incomes',
+                      field: 'amount',
+                      label: 'Amount',
+                      sortColumn: 'amount',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'incomes',
+                      field: 'categoryId',
+                      label: 'Category',
+                      sortColumn: 'category',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'incomes',
+                      field: 'cadence',
+                      label: 'Cadence',
+                      sortColumn: 'cadence',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'incomes',
+                      field: 'month',
+                      label: 'Month',
+                      sortColumn: 'month',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'incomes',
+                      field: 'notes',
+                      label: 'Notes',
+                      sortColumn: 'note',
+                    }"
+                  ></ng-container>
                   <th scope="col">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                @for (income of incomes(); track income.id; let rowIndex = $index) {
+                @for (income of filteredIncomes(); track income.id; let rowIndex = $index) {
                   <tr
                     [attr.data-row-id]="income.id"
                     [class.row-editing]="isRowEditing(income)"
                     [class.marked-delete]="income.pendingDelete"
+                    [class.modified-row]="isRowModified('incomes', income)"
                     [class.new-row]="income.isNew"
                   >
+                    <td class="row-select desktop-bulk-only">
+                      <input
+                        class="row-select-input"
+                        type="checkbox"
+                        [checked]="isRowSelected('incomes', income.id)"
+                        [attr.aria-label]="'Select income row ' + (income.source || 'Income')"
+                        (change)="toggleRowSelection('incomes', income.id, $event)"
+                      />
+                    </td>
                     <td class="row-number">
                       @if (income.isNew) {
                         <span class="row-status">New</span>
@@ -1135,7 +1797,7 @@
                         {{ rowIndex + 1 }}
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('incomes', income, 'source')">
                       @if (isRowEditing(income) && income.isNew) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -1150,7 +1812,7 @@
                         <span class="cell-value cell-strong">{{ income.source || 'Income' }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('incomes', income, 'amount')">
                       @if (isRowEditing(income)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -1167,7 +1829,7 @@
                         <span class="cell-amount">{{ amountLabel(income.amount) }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('incomes', income, 'categoryId')">
                       @if (isRowEditing(income)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <mat-select
@@ -1188,7 +1850,7 @@
                         }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('incomes', income, 'cadence')">
                       @if (isRowEditing(income) && income.isNew) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <mat-select
@@ -1208,7 +1870,7 @@
                         }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('incomes', income, 'month')">
                       @if (isRowEditing(income)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -1231,7 +1893,7 @@
                         }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('incomes', income, 'notes')">
                       @if (isRowEditing(income)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -1244,27 +1906,6 @@
                         </mat-form-field>
                       } @else {
                         <span class="cell-note">{{ noteLabel(income.notes) }}</span>
-                      }
-                    </td>
-                    <td>
-                      @if (isRowEditing(income)) {
-                        <mat-form-field appearance="outline" subscriptSizing="dynamic">
-                          <mat-select
-                            aria-label="Income user"
-                            placeholder="User"
-                            [(ngModel)]="income.memberEmail"
-                            [disabled]="userFieldDisabled(income)"
-                          >
-                            <mat-option [value]="undefined">Unassigned</mat-option>
-                            @for (member of members; track member.email) {
-                              <mat-option [value]="member.email">{{
-                                memberDisplayName(member)
-                              }}</mat-option>
-                            }
-                          </mat-select>
-                        </mat-form-field>
-                      } @else {
-                        <span class="cell-muted">{{ memberName(income.memberEmail) }}</span>
                       }
                     </td>
                     <td>
@@ -1347,13 +1988,19 @@
                       </td>
                     </tr>
                   }
+                } @empty {
+                  <tr>
+                    <td colspan="9">
+                      <div class="empty-state">{{ emptyTableMessage('incomes') }}</div>
+                    </td>
+                  </tr>
                 }
               </tbody>
             </table>
           </div>
 
           <section class="mobile-card-list" aria-label="Income source cards">
-            @for (income of incomes(); track income.id; let rowIndex = $index) {
+            @for (income of filteredIncomes(); track income.id; let rowIndex = $index) {
               <article
                 class="mobile-row-card"
                 [attr.data-row-id]="income.id"
@@ -1476,21 +2123,6 @@
                         </mat-select>
                       </mat-form-field>
                     }
-                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
-                      <mat-select
-                        aria-label="Income user"
-                        placeholder="User"
-                        [(ngModel)]="income.memberEmail"
-                        [disabled]="userFieldDisabled(income)"
-                      >
-                        <mat-option [value]="undefined">Unassigned</mat-option>
-                        @for (member of members; track member.email) {
-                          <mat-option [value]="member.email">{{
-                            memberDisplayName(member)
-                          }}</mat-option>
-                        }
-                      </mat-select>
-                    </mat-form-field>
                   </div>
                   <mat-form-field appearance="outline" subscriptSizing="dynamic">
                     <input
@@ -1543,6 +2175,10 @@
                   </div>
                 }
               </article>
+            } @empty {
+              <article class="mobile-row-card empty-filter-state">
+                {{ emptyTableMessage('incomes') }}
+              </article>
             }
           </section>
         </section>
@@ -1564,6 +2200,71 @@
             </button>
           </div>
 
+          <div class="bulk-filter-bar" aria-label="Category table filters">
+            <label class="filter-search">
+              <mat-icon aria-hidden="true">search</mat-icon>
+              <span class="sr-only">Search categories</span>
+              <input
+                type="search"
+                placeholder="Search categories"
+                [value]="tableQuery('categories')"
+                (input)="setTableQuery('categories', $event)"
+              />
+            </label>
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-field">
+              <mat-select
+                aria-label="Filter categories by status"
+                [value]="filterValue('categories', 'status')"
+                (selectionChange)="setTableFilter('categories', 'status', $event.value)"
+              >
+                @for (option of statusFilterOptions('categories'); track option.value) {
+                  <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-field">
+              <mat-select
+                aria-label="Filter categories by type"
+                [value]="filterValue('categories', 'categoryType')"
+                (selectionChange)="setTableFilter('categories', 'categoryType', $event.value)"
+              >
+                <mat-option value="">All types</mat-option>
+                @for (categoryType of categoryTypes; track categoryType) {
+                  <mat-option [value]="categoryType">{{ categoryType }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field
+              appearance="outline"
+              subscriptSizing="dynamic"
+              class="filter-field mobile-sort-field"
+            >
+              <mat-select
+                aria-label="Sort categories"
+                [value]="sortValue('categories')"
+                (selectionChange)="setSortFromValue('categories', $event.value)"
+              >
+                @for (option of tableSortOptions('categories'); track option.value) {
+                  <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <button
+              mat-stroked-button
+              type="button"
+              class="clear-filters-button"
+              [disabled]="!hasActiveFilters('categories')"
+              (click)="clearTableFilters('categories')"
+            >
+              Clear
+            </button>
+          </div>
+
+          <ng-container
+            [ngTemplateOutlet]="bulkActionBar"
+            [ngTemplateOutletContext]="{ table: 'categories' }"
+          ></ng-container>
+
           <div class="table-wrap desktop-table-region">
             <table class="bulk-table categories-table">
               <caption>
@@ -1571,22 +2272,81 @@
               </caption>
               <thead>
                 <tr>
+                  <th class="row-select-col desktop-bulk-only" scope="col">
+                    <input
+                      class="row-select-input"
+                      type="checkbox"
+                      aria-label="Select all filtered categories"
+                      [checked]="allFilteredRowsSelected('categories')"
+                      [indeterminate]="someFilteredRowsSelected('categories')"
+                      [attr.aria-checked]="
+                        someFilteredRowsSelected('categories')
+                          ? 'mixed'
+                          : allFilteredRowsSelected('categories')
+                            ? 'true'
+                            : 'false'
+                      "
+                      (change)="toggleFilteredRowsSelection('categories', $event)"
+                    />
+                  </th>
                   <th class="row-number-col" scope="col">#</th>
-                  <th scope="col">Name</th>
-                  <th scope="col">Type</th>
-                  <th scope="col">Monthly Budget</th>
-                  <th scope="col">Color</th>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'categories',
+                      field: 'name',
+                      label: 'Name',
+                      sortColumn: 'name',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'categories',
+                      field: 'type',
+                      label: 'Type',
+                      sortColumn: 'type',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'categories',
+                      field: 'monthlyBudget',
+                      label: 'Monthly Budget',
+                      sortColumn: 'monthlyBudget',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'categories',
+                      field: 'color',
+                      label: 'Color',
+                      sortColumn: 'color',
+                    }"
+                  ></ng-container>
                   <th scope="col">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                @for (category of categories(); track category.id; let rowIndex = $index) {
+                @for (category of filteredCategories(); track category.id; let rowIndex = $index) {
                   <tr
                     [attr.data-row-id]="category.id"
                     [class.row-editing]="isRowEditing(category)"
                     [class.marked-delete]="category.pendingDelete"
+                    [class.modified-row]="isRowModified('categories', category)"
                     [class.new-row]="category.isNew"
                   >
+                    <td class="row-select desktop-bulk-only">
+                      <input
+                        class="row-select-input"
+                        type="checkbox"
+                        [checked]="isRowSelected('categories', category.id)"
+                        [attr.aria-label]="'Select category row ' + (category.name || 'Category')"
+                        (change)="toggleRowSelection('categories', category.id, $event)"
+                      />
+                    </td>
                     <td class="row-number">
                       @if (category.isNew) {
                         <span class="row-status">New</span>
@@ -1594,7 +2354,7 @@
                         {{ rowIndex + 1 }}
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('categories', category, 'name')">
                       @if (isRowEditing(category)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -1611,7 +2371,7 @@
                         }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('categories', category, 'type')">
                       @if (isRowEditing(category)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <mat-select
@@ -1634,7 +2394,11 @@
                         >
                       }
                     </td>
-                    <td>
+                    <td
+                      [class.modified-cell]="
+                        isFieldModified('categories', category, 'monthlyBudget')
+                      "
+                    >
                       @if (isRowEditing(category)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -1651,7 +2415,7 @@
                         <span class="cell-amount">{{ amountLabel(category.monthlyBudget) }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('categories', category, 'color')">
                       @if (isRowEditing(category)) {
                         <div class="color-control">
                           <input
@@ -1714,13 +2478,19 @@
                       </div>
                     </td>
                   </tr>
+                } @empty {
+                  <tr>
+                    <td colspan="7">
+                      <div class="empty-state">{{ emptyTableMessage('categories') }}</div>
+                    </td>
+                  </tr>
                 }
               </tbody>
             </table>
           </div>
 
           <section class="mobile-card-list" aria-label="Budget category cards">
-            @for (category of categories(); track category.id; let rowIndex = $index) {
+            @for (category of filteredCategories(); track category.id; let rowIndex = $index) {
               <article
                 class="mobile-row-card"
                 [attr.data-row-id]="category.id"
@@ -1854,6 +2624,10 @@
                   </p>
                 }
               </article>
+            } @empty {
+              <article class="mobile-row-card empty-filter-state">
+                {{ emptyTableMessage('categories') }}
+              </article>
             }
           </section>
         </section>
@@ -1877,6 +2651,74 @@
             </button>
           </div>
 
+          <div class="bulk-filter-bar" aria-label="Loan table filters">
+            <label class="filter-search">
+              <mat-icon aria-hidden="true">search</mat-icon>
+              <span class="sr-only">Search loans</span>
+              <input
+                type="search"
+                placeholder="Search loans"
+                [value]="tableQuery('loans')"
+                (input)="setTableQuery('loans', $event)"
+              />
+            </label>
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-field">
+              <mat-select
+                aria-label="Filter loans by status"
+                [value]="filterValue('loans', 'status')"
+                (selectionChange)="setTableFilter('loans', 'status', $event.value)"
+              >
+                @for (option of statusFilterOptions('loans'); track option.value) {
+                  <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-field">
+              <mat-select
+                aria-label="Filter loans by payment mode"
+                [value]="filterValue('loans', 'paymentModeId')"
+                (selectionChange)="setTableFilter('loans', 'paymentModeId', $event.value)"
+              >
+                <mat-option value="">All payment modes</mat-option>
+                <mat-option value="__none">Not set</mat-option>
+                @for (paymentMode of paymentModes; track paymentMode.id) {
+                  <mat-option [value]="paymentMode.id">{{
+                    paymentModeShortLabel(paymentMode)
+                  }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field
+              appearance="outline"
+              subscriptSizing="dynamic"
+              class="filter-field mobile-sort-field"
+            >
+              <mat-select
+                aria-label="Sort loans"
+                [value]="sortValue('loans')"
+                (selectionChange)="setSortFromValue('loans', $event.value)"
+              >
+                @for (option of tableSortOptions('loans'); track option.value) {
+                  <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <button
+              mat-stroked-button
+              type="button"
+              class="clear-filters-button"
+              [disabled]="!hasActiveFilters('loans')"
+              (click)="clearTableFilters('loans')"
+            >
+              Clear
+            </button>
+          </div>
+
+          <ng-container
+            [ngTemplateOutlet]="bulkActionBar"
+            [ngTemplateOutletContext]="{ table: 'loans' }"
+          ></ng-container>
+
           <div class="table-wrap desktop-table-region">
             <table class="bulk-table loan-table wide-table">
               <caption>
@@ -1884,29 +2726,138 @@
               </caption>
               <thead>
                 <tr>
+                  <th class="row-select-col desktop-bulk-only" scope="col">
+                    <input
+                      class="row-select-input"
+                      type="checkbox"
+                      aria-label="Select all filtered loans"
+                      [checked]="allFilteredRowsSelected('loans')"
+                      [indeterminate]="someFilteredRowsSelected('loans')"
+                      [attr.aria-checked]="
+                        someFilteredRowsSelected('loans')
+                          ? 'mixed'
+                          : allFilteredRowsSelected('loans')
+                            ? 'true'
+                            : 'false'
+                      "
+                      (change)="toggleFilteredRowsSelection('loans', $event)"
+                    />
+                  </th>
                   <th class="row-number-col" scope="col">#</th>
-                  <th scope="col">Lender</th>
-                  <th scope="col">Type</th>
-                  <th scope="col">Principal</th>
-                  <th scope="col">Outstanding</th>
-                  <th scope="col">Rate</th>
-                  <th scope="col">EMI</th>
-                  <th scope="col">Start</th>
-                  <th scope="col">End</th>
-                  <th scope="col">Notes</th>
-                  <th scope="col">EMI paid via</th>
-                  <th scope="col">User</th>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'loans',
+                      field: 'lender',
+                      label: 'Lender',
+                      sortColumn: 'lender',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'loans',
+                      field: 'loanType',
+                      label: 'Type',
+                      sortColumn: 'loanType',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'loans',
+                      field: 'principal',
+                      label: 'Principal',
+                      sortColumn: 'principal',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'loans',
+                      field: 'outstanding',
+                      label: 'Outstanding',
+                      sortColumn: 'outstanding',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'loans',
+                      field: 'annualRate',
+                      label: 'Rate',
+                      sortColumn: 'annualRate',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'loans',
+                      field: 'emi',
+                      label: 'EMI',
+                      sortColumn: 'emi',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'loans',
+                      field: 'startDate',
+                      label: 'Start',
+                      sortColumn: 'startDate',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'loans',
+                      field: 'endDate',
+                      label: 'End',
+                      sortColumn: 'endDate',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'loans',
+                      field: 'notes',
+                      label: 'Notes',
+                      sortColumn: 'note',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'loans',
+                      field: 'paymentModeId',
+                      label: 'EMI paid via',
+                      sortColumn: 'paymentMode',
+                    }"
+                  ></ng-container>
                   <th scope="col">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                @for (loan of loans(); track loan.id; let rowIndex = $index) {
+                @for (loan of filteredLoans(); track loan.id; let rowIndex = $index) {
                   <tr
                     [attr.data-row-id]="loan.id"
                     [class.row-editing]="isRowEditing(loan)"
                     [class.marked-delete]="loan.pendingDelete"
+                    [class.modified-row]="isRowModified('loans', loan)"
                     [class.new-row]="loan.isNew"
                   >
+                    <td class="row-select desktop-bulk-only">
+                      <input
+                        class="row-select-input"
+                        type="checkbox"
+                        [checked]="isRowSelected('loans', loan.id)"
+                        [attr.aria-label]="
+                          'Select loan row ' +
+                          ((loan.lender || '') + ' ' + (loan.loanType || '')).trim()
+                        "
+                        (change)="toggleRowSelection('loans', loan.id, $event)"
+                      />
+                    </td>
                     <td class="row-number">
                       @if (loan.isNew) {
                         <span class="row-status">New</span>
@@ -1914,7 +2865,7 @@
                         {{ rowIndex + 1 }}
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('loans', loan, 'lender')">
                       @if (isRowEditing(loan) && loan.isNew) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -1929,7 +2880,7 @@
                         <span class="cell-value cell-strong">{{ loan.lender || 'Lender' }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('loans', loan, 'loanType')">
                       @if (isRowEditing(loan) && loan.isNew) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -1944,7 +2895,7 @@
                         <span class="cell-pill investment-pill">{{ loan.loanType || 'Loan' }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('loans', loan, 'principal')">
                       @if (isRowEditing(loan)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -1961,7 +2912,7 @@
                         <span class="cell-amount">{{ amountLabel(loan.principal) }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('loans', loan, 'outstanding')">
                       @if (isRowEditing(loan)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -1978,7 +2929,7 @@
                         <span class="cell-amount">{{ amountLabel(loan.outstanding) }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('loans', loan, 'annualRate')">
                       @if (isRowEditing(loan)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -1995,7 +2946,7 @@
                         <span class="cell-value">{{ loan.annualRate || 0 }}%</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('loans', loan, 'emi')">
                       @if (isRowEditing(loan)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -2012,7 +2963,7 @@
                         <span class="cell-amount">{{ amountLabel(loan.emi) }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('loans', loan, 'startDate')">
                       @if (isRowEditing(loan)) {
                         <mat-form-field
                           appearance="outline"
@@ -2042,7 +2993,7 @@
                         >
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('loans', loan, 'endDate')">
                       @if (isRowEditing(loan)) {
                         <mat-form-field
                           appearance="outline"
@@ -2072,7 +3023,7 @@
                         >
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('loans', loan, 'notes')">
                       @if (isRowEditing(loan)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -2087,7 +3038,7 @@
                         <span class="cell-note">{{ noteLabel(loan.notes) }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('loans', loan, 'paymentModeId')">
                       @if (isRowEditing(loan)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <mat-select
@@ -2106,7 +3057,7 @@
                                     height="24"
                                     alt=""
                                   />
-                                  <span>{{ paymentMode.name }}</span>
+                                  <span>{{ paymentModeShortLabel(paymentMode) }}</span>
                                 </span>
                               </mat-option>
                             }
@@ -2121,27 +3072,6 @@
                         } @else {
                           <span class="cell-muted">Not set</span>
                         }
-                      }
-                    </td>
-                    <td>
-                      @if (isRowEditing(loan)) {
-                        <mat-form-field appearance="outline" subscriptSizing="dynamic">
-                          <mat-select
-                            aria-label="Loan user"
-                            placeholder="User"
-                            [(ngModel)]="loan.memberEmail"
-                            [disabled]="userFieldDisabled(loan)"
-                          >
-                            <mat-option [value]="undefined">Unassigned</mat-option>
-                            @for (member of members; track member.email) {
-                              <mat-option [value]="member.email">{{
-                                memberDisplayName(member)
-                              }}</mat-option>
-                            }
-                          </mat-select>
-                        </mat-form-field>
-                      } @else {
-                        <span class="cell-muted">{{ memberName(loan.memberEmail) }}</span>
                       }
                     </td>
                     <td>
@@ -2204,10 +3134,7 @@
                         <div class="audit-panel" aria-label="Loan audit history">
                           <header>
                             <strong>Audit History</strong>
-                            <span
-                              >{{ loan.lender || 'Loan account' }} &bull;
-                              {{ memberName(loan.memberEmail) }}</span
-                            >
+                            <span>{{ loan.lender || 'Loan account' }}</span>
                           </header>
                           <div class="audit-grid">
                             @for (audit of loanAuditRows(loan); track audit.id) {
@@ -2227,13 +3154,19 @@
                       </td>
                     </tr>
                   }
+                } @empty {
+                  <tr>
+                    <td colspan="13">
+                      <div class="empty-state">{{ emptyTableMessage('loans') }}</div>
+                    </td>
+                  </tr>
                 }
               </tbody>
             </table>
           </div>
 
           <section class="mobile-card-list" aria-label="Loan account cards">
-            @for (loan of loans(); track loan.id; let rowIndex = $index) {
+            @for (loan of filteredLoans(); track loan.id; let rowIndex = $index) {
               <article
                 class="mobile-row-card"
                 [attr.data-row-id]="loan.id"
@@ -2390,24 +3323,9 @@
                                 height="24"
                                 alt=""
                               />
-                              <span>{{ paymentMode.name }}</span>
+                              <span>{{ paymentModeShortLabel(paymentMode) }}</span>
                             </span>
                           </mat-option>
-                        }
-                      </mat-select>
-                    </mat-form-field>
-                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
-                      <mat-select
-                        aria-label="Loan user"
-                        placeholder="User"
-                        [(ngModel)]="loan.memberEmail"
-                        [disabled]="userFieldDisabled(loan)"
-                      >
-                        <mat-option [value]="undefined">Unassigned</mat-option>
-                        @for (member of members; track member.email) {
-                          <mat-option [value]="member.email">{{
-                            memberDisplayName(member)
-                          }}</mat-option>
                         }
                       </mat-select>
                     </mat-form-field>
@@ -2489,7 +3407,7 @@
                     } @else if (loan.isNew) {
                       New row
                     } @else {
-                      {{ noteLabel(loan.notes, memberName(loan.memberEmail)) }}
+                      {{ noteLabel(loan.notes) }}
                     }
                   </p>
                 }
@@ -2498,10 +3416,7 @@
                   <div class="mobile-audit-panel">
                     <header>
                       <strong>Audit History</strong>
-                      <span
-                        >{{ loan.lender || 'Loan account' }} &bull;
-                        {{ memberName(loan.memberEmail) }}</span
-                      >
+                      <span>{{ loan.lender || 'Loan account' }}</span>
                     </header>
                     @for (audit of loanAuditRows(loan); track audit.id) {
                       <div class="mobile-audit-item">
@@ -2516,6 +3431,10 @@
                     }
                   </div>
                 }
+              </article>
+            } @empty {
+              <article class="mobile-row-card empty-filter-state">
+                {{ emptyTableMessage('loans') }}
               </article>
             }
           </section>
@@ -2540,6 +3459,99 @@
             </button>
           </div>
 
+          <div class="bulk-filter-bar" aria-label="Investment table filters">
+            <label class="filter-search">
+              <mat-icon aria-hidden="true">search</mat-icon>
+              <span class="sr-only">Search investments</span>
+              <input
+                type="search"
+                placeholder="Search investments"
+                [value]="tableQuery('investments')"
+                (input)="setTableQuery('investments', $event)"
+              />
+            </label>
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-field">
+              <mat-select
+                aria-label="Filter investments by status"
+                [value]="filterValue('investments', 'status')"
+                (selectionChange)="setTableFilter('investments', 'status', $event.value)"
+              >
+                @for (option of statusFilterOptions('investments'); track option.value) {
+                  <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-field">
+              <mat-select
+                aria-label="Filter investments by category"
+                [value]="filterValue('investments', 'categoryId')"
+                (selectionChange)="setTableFilter('investments', 'categoryId', $event.value)"
+              >
+                <mat-option value="">All categories</mat-option>
+                <mat-option value="__uncategorized">Uncategorized</mat-option>
+                @for (category of categoriesByType('Investments'); track category.id) {
+                  <mat-option [value]="category.id">{{ category.name }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-field">
+              <mat-select
+                aria-label="Filter investments by frequency"
+                [value]="filterValue('investments', 'frequency')"
+                (selectionChange)="setTableFilter('investments', 'frequency', $event.value)"
+              >
+                <mat-option value="">All frequencies</mat-option>
+                @for (frequency of investmentFrequencies; track frequency) {
+                  <mat-option [value]="frequency">{{ frequency }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-field">
+              <mat-select
+                aria-label="Filter investments by payment mode"
+                [value]="filterValue('investments', 'paymentModeId')"
+                (selectionChange)="setTableFilter('investments', 'paymentModeId', $event.value)"
+              >
+                <mat-option value="">All payment modes</mat-option>
+                <mat-option value="__none">Not set</mat-option>
+                @for (paymentMode of paymentModes; track paymentMode.id) {
+                  <mat-option [value]="paymentMode.id">{{
+                    paymentModeShortLabel(paymentMode)
+                  }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field
+              appearance="outline"
+              subscriptSizing="dynamic"
+              class="filter-field mobile-sort-field"
+            >
+              <mat-select
+                aria-label="Sort investments"
+                [value]="sortValue('investments')"
+                (selectionChange)="setSortFromValue('investments', $event.value)"
+              >
+                @for (option of tableSortOptions('investments'); track option.value) {
+                  <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <button
+              mat-stroked-button
+              type="button"
+              class="clear-filters-button"
+              [disabled]="!hasActiveFilters('investments')"
+              (click)="clearTableFilters('investments')"
+            >
+              Clear
+            </button>
+          </div>
+
+          <ng-container
+            [ngTemplateOutlet]="bulkActionBar"
+            [ngTemplateOutletContext]="{ table: 'investments' }"
+          ></ng-container>
+
           <div class="table-wrap desktop-table-region">
             <table class="bulk-table wide-table">
               <caption>
@@ -2547,28 +3559,132 @@
               </caption>
               <thead>
                 <tr>
+                  <th class="row-select-col desktop-bulk-only" scope="col">
+                    <input
+                      class="row-select-input"
+                      type="checkbox"
+                      aria-label="Select all filtered investments"
+                      [checked]="allFilteredRowsSelected('investments')"
+                      [indeterminate]="someFilteredRowsSelected('investments')"
+                      [attr.aria-checked]="
+                        someFilteredRowsSelected('investments')
+                          ? 'mixed'
+                          : allFilteredRowsSelected('investments')
+                            ? 'true'
+                            : 'false'
+                      "
+                      (change)="toggleFilteredRowsSelection('investments', $event)"
+                    />
+                  </th>
                   <th class="row-number-col" scope="col">#</th>
-                  <th scope="col">Name</th>
-                  <th scope="col">Amount</th>
-                  <th scope="col">Category</th>
-                  <th scope="col">Frequency</th>
-                  <th scope="col">Date</th>
-                  <th scope="col">Start optional</th>
-                  <th scope="col">End optional</th>
-                  <th scope="col">Notes</th>
-                  <th scope="col">Paid via</th>
-                  <th scope="col">User</th>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'investments',
+                      field: 'name',
+                      label: 'Name',
+                      sortColumn: 'name',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'investments',
+                      field: 'amount',
+                      label: 'Amount',
+                      sortColumn: 'amount',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'investments',
+                      field: 'categoryId',
+                      label: 'Category',
+                      sortColumn: 'category',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'investments',
+                      field: 'frequency',
+                      label: 'Frequency',
+                      sortColumn: 'frequency',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'investments',
+                      field: 'date',
+                      label: 'Date',
+                      sortColumn: 'date',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'investments',
+                      field: 'startDate',
+                      label: 'Start optional',
+                      sortColumn: 'startDate',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'investments',
+                      field: 'endDate',
+                      label: 'End optional',
+                      sortColumn: 'endDate',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'investments',
+                      field: 'notes',
+                      label: 'Notes',
+                      sortColumn: 'note',
+                    }"
+                  ></ng-container>
+                  <ng-container
+                    [ngTemplateOutlet]="bulkHeaderCell"
+                    [ngTemplateOutletContext]="{
+                      table: 'investments',
+                      field: 'paymentModeId',
+                      label: 'Paid via',
+                      sortColumn: 'paymentMode',
+                    }"
+                  ></ng-container>
                   <th scope="col">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                @for (investment of investments(); track investment.id; let rowIndex = $index) {
+                @for (
+                  investment of filteredInvestments();
+                  track investment.id;
+                  let rowIndex = $index
+                ) {
                   <tr
                     [attr.data-row-id]="investment.id"
                     [class.row-editing]="isRowEditing(investment)"
                     [class.marked-delete]="investment.pendingDelete"
+                    [class.modified-row]="isRowModified('investments', investment)"
                     [class.new-row]="investment.isNew"
                   >
+                    <td class="row-select desktop-bulk-only">
+                      <input
+                        class="row-select-input"
+                        type="checkbox"
+                        [checked]="isRowSelected('investments', investment.id)"
+                        [attr.aria-label]="
+                          'Select investment row ' + (investment.name || 'Investment')
+                        "
+                        (change)="toggleRowSelection('investments', investment.id, $event)"
+                      />
+                    </td>
                     <td class="row-number">
                       @if (investment.isNew) {
                         <span class="row-status">New</span>
@@ -2576,7 +3692,7 @@
                         {{ rowIndex + 1 }}
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('investments', investment, 'name')">
                       @if (isRowEditing(investment) && investment.isNew) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -2593,7 +3709,9 @@
                         }}</span>
                       }
                     </td>
-                    <td>
+                    <td
+                      [class.modified-cell]="isFieldModified('investments', investment, 'amount')"
+                    >
                       @if (isRowEditing(investment)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -2610,7 +3728,11 @@
                         <span class="cell-amount">{{ amountLabel(investment.amount) }}</span>
                       }
                     </td>
-                    <td>
+                    <td
+                      [class.modified-cell]="
+                        isFieldModified('investments', investment, 'categoryId')
+                      "
+                    >
                       @if (isRowEditing(investment)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <mat-select
@@ -2631,7 +3753,11 @@
                         }}</span>
                       }
                     </td>
-                    <td>
+                    <td
+                      [class.modified-cell]="
+                        isFieldModified('investments', investment, 'frequency')
+                      "
+                    >
                       @if (isRowEditing(investment)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <mat-select
@@ -2653,7 +3779,7 @@
                         >
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('investments', investment, 'date')">
                       @if (isRowEditing(investment)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -2674,7 +3800,11 @@
                         <span class="cell-muted">{{ dateLabel(investment.date) }}</span>
                       }
                     </td>
-                    <td>
+                    <td
+                      [class.modified-cell]="
+                        isFieldModified('investments', investment, 'startDate')
+                      "
+                    >
                       @if (isRowEditing(investment)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -2695,7 +3825,9 @@
                         <span class="cell-muted">{{ dateLabel(investment.startDate, '—') }}</span>
                       }
                     </td>
-                    <td>
+                    <td
+                      [class.modified-cell]="isFieldModified('investments', investment, 'endDate')"
+                    >
                       @if (isRowEditing(investment)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -2718,7 +3850,7 @@
                         }}</span>
                       }
                     </td>
-                    <td>
+                    <td [class.modified-cell]="isFieldModified('investments', investment, 'notes')">
                       @if (isRowEditing(investment)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
@@ -2733,7 +3865,11 @@
                         <span class="cell-note">{{ noteLabel(investment.notes) }}</span>
                       }
                     </td>
-                    <td>
+                    <td
+                      [class.modified-cell]="
+                        isFieldModified('investments', investment, 'paymentModeId')
+                      "
+                    >
                       @if (isRowEditing(investment)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <mat-select
@@ -2752,7 +3888,7 @@
                                     height="24"
                                     alt=""
                                   />
-                                  <span>{{ paymentMode.name }}</span>
+                                  <span>{{ paymentModeShortLabel(paymentMode) }}</span>
                                 </span>
                               </mat-option>
                             }
@@ -2767,27 +3903,6 @@
                         } @else {
                           <span class="cell-muted">Not set</span>
                         }
-                      }
-                    </td>
-                    <td>
-                      @if (isRowEditing(investment)) {
-                        <mat-form-field appearance="outline" subscriptSizing="dynamic">
-                          <mat-select
-                            aria-label="Investment user"
-                            placeholder="User"
-                            [(ngModel)]="investment.memberEmail"
-                            [disabled]="userFieldDisabled(investment)"
-                          >
-                            <mat-option [value]="undefined">Unassigned</mat-option>
-                            @for (member of members; track member.email) {
-                              <mat-option [value]="member.email">{{
-                                memberDisplayName(member)
-                              }}</mat-option>
-                            }
-                          </mat-select>
-                        </mat-form-field>
-                      } @else {
-                        <span class="cell-muted">{{ memberName(investment.memberEmail) }}</span>
                       }
                     </td>
                     <td>
@@ -2874,13 +3989,19 @@
                       </td>
                     </tr>
                   }
+                } @empty {
+                  <tr>
+                    <td colspan="12">
+                      <div class="empty-state">{{ emptyTableMessage('investments') }}</div>
+                    </td>
+                  </tr>
                 }
               </tbody>
             </table>
           </div>
 
           <section class="mobile-card-list" aria-label="Investment cards">
-            @for (investment of investments(); track investment.id; let rowIndex = $index) {
+            @for (investment of filteredInvestments(); track investment.id; let rowIndex = $index) {
               <article
                 class="mobile-row-card"
                 [attr.data-row-id]="investment.id"
@@ -3020,24 +4141,9 @@
                                 height="24"
                                 alt=""
                               />
-                              <span>{{ paymentMode.name }}</span>
+                              <span>{{ paymentModeShortLabel(paymentMode) }}</span>
                             </span>
                           </mat-option>
-                        }
-                      </mat-select>
-                    </mat-form-field>
-                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
-                      <mat-select
-                        aria-label="Investment user"
-                        placeholder="User"
-                        [(ngModel)]="investment.memberEmail"
-                        [disabled]="userFieldDisabled(investment)"
-                      >
-                        <mat-option [value]="undefined">Unassigned</mat-option>
-                        @for (member of members; track member.email) {
-                          <mat-option [value]="member.email">{{
-                            memberDisplayName(member)
-                          }}</mat-option>
                         }
                       </mat-select>
                     </mat-form-field>
@@ -3123,7 +4229,7 @@
                     } @else if (investment.isNew) {
                       New row
                     } @else {
-                      {{ noteLabel(investment.notes, memberName(investment.memberEmail)) }}
+                      {{ noteLabel(investment.notes) }}
                     }
                   </p>
                 }
@@ -3147,6 +4253,10 @@
                     }
                   </div>
                 }
+              </article>
+            } @empty {
+              <article class="mobile-row-card empty-filter-state">
+                {{ emptyTableMessage('investments') }}
               </article>
             }
           </section>

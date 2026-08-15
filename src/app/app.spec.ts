@@ -132,8 +132,85 @@ function createPaymentModeStore(
   const activePaymentModes = computed(() =>
     paymentModes().filter((paymentMode) => !paymentMode.archivedDate),
   );
+  const memberTag = (memberEmail: string | undefined) => (memberEmail ? 'Test U' : 'Legacy');
   const paymentModesForAccount = (paymentAccountId: string) =>
     activePaymentModes().filter((paymentMode) => paymentMode.paymentAccountId === paymentAccountId);
+  const paymentAccountLabel = (paymentAccount: Pick<PaymentAccount, 'bankName'>) =>
+    paymentAccount.bankName;
+  const paymentModeDisplayLabel = (paymentMode: PaymentMode) => {
+    const paymentAccount = paymentMode.paymentAccountId
+      ? activePaymentAccounts().find((account) => account.id === paymentMode.paymentAccountId)
+      : undefined;
+
+    if (paymentMode.type === 'cash') {
+      return 'Cash';
+    }
+
+    if (paymentMode.type === 'upi' || paymentMode.type === 'wallet') {
+      return paymentMode.provider ?? paymentModeTypeLabel(paymentMode.type);
+    }
+
+    if (paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card') {
+      return paymentModeTypeLabel(paymentMode.type);
+    }
+
+    if (paymentMode.type === 'internet-banking') {
+      return paymentAccount?.bankName ?? 'Internet Banking';
+    }
+
+    return paymentModeTypeLabel(paymentMode.type);
+  };
+  const paymentModeDetail = (paymentMode: PaymentMode) => {
+    if (paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card') {
+      return paymentMode.lastFour
+        ? `xxxx xxxx xxxx ${paymentMode.lastFour}`
+        : 'xxxx xxxx xxxx ----';
+    }
+
+    if (paymentMode.type === 'cash') {
+      return 'Cash';
+    }
+
+    if (paymentMode.type === 'internet-banking') {
+      const paymentAccount = paymentMode.paymentAccountId
+        ? activePaymentAccounts().find((account) => account.id === paymentMode.paymentAccountId)
+        : undefined;
+      return paymentAccount
+        ? paymentAccountDetail(paymentAccount)
+        : (paymentMode.bankName ?? 'Default');
+    }
+
+    return paymentMode.provider ?? paymentModeTypeLabel(paymentMode.type);
+  };
+  const paymentModeShortLabel = (paymentMode: PaymentMode) => {
+    const paymentAccount = paymentMode.paymentAccountId
+      ? activePaymentAccounts().find((account) => account.id === paymentMode.paymentAccountId)
+      : undefined;
+    const ownerTag = memberTag(paymentMode.memberEmail ?? paymentAccount?.memberEmail);
+
+    if (paymentMode.type === 'cash') {
+      return 'Cash';
+    }
+
+    if (paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card') {
+      return `${ownerTag} ${paymentMode.lastFour ?? '----'}`;
+    }
+
+    if (paymentMode.type === 'internet-banking') {
+      return `${ownerTag} ${paymentAccount?.lastFour ?? '----'}`;
+    }
+
+    return ownerTag;
+  };
+  const modeIconSrc = (paymentMode: PaymentMode) => {
+    const paymentAccount = paymentMode.paymentAccountId
+      ? activePaymentAccounts().find((account) => account.id === paymentMode.paymentAccountId)
+      : undefined;
+
+    return paymentMode.type === 'internet-banking' && paymentAccount
+      ? paymentAccountIconSrc(paymentAccount)
+      : paymentModeIconSrc(paymentMode);
+  };
   const paymentAccountUsage = (paymentAccountId: string) =>
     paymentModesForAccount(paymentAccountId).reduce(
       (total, paymentMode) => {
@@ -152,7 +229,9 @@ function createPaymentModeStore(
       return {
         ...paymentAccount,
         detail: paymentAccountDetail(paymentAccount),
+        displayName: paymentAccountLabel(paymentAccount),
         iconSrc: paymentAccountIconSrc(paymentAccount),
+        ownerTag: memberTag(paymentAccount.memberEmail),
         mappedModeCount: mappedModes.length,
         mappedModes,
         recordCount: usage.count,
@@ -163,14 +242,10 @@ function createPaymentModeStore(
   const paymentModeCards = computed(() =>
     activePaymentModes().map((paymentMode) => ({
       ...paymentMode,
-      detail:
-        paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card'
-          ? `xxxx xxxx xxxx ${paymentMode.lastFour}`
-          : paymentMode.type === 'internet-banking'
-            ? paymentMode.bankName
-            : paymentMode.provider,
+      detail: paymentModeDetail(paymentMode),
+      displayName: paymentModeDisplayLabel(paymentMode),
       icon: paymentMode.type === 'upi' ? 'qr_code_2' : 'credit_card',
-      iconSrc: paymentModeIconSrc(paymentMode),
+      iconSrc: modeIconSrc(paymentMode),
       bankIconSrc: paymentMode.paymentAccountId
         ? paymentAccountIconSrc(
             activePaymentAccounts().find((account) => account.id === paymentMode.paymentAccountId),
@@ -178,13 +253,27 @@ function createPaymentModeStore(
         : undefined,
       paymentAccountName:
         activePaymentAccounts().find((account) => account.id === paymentMode.paymentAccountId)
-          ?.name ?? '',
+          ?.bankName ?? '',
+      paymentAccountDetail:
+        paymentAccountDetail(
+          activePaymentAccounts().find(
+            (account) => account.id === paymentMode.paymentAccountId,
+          ) ?? {
+            lastFour: '',
+          },
+        ) ?? '',
       providerTone: paymentMode.provider
         ? paymentProviderTone(paymentMode.provider)
         : paymentMode.type === 'internet-banking'
           ? 'bank'
           : paymentMode.type,
       recordCount: 0,
+      shortLabel: paymentModeShortLabel(paymentMode),
+      ownerTag: memberTag(
+        paymentMode.memberEmail ??
+          activePaymentAccounts().find((account) => account.id === paymentMode.paymentAccountId)
+            ?.memberEmail,
+      ),
       typeLabel: paymentModeTypeLabel(paymentMode.type),
       usageAmount: 0,
     })),
@@ -243,10 +332,25 @@ function createPaymentModeStore(
     canWrite: signal(true),
     paymentAccountDetail,
     paymentAccountIconSrc,
+    paymentAccountLabel,
+    paymentModeDisplayLabel,
+    paymentModeDetail,
+    paymentModeShortLabel,
+    paymentModeTypeLabel,
+    paymentModeOwnerTag: (paymentMode: PaymentMode) => {
+      const paymentAccount = paymentMode.paymentAccountId
+        ? activePaymentAccounts().find((account) => account.id === paymentMode.paymentAccountId)
+        : undefined;
+      return memberTag(paymentMode.memberEmail ?? paymentAccount?.memberEmail);
+    },
+    paymentModeUsage: (paymentModeId: string) => {
+      const card = paymentModeCards().find((paymentMode) => paymentMode.id === paymentModeId);
+      return { amount: card?.usageAmount ?? 0, count: card?.recordCount ?? 0 };
+    },
     paymentModesForAccount,
     canArchivePaymentAccount: (paymentAccountId: string) =>
       paymentModesForAccount(paymentAccountId).length === 0,
-    paymentModeIconSrc,
+    paymentModeIconSrc: modeIconSrc,
     paymentModeTone: (paymentModeId: string | undefined) =>
       activePaymentModes().find((paymentMode) => paymentMode.id === paymentModeId)?.provider
         ? 'googlepay'
@@ -322,10 +426,10 @@ describe('App', () => {
     const app = fixture.componentInstance;
 
     expect(app.primaryMobileNavItems.map((item) => item.shortLabel || item.label)).toEqual([
-      'Dashboard',
+      'Home',
       'Expenses',
-      'Planning',
-      'Investments',
+      'Plan',
+      'Invest',
       'Loans',
     ]);
   });
@@ -346,7 +450,123 @@ describe('App', () => {
       (fixture.nativeElement as HTMLElement).querySelectorAll('.mobile-bottom-nav a span'),
     ).map((item) => item.textContent?.trim());
 
-    expect(labels).toEqual(['Dashboard', 'Expenses', 'Planning', 'Investments', 'Loans']);
+    expect(labels).toEqual(['Home', 'Expenses', 'Plan', 'Invest', 'Loans']);
+  });
+
+  it('should expose the active navigation destination to assistive technology', async () => {
+    const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const app = fixture.componentInstance as unknown as {
+      firebase: { mode: string };
+      isSessionChecking: { set: (checking: boolean) => void };
+    };
+
+    app.firebase.mode = 'local';
+    app.isSessionChecking.set(false);
+    await router.navigateByUrl('/dashboard');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.querySelector('.side-nav a.active')?.getAttribute('aria-current')).toBe('page');
+    expect(
+      compiled.querySelector('.mobile-bottom-nav a.active')?.getAttribute('aria-current'),
+    ).toBe('page');
+  });
+
+  it('should expose the selected member filter as a pressed button', async () => {
+    const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const app = fixture.componentInstance as unknown as {
+      firebase: { mode: string };
+      isSessionChecking: { set: (checking: boolean) => void };
+    };
+
+    app.firebase.mode = 'local';
+    app.isSessionChecking.set(false);
+    await router.navigateByUrl('/dashboard');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const memberSegments = (fixture.nativeElement as HTMLElement).querySelector('.member-segments');
+    const buttons = Array.from(memberSegments?.querySelectorAll<HTMLButtonElement>('button') ?? []);
+    const allMembers = buttons.find((button) => button.textContent?.trim() === 'All Members');
+
+    expect(allMembers?.getAttribute('aria-pressed')).toBe('true');
+    expect(
+      buttons
+        .filter((button) => button !== allMembers)
+        .every((button) => button.getAttribute('aria-pressed') === 'false'),
+    ).toBe(true);
+  });
+
+  it('should close the guided tour when Escape is pressed', async () => {
+    globalThis.localStorage?.setItem('budget-battowski-onboarding-v1', 'seen');
+    const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const app = fixture.componentInstance as unknown as {
+      firebase: { mode: string };
+      isSessionChecking: { set: (checking: boolean) => void };
+    };
+
+    app.firebase.mode = 'local';
+    app.isSessionChecking.set(false);
+    await router.navigateByUrl('/dashboard');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const trigger = (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>(
+      '.guided-tour-button',
+    );
+    trigger?.focus();
+    trigger?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const dialog = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>(
+      '.onboarding-backdrop',
+    );
+    expect(dialog?.getAttribute('aria-modal')).toBe('true');
+
+    dialog?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect((fixture.nativeElement as HTMLElement).querySelector('.onboarding-backdrop')).toBeNull();
+  });
+
+  it('should expose responsive navigation state and close it with Escape', async () => {
+    const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const app = fixture.componentInstance as unknown as {
+      firebase: { mode: string };
+      isSessionChecking: { set: (checking: boolean) => void };
+      navOpen: () => boolean;
+    };
+
+    app.firebase.mode = 'local';
+    app.isSessionChecking.set(false);
+    await router.navigateByUrl('/dashboard');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const trigger = compiled.querySelector<HTMLButtonElement>('.mobile-menu-trigger');
+    trigger?.focus();
+    trigger?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const navigation = compiled.querySelector<HTMLElement>('#primary-navigation');
+    expect(app.navOpen()).toBe(true);
+    expect(trigger?.getAttribute('aria-expanded')).toBe('true');
+
+    navigation?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(app.navOpen()).toBe(false);
+    expect(trigger?.getAttribute('aria-expanded')).toBe('false');
   });
 
   it('should render payment modes inside the mobile utility menu', async () => {
@@ -385,7 +605,7 @@ describe('App', () => {
     expect(menuText).toContain('Log out');
   });
 
-  it('should keep the mobile profile trigger on dashboard only', async () => {
+  it('should keep the mobile profile trigger available across authenticated routes', async () => {
     const fixture = TestBed.createComponent(App);
     const router = TestBed.inject(Router);
     const app = fixture.componentInstance as unknown as {
@@ -409,7 +629,45 @@ describe('App', () => {
 
     expect(
       (fixture.nativeElement as HTMLElement).querySelector('.mobile-utility-trigger'),
-    ).toBeNull();
+    ).toBeTruthy();
+  });
+
+  it.each([
+    ['/dashboard', 'dashboard', 'Dashboard'],
+    ['/expenses', 'credit_card', 'Monthly Expenses'],
+    ['/planning', 'calendar_month', 'Planning'],
+    ['/investments', 'trending_up', 'Investments'],
+    ['/loans', 'account_balance', 'Loans'],
+    ['/categories', 'sell', 'Categories'],
+    ['/payment-modes', 'payments', 'Payment Modes'],
+    ['/import-export', 'upload_file', 'Import & Export'],
+    ['/workspace', 'group', 'Workspace Management'],
+    ['/settings', 'settings', 'Settings'],
+  ])('should render the branded mobile shell for %s', async (path, icon, label) => {
+    const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const app = fixture.componentInstance as unknown as {
+      firebase: { mode: string };
+      isSessionChecking: { set: (checking: boolean) => void };
+    };
+
+    app.firebase.mode = 'local';
+    app.isSessionChecking.set(false);
+    await router.navigateByUrl(path);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const header = (fixture.nativeElement as HTMLElement).querySelector('.mobile-app-bar');
+    const routeHeading = (fixture.nativeElement as HTMLElement).querySelector(
+      '.mobile-route-heading',
+    );
+
+    expect(header?.querySelector('.mobile-brand')?.textContent?.trim()).toBe('Budget Battowski');
+    expect(header?.querySelector('.mobile-menu-trigger mat-icon')?.textContent?.trim()).toBe(
+      'apps',
+    );
+    expect(routeHeading?.querySelector('mat-icon')?.textContent?.trim()).toBe(icon);
+    expect(routeHeading?.querySelector('h1')?.textContent?.trim()).toBe(label);
   });
 
   it('should keep secondary mobile destinations in the utility menu model', () => {
@@ -419,8 +677,8 @@ describe('App', () => {
     expect(app.utilityMobileNavItems.map((item) => item.label)).toEqual([
       'Categories',
       'Payment Modes',
-      'Import/Export',
-      'Workspace',
+      'Import & Export',
+      'Workspace Management',
       'Settings',
     ]);
   });
@@ -1410,11 +1668,11 @@ describe('App', () => {
       },
     ]);
 
-    expect(app.paymentModeLabel('pm-old-card')).toBe('Old card');
+    expect(app.paymentModeLabel('pm-old-card')).toBe('Credit Card');
     expect(app.paymentModeMeta('pm-old-card')).toEqual(
       expect.objectContaining({
         iconSrc: '/payment-icons/cards_default.svg',
-        label: 'Old card',
+        label: 'Legacy 1234',
       }),
     );
     expect(app.paymentModeMeta('payment-mode-cash')).toEqual(
@@ -1729,7 +1987,7 @@ describe('App', () => {
       },
     ]);
 
-    const expected = { iconSrc: '/payment-icons/paytm.svg', label: 'Paytm Wallet' };
+    const expected = { iconSrc: '/payment-icons/paytm.svg', label: 'Legacy' };
     expect(app.expenseRows()[0].paymentModeMeta).toEqual(expect.objectContaining(expected));
     expect(app.portfolioRows()[0].paymentModeMeta).toEqual(expect.objectContaining(expected));
     expect(app.loanRepaymentRows()[0].paymentModeMeta).toEqual(expect.objectContaining(expected));
@@ -1798,24 +2056,20 @@ describe('PaymentModesPage', () => {
       .compileComponents();
   });
 
-  it('should validate required fields and save UPI providers', async () => {
+  it('should save UPI providers with a derived name', async () => {
     const fixture = TestBed.createComponent(PaymentModesPage);
     const page = fixture.componentInstance;
     fixture.detectChanges();
 
-    page.savePaymentMode();
-
-    expect(page.validationError()).toBe('Display name is required.');
-    expect(store.savePaymentMode).not.toHaveBeenCalled();
-
-    page.form.patchValue({ name: 'Personal Google Pay', provider: 'Google Pay' });
+    page.form.patchValue({ provider: 'Google Pay' });
     page.savePaymentMode();
     await Promise.resolve();
 
+    expect(page.validationError()).toBe('');
     expect(store.savePaymentMode).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'upi',
-        name: 'Personal Google Pay',
+        name: 'UPI',
         provider: 'Google Pay',
         lastFour: undefined,
       }),
@@ -1828,7 +2082,7 @@ describe('PaymentModesPage', () => {
     fixture.detectChanges();
 
     page.setFormType('credit-card');
-    page.form.patchValue({ name: 'Visa Credit', lastFour: '12' });
+    page.form.patchValue({ lastFour: '12' });
     page.savePaymentMode();
 
     expect(page.validationError()).toBe('Card modes need exactly 4 digits.');
@@ -1840,7 +2094,7 @@ describe('PaymentModesPage', () => {
     expect(store.savePaymentMode).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'credit-card',
-        name: 'Visa Credit',
+        name: 'Credit Card',
         provider: undefined,
         cardType: 'visa',
         lastFour: '9876',
@@ -1848,7 +2102,7 @@ describe('PaymentModesPage', () => {
     );
   });
 
-  it('should save internet banking modes with bank and mapped account data', async () => {
+  it('should require and save internet banking modes with mapped account data', async () => {
     store.paymentAccounts.set([
       {
         id: 'pa-hdfc',
@@ -1862,19 +2116,19 @@ describe('PaymentModesPage', () => {
     fixture.detectChanges();
 
     page.setFormType('internet-banking');
-    page.form.patchValue({
-      name: 'HDFC NetBanking',
-      bankName: 'HDFC',
-      paymentAccountId: 'pa-hdfc',
-    });
+    page.savePaymentMode();
+
+    expect(page.validationError()).toBe('Choose a linked payment account for internet banking.');
+
+    page.form.patchValue({ paymentAccountId: 'pa-hdfc' });
     page.savePaymentMode();
     await Promise.resolve();
 
     expect(store.savePaymentMode).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'internet-banking',
-        name: 'HDFC NetBanking',
-        bankName: 'HDFC',
+        name: 'Internet Banking',
+        bankName: undefined,
         paymentAccountId: 'pa-hdfc',
         provider: undefined,
       }),
@@ -1889,11 +2143,10 @@ describe('PaymentModesPage', () => {
     page.selectedTabIndex.set(1);
     page.savePaymentAccount();
 
-    expect(page.accountValidationError()).toBe('Account name is required.');
+    expect(page.accountValidationError()).toBe('Account needs exactly 4 digits.');
     expect(store.savePaymentAccount).not.toHaveBeenCalled();
 
     page.accountForm.patchValue({
-      name: 'Salary account',
       bankName: 'HDFC',
       lastFour: '4321',
     });
@@ -1903,7 +2156,7 @@ describe('PaymentModesPage', () => {
 
     expect(store.savePaymentAccount).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: 'Salary account',
+        name: 'Bank account',
         bankName: 'HDFC',
         lastFour: '4321',
       }),
@@ -1941,7 +2194,9 @@ describe('PaymentModesPage', () => {
     fixture.detectChanges();
 
     expect(page.selectedPaymentAccountCard()).toEqual(expect.objectContaining({ id: 'pa-hdfc' }));
-    expect(element.querySelector('.account-detail-panel')?.textContent ?? '').toContain('GPay');
+    expect(element.querySelector('.account-detail-panel')?.textContent ?? '').toContain(
+      'Google Pay',
+    );
   });
 
   it('should show mapped payment modes in a bottom sheet on mobile account clicks', () => {
@@ -1977,7 +2232,7 @@ describe('PaymentModesPage', () => {
     expect(bottomSheetOpen).toHaveBeenCalledWith(
       PaymentAccountModesSheet,
       expect.objectContaining({
-        ariaLabel: 'Salary account mapped payment modes',
+        ariaLabel: 'HDFC mapped payment modes',
         data: expect.objectContaining({
           mappedModes: [expect.objectContaining({ id: 'pm-upi' })],
           paymentAccount: expect.objectContaining({ id: 'pa-hdfc' }),
@@ -2017,7 +2272,7 @@ describe('PaymentModesPage', () => {
     fixture.detectChanges();
 
     page.editPaymentMode(existing);
-    page.form.patchValue({ name: 'Salary debit', lastFour: '2222' });
+    page.form.patchValue({ lastFour: '2222' });
     page.savePaymentMode();
     await Promise.resolve();
     page.archivePaymentMode('pm-card');
@@ -2025,7 +2280,7 @@ describe('PaymentModesPage', () => {
     expect(store.savePaymentMode).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'pm-card',
-        name: 'Salary debit',
+        name: 'Old debit',
         lastFour: '2222',
       }),
     );
@@ -2179,6 +2434,13 @@ describe('BulkEditorDialog', () => {
     }).compileComponents();
   });
 
+  const checkboxChangeEvent = (checked: boolean): Event => {
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = checked;
+    return { target: input } as unknown as Event;
+  };
+
   it('should render expenses and recurring parents in the scoped monthly editor', async () => {
     const fixture = TestBed.createComponent(BulkEditorDialog);
     fixture.detectChanges();
@@ -2246,13 +2508,683 @@ describe('BulkEditorDialog', () => {
 
   it('should pass axe checks for the bulk editor dialog', async () => {
     const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      addExpense: () => void;
+      setBulkHeaderValue: (table: string, field: string, value: string) => void;
+      toggleFilteredRowsSelection: (table: string, event: Event) => void;
+    };
+
+    dialog.addExpense();
+    dialog.toggleFilteredRowsSelection('expenses', checkboxChangeEvent(true));
+    dialog.setBulkHeaderValue('expenses', 'note', 'axe note');
     fixture.detectChanges();
     await fixture.whenStable();
+
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('input[placeholder="Search expenses"]'),
+    ).toBeTruthy();
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector(
+        'input[aria-label="Set note for selected expenses"]',
+      ),
+    ).toBeTruthy();
 
     const results = await runAxe(fixture.nativeElement);
 
     expect(results.violations).toEqual([]);
   }, 12000);
+
+  it('should filter and sort expense rows with common modal controls', () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        categories: [
+          { id: 'category-home', name: 'Home', monthlyBudget: 35000, color: '#1f7a8c' },
+          { id: 'category-food', name: 'Food', monthlyBudget: 12000, color: '#0f766e' },
+        ],
+        expenses: [
+          {
+            id: 'expense-rent',
+            month: '2026-05',
+            date: '2026-05-01',
+            name: 'Rent',
+            categoryId: 'category-home',
+            amount: 25000,
+            type: 'recurring',
+            note: 'Prepopulated from recurring plan',
+            templateId: 'fixed-rent',
+            paymentModeId: 'pm-card',
+          },
+          {
+            id: 'expense-fuel',
+            month: '2026-05',
+            date: '2026-05-04',
+            name: 'Fuel',
+            categoryId: 'category-food',
+            amount: 2500,
+            type: 'one-time',
+            note: '',
+            paymentModeId: 'pm-gpay',
+          },
+          {
+            id: 'expense-groceries',
+            month: '2026-05',
+            date: '2026-05-08',
+            name: 'Groceries',
+            categoryId: 'category-food',
+            amount: 3200,
+            type: 'one-time',
+            note: '',
+          },
+          {
+            id: 'expense-medical-apr',
+            month: '2026-04',
+            date: '2026-04-08',
+            name: 'Medical',
+            categoryId: 'category-home',
+            amount: 1800,
+            type: 'one-time',
+            note: '',
+          },
+        ],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      filteredExpenses: () => Array<{
+        amount: number;
+        categoryId: string;
+        isSuggested?: boolean;
+        name: string;
+        paymentModeId?: string;
+      }>;
+      setTableFilter: (table: string, key: string, value: string) => void;
+      toggleSort: (table: string, column: string) => void;
+    };
+
+    dialog.setTableFilter('expenses', 'status', 'suggested');
+    expect(dialog.filteredExpenses().map((expense) => expense.name)).toEqual(['Medical']);
+
+    dialog.setTableFilter('expenses', 'status', 'all');
+    dialog.setTableFilter('expenses', 'categoryId', 'category-food');
+    expect(dialog.filteredExpenses().map((expense) => expense.name)).toEqual(['Fuel', 'Groceries']);
+
+    dialog.setTableFilter('expenses', 'categoryId', '');
+    dialog.setTableFilter('expenses', 'paymentModeId', 'pm-gpay');
+    expect(dialog.filteredExpenses().map((expense) => expense.name)).toEqual(['Fuel']);
+
+    dialog.setTableFilter('expenses', 'paymentModeId', '');
+    dialog.setTableFilter('expenses', 'query', 'rent');
+    expect(dialog.filteredExpenses().map((expense) => expense.name)).toEqual(['Rent']);
+
+    dialog.setTableFilter('expenses', 'query', '');
+    dialog.setTableFilter('expenses', 'categoryId', 'category-food');
+    dialog.toggleSort('expenses', 'amount');
+    expect(dialog.filteredExpenses().map((expense) => expense.name)).toEqual(['Fuel', 'Groceries']);
+
+    dialog.toggleSort('expenses', 'amount');
+    expect(dialog.filteredExpenses().map((expense) => expense.name)).toEqual(['Groceries', 'Fuel']);
+  });
+
+  it('should filter and sort investment rows with common modal controls', () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        scope: 'planning',
+        initialTabIndex: 2,
+        categories: [
+          {
+            id: 'category-equity',
+            name: 'Equity',
+            monthlyBudget: 0,
+            color: '#2563eb',
+            type: 'Investments',
+          },
+          {
+            id: 'category-gold',
+            name: 'Gold',
+            monthlyBudget: 0,
+            color: '#a16207',
+            type: 'Investments',
+          },
+        ],
+        investments: [
+          {
+            id: 'investment-index',
+            name: 'Index SIP',
+            amount: 15000,
+            categoryId: 'category-equity',
+            frequency: 'monthly',
+            date: '2026-05-01',
+            startDate: '2026-05-01',
+            notes: '',
+            paymentModeId: 'pm-gpay',
+          },
+          {
+            id: 'investment-gold',
+            name: 'Gold Fund',
+            amount: 5000,
+            categoryId: 'category-gold',
+            frequency: 'one-time',
+            date: '2026-05-05',
+            notes: '',
+            paymentModeId: 'pm-card',
+          },
+          {
+            id: 'investment-debt',
+            name: 'Debt Fund',
+            amount: 7000,
+            categoryId: 'category-equity',
+            frequency: 'annual',
+            date: '2026-05-02',
+            notes: '',
+          },
+        ],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      filteredInvestments: () => Array<{
+        amount: number;
+        categoryId?: string;
+        frequency: string;
+        name: string;
+        paymentModeId?: string;
+      }>;
+      setTableFilter: (table: string, key: string, value: string) => void;
+      toggleSort: (table: string, column: string) => void;
+    };
+
+    dialog.setTableFilter('investments', 'frequency', 'monthly');
+    expect(dialog.filteredInvestments().map((investment) => investment.name)).toEqual([
+      'Index SIP',
+    ]);
+
+    dialog.setTableFilter('investments', 'frequency', '');
+    dialog.setTableFilter('investments', 'paymentModeId', 'pm-card');
+    expect(dialog.filteredInvestments().map((investment) => investment.name)).toEqual([
+      'Gold Fund',
+    ]);
+
+    dialog.setTableFilter('investments', 'paymentModeId', '');
+    dialog.setTableFilter('investments', 'categoryId', 'category-equity');
+    expect(dialog.filteredInvestments().map((investment) => investment.name)).toEqual([
+      'Index SIP',
+      'Debt Fund',
+    ]);
+
+    dialog.setTableFilter('investments', 'categoryId', '');
+    dialog.toggleSort('investments', 'amount');
+    dialog.toggleSort('investments', 'amount');
+    expect(dialog.filteredInvestments().map((investment) => investment.name)).toEqual([
+      'Index SIP',
+      'Debt Fund',
+      'Gold Fund',
+    ]);
+  });
+
+  it('should apply all draft rows after sorting and filtering the modal view', () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        expenses: [
+          ...dialogData.expenses,
+          {
+            id: 'expense-fuel',
+            month: '2026-05',
+            date: '2026-05-04',
+            name: 'Fuel',
+            categoryId: 'category-home',
+            amount: 2500,
+            type: 'one-time',
+            note: '',
+          },
+        ],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialogRef = TestBed.inject(MatDialogRef) as unknown as {
+      close: ReturnType<typeof vi.fn>;
+    };
+    const dialog = fixture.componentInstance as unknown as {
+      applyBulkHeaderEdit: (table: string) => void;
+      apply: () => void;
+      setBulkHeaderValue: (table: string, field: string, value: string) => void;
+      setTableFilter: (table: string, key: string, value: string) => void;
+      toggleSort: (table: string, column: string) => void;
+      toggleFilteredRowsSelection: (table: string, event: Event) => void;
+    };
+
+    dialog.toggleFilteredRowsSelection('expenses', checkboxChangeEvent(true));
+    dialog.setBulkHeaderValue('expenses', 'note', 'reviewed');
+    dialog.applyBulkHeaderEdit('expenses');
+    dialog.setTableFilter('expenses', 'status', 'modified');
+    dialog.setTableFilter('expenses', 'query', 'rent');
+    dialog.toggleSort('expenses', 'amount');
+    dialog.apply();
+
+    const result = dialogRef.close.mock.calls[0][0];
+    expect(result.expenses.map((expense: { name: string }) => expense.name).sort()).toEqual([
+      'Fuel',
+      'Rent',
+    ]);
+    expect(result.expenses.map((expense: { note: string }) => expense.note)).toEqual([
+      'reviewed',
+      'reviewed',
+    ]);
+  });
+
+  it('should select filtered desktop rows and clear selection', () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        expenses: [
+          dialogData.expenses[0],
+          {
+            id: 'expense-fuel',
+            month: '2026-05',
+            date: '2026-05-04',
+            name: 'Fuel',
+            categoryId: 'category-home',
+            amount: 2500,
+            type: 'one-time',
+            note: '',
+          },
+        ],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      clearSelection: (table: string) => void;
+      isRowSelected: (table: string, rowId: string) => boolean;
+      selectedCount: (table: string) => number;
+      setTableFilter: (table: string, key: string, value: string) => void;
+      toggleFilteredRowsSelection: (table: string, event: Event) => void;
+    };
+
+    dialog.setTableFilter('expenses', 'query', 'fuel');
+    dialog.toggleFilteredRowsSelection('expenses', checkboxChangeEvent(true));
+
+    expect(dialog.selectedCount('expenses')).toBe(1);
+    expect(dialog.isRowSelected('expenses', 'expense-fuel')).toBe(true);
+    expect(dialog.isRowSelected('expenses', 'expense-rent')).toBe(false);
+
+    dialog.clearSelection('expenses');
+
+    expect(dialog.selectedCount('expenses')).toBe(0);
+  });
+
+  it('should mark selected rows for delete and keep them from the desktop bulk action', () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        expenses: [
+          dialogData.expenses[0],
+          {
+            id: 'expense-fuel',
+            month: '2026-05',
+            date: '2026-05-04',
+            name: 'Fuel',
+            categoryId: 'category-home',
+            amount: 2500,
+            type: 'one-time',
+            note: '',
+          },
+        ],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      expenses: () => Array<{ pendingDelete?: boolean }>;
+      keepSelectedRows: (table: string) => void;
+      markSelectedForDelete: (table: string) => void;
+      toggleFilteredRowsSelection: (table: string, event: Event) => void;
+    };
+
+    dialog.toggleFilteredRowsSelection('expenses', checkboxChangeEvent(true));
+    dialog.markSelectedForDelete('expenses');
+
+    expect(dialog.expenses().every((expense) => expense.pendingDelete)).toBe(true);
+
+    dialog.keepSelectedRows('expenses');
+
+    expect(dialog.expenses().some((expense) => expense.pendingDelete)).toBe(false);
+  });
+
+  it('should show header bulk editors only after multiple desktop rows are selected', async () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        expenses: [
+          dialogData.expenses[0],
+          {
+            id: 'expense-fuel',
+            month: '2026-05',
+            date: '2026-05-04',
+            name: 'Fuel',
+            categoryId: 'category-home',
+            amount: 2500,
+            type: 'one-time',
+            note: '',
+          },
+        ],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      bulkHeaderEditActive: (table: string) => boolean;
+      showBulkHeaderEditor: (table: string, field: string) => boolean;
+      toggleRowSelection: (table: string, rowId: string, event: Event) => void;
+    };
+
+    dialog.toggleRowSelection('expenses', 'expense-rent', checkboxChangeEvent(true));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(dialog.bulkHeaderEditActive('expenses')).toBe(false);
+    expect(dialog.showBulkHeaderEditor('expenses', 'paymentModeId')).toBe(false);
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector(
+        'th.bulk-header-edit-col mat-select[aria-label="Set paid via for selected expenses"]',
+      ),
+    ).toBeNull();
+
+    dialog.toggleRowSelection('expenses', 'expense-fuel', checkboxChangeEvent(true));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(dialog.bulkHeaderEditActive('expenses')).toBe(true);
+    expect(dialog.showBulkHeaderEditor('expenses', 'paymentModeId')).toBe(true);
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('th.bulk-header-edit-col'),
+    ).toBeTruthy();
+  });
+
+  it('should apply staged expense header edits and mark changed rows', () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        expenses: [
+          { ...dialogData.expenses[0], paymentModeId: 'pm-card' },
+          {
+            id: 'expense-fuel',
+            month: '2026-05',
+            date: '2026-05-04',
+            name: 'Fuel',
+            categoryId: 'category-home',
+            amount: 2500,
+            type: 'one-time',
+            note: '',
+          },
+        ],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      applyBulkHeaderEdit: (table: string) => void;
+      bulkHeaderResult: (table: string) => string;
+      expenses: () => Array<{ note?: string; paymentModeId?: string }>;
+      isFieldModified: (table: string, row: unknown, field: string) => boolean;
+      isRowModified: (table: string, row: unknown) => boolean;
+      setBulkHeaderValue: (table: string, field: string, value: string) => void;
+      toggleFilteredRowsSelection: (table: string, event: Event) => void;
+    };
+
+    dialog.toggleFilteredRowsSelection('expenses', checkboxChangeEvent(true));
+    dialog.setBulkHeaderValue('expenses', 'paymentModeId', 'pm-gpay');
+    dialog.setBulkHeaderValue('expenses', 'note', 'future record');
+    dialog.applyBulkHeaderEdit('expenses');
+
+    expect(dialog.expenses().map((expense) => expense.paymentModeId)).toEqual([
+      'pm-gpay',
+      'pm-gpay',
+    ]);
+    expect(dialog.expenses().map((expense) => expense.note)).toEqual([
+      'future record',
+      'future record',
+    ]);
+    expect(dialog.expenses().every((expense) => dialog.isRowModified('expenses', expense))).toBe(
+      true,
+    );
+    expect(
+      dialog
+        .expenses()
+        .every((expense) => dialog.isFieldModified('expenses', expense, 'paymentModeId')),
+    ).toBe(true);
+    expect(dialog.bulkHeaderResult('expenses')).toContain('Updated 4 fields across 2 of 2');
+  });
+
+  it('should protect existing immutable investment fields and allow all-new selections', () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        scope: 'planning',
+        initialTabIndex: 2,
+        investments: [
+          {
+            id: 'investment-index',
+            name: 'Index SIP',
+            amount: 15000,
+            frequency: 'monthly',
+            date: '2026-05-01',
+            startDate: '2026-05-01',
+            notes: '',
+          },
+        ],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      addInvestment: () => void;
+      applyBulkHeaderEdit: (table: string) => void;
+      investments: () => Array<{ id: string; isNew?: boolean; name: string }>;
+      showBulkHeaderEditor: (table: string, field: string) => boolean;
+      setBulkHeaderValue: (table: string, field: string, value: string) => void;
+      toggleFilteredRowsSelection: (table: string, event: Event) => void;
+      toggleRowSelection: (table: string, rowId: string, event: Event) => void;
+      clearSelection: (table: string) => void;
+    };
+
+    dialog.addInvestment();
+    dialog.addInvestment();
+    dialog.toggleFilteredRowsSelection('investments', checkboxChangeEvent(true));
+
+    expect(dialog.showBulkHeaderEditor('investments', 'name')).toBe(false);
+
+    dialog.clearSelection('investments');
+    for (const investment of dialog.investments().filter((investment) => investment.isNew)) {
+      dialog.toggleRowSelection('investments', investment.id, checkboxChangeEvent(true));
+    }
+
+    expect(dialog.showBulkHeaderEditor('investments', 'name')).toBe(true);
+
+    dialog.setBulkHeaderValue('investments', 'name', 'Future SIP');
+    dialog.applyBulkHeaderEdit('investments');
+
+    expect(
+      dialog.investments().find((investment) => investment.id === 'investment-index')?.name,
+    ).toBe('Index SIP');
+    expect(
+      dialog
+        .investments()
+        .filter((investment) => investment.isNew)
+        .map((investment) => investment.name),
+    ).toEqual(['Future SIP', 'Future SIP']);
+  });
+
+  it('should apply staged investment header edits to selected rows', () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        scope: 'planning',
+        initialTabIndex: 2,
+        categories: [
+          {
+            id: 'category-equity',
+            name: 'Equity',
+            monthlyBudget: 0,
+            color: '#2563eb',
+            type: 'Investments',
+          },
+          {
+            id: 'category-gold',
+            name: 'Gold',
+            monthlyBudget: 0,
+            color: '#a16207',
+            type: 'Investments',
+          },
+        ],
+        investments: [
+          {
+            id: 'investment-index',
+            name: 'Index SIP',
+            amount: 15000,
+            categoryId: 'category-equity',
+            frequency: 'monthly',
+            date: '2026-05-01',
+            notes: '',
+          },
+          {
+            id: 'investment-gold',
+            name: 'Gold Fund',
+            amount: 5000,
+            categoryId: 'category-gold',
+            frequency: 'one-time',
+            date: '2026-05-05',
+            notes: '',
+          },
+          {
+            id: 'investment-debt',
+            name: 'Debt Fund',
+            amount: 7000,
+            categoryId: 'category-equity',
+            frequency: 'annual',
+            date: '2026-05-02',
+            notes: '',
+          },
+        ],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      applyBulkHeaderEdit: (table: string) => void;
+      investments: () => Array<{
+        categoryId?: string;
+        date?: string;
+        frequency?: string;
+        id: string;
+        name: string;
+      }>;
+      isRowModified: (table: string, row: unknown) => boolean;
+      setBulkHeaderValue: (table: string, field: string, value: string) => void;
+      toggleRowSelection: (table: string, rowId: string, event: Event) => void;
+    };
+
+    dialog.toggleRowSelection('investments', 'investment-index', checkboxChangeEvent(true));
+    dialog.toggleRowSelection('investments', 'investment-gold', checkboxChangeEvent(true));
+    dialog.setBulkHeaderValue('investments', 'categoryId', 'category-gold');
+    dialog.setBulkHeaderValue('investments', 'frequency', 'monthly');
+    dialog.setBulkHeaderValue('investments', 'date', '2026-06-01');
+    dialog.applyBulkHeaderEdit('investments');
+
+    expect(
+      dialog
+        .investments()
+        .filter((investment) => investment.id !== 'investment-debt')
+        .map((investment) => ({
+          categoryId: investment.categoryId,
+          date: investment.date,
+          frequency: investment.frequency,
+        })),
+    ).toEqual([
+      { categoryId: 'category-gold', date: '2026-06-01', frequency: 'monthly' },
+      { categoryId: 'category-gold', date: '2026-06-01', frequency: 'monthly' },
+    ]);
+    expect(
+      dialog.isRowModified(
+        'investments',
+        dialog.investments().find((investment) => investment.id === 'investment-index'),
+      ),
+    ).toBe(true);
+    expect(
+      dialog.investments().find((investment) => investment.id === 'investment-debt')?.date,
+    ).toBe('2026-05-02');
+  });
+
+  it('should filter modified rows without including new or delete-only rows', () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        expenses: [
+          dialogData.expenses[0],
+          {
+            id: 'expense-fuel',
+            month: '2026-05',
+            date: '2026-05-04',
+            name: 'Fuel',
+            categoryId: 'category-home',
+            amount: 2500,
+            type: 'one-time',
+            note: '',
+          },
+          {
+            id: 'expense-coffee',
+            month: '2026-05',
+            date: '2026-05-06',
+            name: 'Coffee',
+            categoryId: 'category-home',
+            amount: 300,
+            type: 'one-time',
+            note: '',
+          },
+        ],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      addExpense: () => void;
+      applyBulkHeaderEdit: (table: string) => void;
+      expenses: () => Array<{ id: string; name: string; pendingDelete?: boolean }>;
+      filteredExpenses: () => Array<{ id: string; name: string }>;
+      markSelectedForDelete: (table: string) => void;
+      setBulkHeaderValue: (table: string, field: string, value: string) => void;
+      setTableFilter: (table: string, key: string, value: string) => void;
+      toggleRowSelection: (table: string, rowId: string, event: Event) => void;
+    };
+
+    dialog.addExpense();
+    dialog.toggleRowSelection('expenses', 'expense-coffee', checkboxChangeEvent(true));
+    dialog.markSelectedForDelete('expenses');
+    dialog.setTableFilter('expenses', 'status', 'modified');
+
+    expect(dialog.filteredExpenses()).toEqual([]);
+
+    dialog.setTableFilter('expenses', 'status', 'all');
+    dialog.toggleRowSelection('expenses', 'expense-rent', checkboxChangeEvent(true));
+    dialog.toggleRowSelection('expenses', 'expense-fuel', checkboxChangeEvent(true));
+    dialog.setBulkHeaderValue('expenses', 'note', 'reviewed');
+    dialog.applyBulkHeaderEdit('expenses');
+    dialog.setTableFilter('expenses', 'status', 'modified');
+
+    expect(
+      dialog
+        .filteredExpenses()
+        .map((expense) => expense.name)
+        .sort(),
+    ).toEqual(['Fuel', 'Rent']);
+  });
+
+  it('should keep bulk selection controls out of mobile card markup', async () => {
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    expect(compiled.querySelector('.desktop-table-region .row-select-input')).toBeTruthy();
+    expect(compiled.querySelector('.mobile-card-list .row-select-input')).toBeNull();
+    expect(compiled.querySelector('.mobile-card-list .bulk-header-editor')).toBeNull();
+  });
 
   it('should suggest previous one-time expenses that are not already in the selected month', () => {
     TestBed.overrideProvider(MAT_DIALOG_DATA, {
@@ -2404,7 +3336,7 @@ describe('BulkEditorDialog', () => {
       paymentModeName: (paymentModeId?: string) => string;
     };
 
-    expect(dialog.paymentModeName('pm-old-wallet')).toBe('Old Paytm Wallet');
+    expect(dialog.paymentModeName('pm-old-wallet')).toBe('Paytm Legacy');
     expect(
       dialog.activePaymentModes.some((paymentMode) => paymentMode.id === 'pm-old-wallet'),
     ).toBe(false);
@@ -2899,7 +3831,7 @@ describe('budget import helpers', () => {
   });
 
   it('should add existing categories to the workbook master sheet', async () => {
-    const XLSX = await import('xlsx');
+    const readExcelFile = (await import('read-excel-file/universal')).default;
     const workbookBlob = await createBudgetImportTemplateWorkbook([
       {
         id: 'category-home',
@@ -2916,13 +3848,14 @@ describe('budget import helpers', () => {
         type: 'Investments',
       },
     ]);
-    const workbook = XLSX.read(await workbookBlob.arrayBuffer(), { type: 'array' });
-    const rows = XLSX.utils.sheet_to_json<Record<string, string | number>>(
-      workbook.Sheets['master_categories'],
-      { defval: '' },
+    const workbook = await readExcelFile(await workbookBlob.arrayBuffer());
+    const masterSheet = workbook.find((sheet) => sheet.sheet === 'master_categories');
+    const [headers = [], ...dataRows] = masterSheet?.data ?? [];
+    const rows = dataRows.map((row) =>
+      Object.fromEntries(headers.map((header, index) => [String(header), row[index] ?? ''])),
     );
 
-    expect(workbook.SheetNames[0]).toBe('master_categories');
+    expect(workbook[0]?.sheet).toBe('master_categories');
     expect(rows).toContainEqual(
       expect.objectContaining({
         name: 'Home',

@@ -159,24 +159,16 @@ function isAccountBackedType(type: PaymentModeType): boolean {
 
 function buildPaymentModeFromForm(
   type: PaymentModeType,
-  rawName: string,
   provider: PaymentModeProvider,
   cardType: PaymentCardType | '',
   rawLastFour: string,
-  bankName: PaymentBankName,
   rawPaymentAccountId: string,
   existing: PaymentMode | undefined,
   editingId: string | null,
 ): { ok: true; value: PaymentMode } | { ok: false; error: string } {
-  const name = rawName.trim();
   const lastFour = rawLastFour.replace(/\D/g, '').slice(0, 4);
   const selectedCardType = cardType || undefined;
-  const selectedBankName = paymentBankNameValue(bankName);
   const paymentAccountId = rawPaymentAccountId || undefined;
-
-  if (!name) {
-    return { ok: false, error: 'Display name is required.' };
-  }
 
   if (isProviderType(type) && !provider) {
     return { ok: false, error: 'Choose a provider for UPI and wallet modes.' };
@@ -186,19 +178,25 @@ function buildPaymentModeFromForm(
     return { ok: false, error: 'Card modes need exactly 4 digits.' };
   }
 
+  if (type === 'internet-banking' && !paymentAccountId) {
+    return { ok: false, error: 'Choose a linked payment account for internet banking.' };
+  }
+
   const now = new Date().toISOString();
+  const modeLabel = MODE_OPTIONS.find((option) => option.value === type)?.label ?? 'Payment mode';
 
   return {
     ok: true,
     value: {
       id: existing?.id ?? editingId ?? id('payment-mode'),
       type,
-      name,
+      name: existing?.name ?? modeLabel,
       provider: isProviderType(type) ? provider : undefined,
       cardType: isCardType(type) ? selectedCardType : undefined,
       lastFour: isCardType(type) ? lastFour : undefined,
-      bankName: type === 'internet-banking' ? selectedBankName : undefined,
+      bankName: undefined,
       paymentAccountId: isAccountBackedType(type) ? paymentAccountId : undefined,
+      memberEmail: existing?.memberEmail,
       createdDate: existing?.createdDate ?? now,
       updatedDate: now,
       archivedDate: existing?.archivedDate,
@@ -207,18 +205,12 @@ function buildPaymentModeFromForm(
 }
 
 function buildPaymentAccountFromForm(
-  rawName: string,
   bankName: PaymentBankName,
   rawLastFour: string,
   existing: PaymentAccount | undefined,
   editingId: string | null,
 ): { ok: true; value: PaymentAccount } | { ok: false; error: string } {
-  const name = rawName.trim();
   const lastFour = rawLastFour.replace(/\D/g, '').slice(0, 4);
-
-  if (!name) {
-    return { ok: false, error: 'Account name is required.' };
-  }
 
   if (!/^\d{4}$/.test(lastFour)) {
     return { ok: false, error: 'Account needs exactly 4 digits.' };
@@ -230,9 +222,10 @@ function buildPaymentAccountFromForm(
     ok: true,
     value: {
       id: existing?.id ?? editingId ?? id('payment-account'),
-      name,
+      name: existing?.name ?? 'Bank account',
       bankName: paymentBankNameValue(bankName),
       lastFour,
+      memberEmail: existing?.memberEmail,
       createdDate: existing?.createdDate ?? now,
       updatedDate: now,
       archivedDate: existing?.archivedDate,
@@ -287,11 +280,6 @@ function buildPaymentAccountFromForm(
           }
         </div>
 
-        <mat-form-field appearance="outline">
-          <mat-label>Display name</mat-label>
-          <input matInput formControlName="name" autocomplete="off" />
-        </mat-form-field>
-
         @if (isProviderType(formType())) {
           <mat-form-field appearance="outline">
             <mat-label>Provider</mat-label>
@@ -338,27 +326,15 @@ function buildPaymentAccountFromForm(
               pattern="[0-9]*"
             />
           </mat-form-field>
-        } @else if (formType() === 'internet-banking') {
-          <mat-form-field appearance="outline">
-            <mat-label>Bank</mat-label>
-            <mat-select formControlName="bankName">
-              @for (bank of bankOptions; track bank.name) {
-                <mat-option [value]="bank.name">
-                  <span class="select-option-with-icon">
-                    <img [ngSrc]="bank.iconSrc" width="28" height="28" alt="" />
-                    <span>{{ bank.name }}</span>
-                  </span>
-                </mat-option>
-              }
-            </mat-select>
-          </mat-form-field>
         }
 
         @if (isAccountBackedType(formType())) {
           <mat-form-field appearance="outline">
             <mat-label>Payment account</mat-label>
             <mat-select formControlName="paymentAccountId">
-              <mat-option value="">No linked account</mat-option>
+              @if (formType() !== 'internet-banking') {
+                <mat-option value="">No linked account</mat-option>
+              }
               @for (account of store.activePaymentAccounts(); track account.id) {
                 <mat-option [value]="account.id">
                   <span class="select-option-with-icon">
@@ -368,7 +344,10 @@ function buildPaymentAccountFromForm(
                       height="28"
                       alt=""
                     />
-                    <span>{{ account.name }} · {{ account.bankName }}</span>
+                    <span>
+                      {{ store.paymentAccountLabel(account) }} ·
+                      {{ store.paymentAccountDetail(account) }}
+                    </span>
                   </span>
                 </mat-option>
               }
@@ -501,7 +480,6 @@ export class PaymentModeFormSheet {
   readonly modeOptions = MODE_OPTIONS;
   readonly providerOptions = PROVIDER_OPTIONS;
   readonly cardTypeOptions = CARD_TYPE_OPTIONS;
-  readonly bankOptions = BANK_OPTIONS;
   readonly defaultCardIcon = DEFAULT_CARD_ICON;
   readonly editingId = signal<string | null>(this.data?.paymentMode?.id ?? null);
   readonly formType = signal<PaymentModeType>(this.data?.paymentMode?.type ?? 'upi');
@@ -516,22 +494,18 @@ export class PaymentModeFormSheet {
     cardType: this.formBuilder.nonNullable.control<PaymentCardType | ''>(
       paymentCardTypeValue(this.data?.paymentMode?.cardType),
     ),
-    bankName: this.formBuilder.nonNullable.control<PaymentBankName>(
-      paymentBankNameValue(this.data?.paymentMode?.bankName),
-    ),
     paymentAccountId: this.formBuilder.nonNullable.control(
       this.data?.paymentMode?.paymentAccountId ?? '',
     ),
-    name: this.formBuilder.nonNullable.control(this.data?.paymentMode?.name ?? ''),
     lastFour: this.formBuilder.nonNullable.control(this.data?.paymentMode?.lastFour ?? ''),
   });
   readonly formSubtitle = computed(() =>
     this.isProviderType(this.formType())
-      ? 'Choose a provider and give it a label you will recognize later.'
+      ? 'Choose the provider; the owner tag is added automatically.'
       : this.isCardType(this.formType())
-        ? 'Save the card name and last four digits for quick identification.'
+        ? 'Save the card type and last four digits for quick identification.'
         : this.formType() === 'internet-banking'
-          ? 'Save the bank and connect it to an account when useful.'
+          ? 'Link a payment account to identify the bank and account ending.'
           : 'Keep cash transactions available as a saved payment mode.',
   );
 
@@ -556,11 +530,9 @@ export class PaymentModeFormSheet {
   savePaymentMode(): void {
     const paymentMode = buildPaymentModeFromForm(
       this.form.controls.type.value,
-      this.form.controls.name.value,
       this.form.controls.provider.value,
       this.form.controls.cardType.value,
       this.form.controls.lastFour.value,
-      this.form.controls.bankName.value,
       this.form.controls.paymentAccountId.value,
       this.data?.paymentMode,
       this.editingId(),
@@ -624,11 +596,6 @@ export class PaymentModeFormSheet {
       </header>
 
       <form [formGroup]="form" (ngSubmit)="savePaymentAccount()">
-        <mat-form-field appearance="outline">
-          <mat-label>Account name</mat-label>
-          <input matInput formControlName="name" autocomplete="off" />
-        </mat-form-field>
-
         <mat-form-field appearance="outline">
           <mat-label>Bank</mat-label>
           <mat-select formControlName="bankName">
@@ -755,7 +722,6 @@ export class PaymentAccountFormSheet {
   readonly editingId = signal<string | null>(this.data?.paymentAccount?.id ?? null);
   readonly validationError = signal('');
   readonly form = this.formBuilder.group({
-    name: this.formBuilder.nonNullable.control(this.data?.paymentAccount?.name ?? ''),
     bankName: this.formBuilder.nonNullable.control<PaymentBankName>(
       paymentBankNameValue(this.data?.paymentAccount?.bankName),
     ),
@@ -768,7 +734,6 @@ export class PaymentAccountFormSheet {
 
   savePaymentAccount(): void {
     const paymentAccount = buildPaymentAccountFromForm(
-      this.form.controls.name.value,
       this.form.controls.bankName.value,
       this.form.controls.lastFour.value,
       this.data?.paymentAccount,
@@ -798,8 +763,10 @@ export class PaymentAccountFormSheet {
           <img [ngSrc]="data.iconSrc" width="40" height="40" alt="" />
         </span>
         <div>
-          <h2 id="payment-account-modes-title">{{ data.paymentAccount.name }}</h2>
-          <p>{{ data.paymentAccount.bankName }} · {{ data.detail }}</p>
+          <h2 id="payment-account-modes-title">
+            {{ store.paymentAccountLabel(data.paymentAccount) }}
+          </h2>
+          <p>{{ data.detail }}</p>
         </div>
         <button
           mat-icon-button
@@ -824,10 +791,30 @@ export class PaymentAccountFormSheet {
 
       <div class="mapped-mode-list" aria-label="Mapped payment modes">
         @for (paymentMode of data.mappedModes; track paymentMode.id) {
-          <span class="payment-mode-badge {{ store.paymentModeTone(paymentMode.id) }}">
-            <img [ngSrc]="store.paymentModeIconSrc(paymentMode)" width="18" height="18" alt="" />
-            {{ paymentMode.name }}
-          </span>
+          @if (store.paymentModeUsage(paymentMode.id); as usage) {
+            <article class="mapped-mode-card">
+              <span
+                class="category-icon payment-provider-mark {{ store.paymentModeTone(paymentMode.id) }}"
+                aria-hidden="true"
+              >
+                <img [ngSrc]="store.paymentModeIconSrc(paymentMode)" width="34" height="34" alt="" />
+              </span>
+              <div class="mapped-mode-copy">
+                <strong>{{ store.paymentModeDisplayLabel(paymentMode) }}</strong>
+                <small>
+                  {{ store.paymentModeTypeLabel(paymentMode.type) }} ·
+                  {{ store.paymentModeDetail(paymentMode) }}
+                </small>
+              </div>
+              <div class="mapped-mode-meta">
+                <span class="badge neutral">{{ store.paymentModeOwnerTag(paymentMode) }}</span>
+                <span class="badge neutral">
+                  {{ usage.count }} {{ usage.count === 1 ? 'record' : 'records' }}
+                </span>
+                <strong>{{ usage.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</strong>
+              </div>
+            </article>
+          }
         } @empty {
           <span class="empty-inline">No mapped payment modes</span>
         }
@@ -883,11 +870,71 @@ export class PaymentAccountFormSheet {
         object-fit: contain;
       }
 
-      .sheet-summary,
-      .mapped-mode-list {
+      .sheet-summary {
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
+      }
+
+      .mapped-mode-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .mapped-mode-card {
+        display: grid;
+        grid-template-columns: 40px minmax(0, 1fr);
+        gap: 10px;
+        padding: 10px;
+        border: 1px solid #e3ebf6;
+        border-radius: 8px;
+        background: #f8fbff;
+      }
+
+      .mapped-mode-card .payment-provider-mark {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+      }
+
+      .mapped-mode-copy {
+        min-width: 0;
+      }
+
+      .mapped-mode-copy strong,
+      .mapped-mode-copy small {
+        display: block;
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+
+      .mapped-mode-copy strong {
+        color: #10213f;
+        font-size: 0.98rem;
+        font-weight: 800;
+        line-height: 1.2;
+      }
+
+      .mapped-mode-copy small {
+        margin-top: 3px;
+        color: #60708a;
+        font-size: 0.82rem;
+        font-weight: 600;
+      }
+
+      .mapped-mode-meta {
+        grid-column: 1 / -1;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+
+      .mapped-mode-meta strong {
+        color: #10213f;
+        font-size: 0.95rem;
+        font-weight: 800;
       }
 
       .sheet-summary span {
@@ -974,23 +1021,6 @@ export class PaymentAccountModesSheet {
       <app-page-skeleton variant="paymentModes" />
     } @else {
       <section class="page mobile-payment-modes-page">
-        <header class="mobile-page-hero compact-hero">
-          <div class="mobile-title-row">
-            <h1>Payment Modes</h1>
-            <button
-              mat-flat-button
-              type="button"
-              (click)="openPrimaryForm()"
-              [disabled]="!store.canWrite()"
-            >
-              <mat-icon aria-hidden="true">{{
-                selectedTabIndex() === 0 ? 'add_card' : 'add'
-              }}</mat-icon>
-              {{ selectedTabIndex() === 0 ? 'Add Mode' : 'Add Account' }}
-            </button>
-          </div>
-        </header>
-
         <header class="page-header desktop-page-header">
           <div>
             <h1>Payment Modes</h1>
@@ -1039,6 +1069,19 @@ export class PaymentAccountModesSheet {
 
               <section class="payment-mode-layout">
                 <section class="payment-list-panel" aria-label="Saved payment modes">
+                  <div class="mobile-payment-panel-actions">
+                    <button
+                      class="mobile-panel-add-button"
+                      mat-icon-button
+                      type="button"
+                      aria-label="Add payment mode"
+                      matTooltip="Add payment mode"
+                      (click)="openPaymentModeForm()"
+                      [disabled]="!store.canWrite()"
+                    >
+                      <mat-icon aria-hidden="true">add_card</mat-icon>
+                    </button>
+                  </div>
                   <div class="payment-filter-row" aria-label="Filter payment modes">
                     @for (filter of filterOptions; track filter.value) {
                       <button
@@ -1069,7 +1112,7 @@ export class PaymentAccountModesSheet {
                             <img [ngSrc]="paymentMode.iconSrc" width="40" height="40" alt="" />
                           </span>
                           <div>
-                            <h2>{{ paymentMode.name }}</h2>
+                            <h2>{{ paymentMode.displayName }}</h2>
                             @if (isCardType(paymentMode.type)) {
                               <p>{{ paymentMode.typeLabel }}</p>
                             } @else {
@@ -1085,7 +1128,8 @@ export class PaymentAccountModesSheet {
                                     alt=""
                                   />
                                 }
-                                {{ paymentMode.paymentAccountName }}
+                                {{ paymentMode.paymentAccountName }} ·
+                                {{ paymentMode.paymentAccountDetail }}
                               </span>
                             }
                           </div>
@@ -1133,9 +1177,12 @@ export class PaymentAccountModesSheet {
                                 | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
                             }}
                           </span>
-                          <span class="badge neutral">
-                            {{ paymentMode.recordCount }}
-                            {{ paymentMode.recordCount === 1 ? 'record' : 'records' }}
+                          <span class="payment-card-badges">
+                            <span class="badge neutral">
+                              {{ paymentMode.recordCount }}
+                              {{ paymentMode.recordCount === 1 ? 'record' : 'records' }}
+                            </span>
+                            <span class="badge neutral">{{ paymentMode.ownerTag }}</span>
                           </span>
                         </div>
                       </article>
@@ -1165,11 +1212,6 @@ export class PaymentAccountModesSheet {
                         </button>
                       }
                     </div>
-
-                    <mat-form-field appearance="outline">
-                      <mat-label>Display name</mat-label>
-                      <input matInput formControlName="name" autocomplete="off" />
-                    </mat-form-field>
 
                     @if (isProviderType(formType())) {
                       <mat-form-field appearance="outline">
@@ -1217,27 +1259,15 @@ export class PaymentAccountModesSheet {
                           pattern="[0-9]*"
                         />
                       </mat-form-field>
-                    } @else if (formType() === 'internet-banking') {
-                      <mat-form-field appearance="outline">
-                        <mat-label>Bank</mat-label>
-                        <mat-select formControlName="bankName">
-                          @for (bank of bankOptions; track bank.name) {
-                            <mat-option [value]="bank.name">
-                              <span class="select-option-with-icon">
-                                <img [ngSrc]="bank.iconSrc" width="28" height="28" alt="" />
-                                <span>{{ bank.name }}</span>
-                              </span>
-                            </mat-option>
-                          }
-                        </mat-select>
-                      </mat-form-field>
                     }
 
                     @if (isAccountBackedType(formType())) {
                       <mat-form-field appearance="outline">
                         <mat-label>Payment account</mat-label>
                         <mat-select formControlName="paymentAccountId">
-                          <mat-option value="">No linked account</mat-option>
+                          @if (formType() !== 'internet-banking') {
+                            <mat-option value="">No linked account</mat-option>
+                          }
                           @for (account of store.activePaymentAccounts(); track account.id) {
                             <mat-option [value]="account.id">
                               <span class="select-option-with-icon">
@@ -1247,7 +1277,10 @@ export class PaymentAccountModesSheet {
                                   height="28"
                                   alt=""
                                 />
-                                <span>{{ account.name }} · {{ account.bankName }}</span>
+                                <span>
+                                  {{ store.paymentAccountLabel(account) }} ·
+                                  {{ store.paymentAccountDetail(account) }}
+                                </span>
                               </span>
                             </mat-option>
                           }
@@ -1315,6 +1348,19 @@ export class PaymentAccountModesSheet {
 
               <section class="payment-mode-layout">
                 <section class="payment-list-panel" aria-label="Saved payment accounts">
+                  <div class="mobile-payment-panel-actions">
+                    <button
+                      class="mobile-panel-add-button"
+                      mat-icon-button
+                      type="button"
+                      aria-label="Add payment account"
+                      matTooltip="Add payment account"
+                      (click)="openPaymentAccountForm()"
+                      [disabled]="!store.canWrite()"
+                    >
+                      <mat-icon aria-hidden="true">add</mat-icon>
+                    </button>
+                  </div>
                   <div class="payment-mode-grid">
                     @for (account of store.paymentAccountCards(); track account.id) {
                       <article
@@ -1336,9 +1382,9 @@ export class PaymentAccountModesSheet {
                               <img [ngSrc]="account.iconSrc" width="40" height="40" alt="" />
                             </span>
                             <span>
-                              <span class="account-card-title">{{ account.name }}</span>
+                              <span class="account-card-title">{{ account.displayName }}</span>
                               <span class="account-card-detail">
-                                {{ account.bankName }} · {{ account.detail }}
+                                {{ account.detail }}
                               </span>
                             </span>
                           </button>
@@ -1375,9 +1421,12 @@ export class PaymentAccountModesSheet {
                               account.usageAmount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
                             }}
                           </span>
-                          <span class="badge neutral">
-                            {{ account.mappedModeCount }}
-                            {{ account.mappedModeCount === 1 ? 'mode' : 'modes' }}
+                          <span class="payment-card-badges">
+                            <span class="badge neutral">
+                              {{ account.mappedModeCount }}
+                              {{ account.mappedModeCount === 1 ? 'mode' : 'modes' }}
+                            </span>
+                            <span class="badge neutral">{{ account.ownerTag }}</span>
                           </span>
                         </div>
                       </article>
@@ -1389,23 +1438,49 @@ export class PaymentAccountModesSheet {
                   @if (selectedPaymentAccountCard(); as account) {
                     <article class="panel-card account-detail-panel">
                       <header class="panel-heading">
-                        <h2>{{ account.name }}</h2>
-                        <p>{{ account.bankName }} · {{ account.detail }}</p>
+                        <h2>{{ account.displayName }}</h2>
+                        <p>{{ account.detail }}</p>
                       </header>
 
                       <div class="mapped-mode-list" aria-label="Mapped payment modes">
                         @for (paymentMode of account.mappedModes; track paymentMode.id) {
-                          <span
-                            class="payment-mode-badge {{ store.paymentModeTone(paymentMode.id) }}"
-                          >
-                            <img
-                              [ngSrc]="store.paymentModeIconSrc(paymentMode)"
-                              width="18"
-                              height="18"
-                              alt=""
-                            />
-                            {{ paymentMode.name }}
-                          </span>
+                          @if (store.paymentModeUsage(paymentMode.id); as usage) {
+                            <article class="mapped-mode-card">
+                              <span
+                                class="category-icon payment-provider-mark {{
+                                  store.paymentModeTone(paymentMode.id)
+                                }}"
+                                aria-hidden="true"
+                              >
+                                <img
+                                  [ngSrc]="store.paymentModeIconSrc(paymentMode)"
+                                  width="34"
+                                  height="34"
+                                  alt=""
+                                />
+                              </span>
+                              <div class="mapped-mode-copy">
+                                <strong>{{ store.paymentModeDisplayLabel(paymentMode) }}</strong>
+                                <small>
+                                  {{ store.paymentModeTypeLabel(paymentMode.type) }} ·
+                                  {{ store.paymentModeDetail(paymentMode) }}
+                                </small>
+                              </div>
+                              <div class="mapped-mode-meta">
+                                <span class="badge neutral">{{
+                                  store.paymentModeOwnerTag(paymentMode)
+                                }}</span>
+                                <span class="badge neutral">
+                                  {{ usage.count }}
+                                  {{ usage.count === 1 ? 'record' : 'records' }}
+                                </span>
+                                <strong>{{
+                                  usage.amount
+                                    | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                                }}</strong>
+                              </div>
+                            </article>
+                          }
                         } @empty {
                           <span class="empty-inline">No mapped payment modes</span>
                         }
@@ -1425,11 +1500,6 @@ export class PaymentAccountModesSheet {
                   </header>
 
                   <form [formGroup]="accountForm" (ngSubmit)="savePaymentAccount()">
-                    <mat-form-field appearance="outline">
-                      <mat-label>Account name</mat-label>
-                      <input matInput formControlName="name" autocomplete="off" />
-                    </mat-form-field>
-
                     <mat-form-field appearance="outline">
                       <mat-label>Bank</mat-label>
                       <mat-select formControlName="bankName">
@@ -1716,6 +1786,11 @@ export class PaymentAccountModesSheet {
         min-width: 0;
       }
 
+      .mobile-payment-panel-actions {
+        display: none;
+        justify-content: flex-end;
+      }
+
       .payment-mode-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -1814,6 +1889,13 @@ export class PaymentAccountModesSheet {
         letter-spacing: 0;
         line-height: 1.2;
         white-space: nowrap;
+      }
+
+      .payment-card-badges {
+        display: inline-flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 8px;
       }
 
       .payment-account-chip {
@@ -2008,9 +2090,64 @@ export class PaymentAccountModesSheet {
       }
 
       .mapped-mode-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .mapped-mode-card {
+        display: grid;
+        grid-template-columns: 40px minmax(0, 1fr);
+        gap: 10px;
+        padding: 10px;
+        border: 1px solid #e3ebf6;
+        border-radius: 8px;
+        background: #f8fbff;
+      }
+
+      .mapped-mode-card .payment-provider-mark {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+      }
+
+      .mapped-mode-copy {
+        min-width: 0;
+      }
+
+      .mapped-mode-copy strong,
+      .mapped-mode-copy small {
+        display: block;
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+
+      .mapped-mode-copy strong {
+        color: #10213f;
+        font-size: 0.98rem;
+        font-weight: 800;
+        line-height: 1.2;
+      }
+
+      .mapped-mode-copy small {
+        margin-top: 3px;
+        color: #60708a;
+        font-size: 0.82rem;
+        font-weight: 600;
+      }
+
+      .mapped-mode-meta {
+        grid-column: 1 / -1;
         display: flex;
         flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
         gap: 8px;
+      }
+
+      .mapped-mode-meta strong {
+        color: #10213f;
+        font-size: 0.95rem;
+        font-weight: 800;
       }
 
       .empty-inline {
@@ -2043,6 +2180,14 @@ export class PaymentAccountModesSheet {
         .payment-mode-layout {
           grid-template-columns: 1fr;
           gap: 10px;
+        }
+
+        .payment-list-panel {
+          gap: 8px;
+        }
+
+        .mobile-payment-panel-actions {
+          display: flex;
         }
 
         .payment-form-card {
@@ -2159,13 +2304,10 @@ export class PaymentModesPage {
     type: this.formBuilder.nonNullable.control<PaymentModeType>('upi'),
     provider: this.formBuilder.nonNullable.control<PaymentModeProvider>(DEFAULT_PROVIDER),
     cardType: this.formBuilder.nonNullable.control<PaymentCardType | ''>(''),
-    bankName: this.formBuilder.nonNullable.control<PaymentBankName>(DEFAULT_BANK_NAME),
     paymentAccountId: this.formBuilder.nonNullable.control(''),
-    name: this.formBuilder.nonNullable.control(''),
     lastFour: this.formBuilder.nonNullable.control(''),
   });
   readonly accountForm = this.formBuilder.group({
-    name: this.formBuilder.nonNullable.control(''),
     bankName: this.formBuilder.nonNullable.control<PaymentBankName>(DEFAULT_BANK_NAME),
     lastFour: this.formBuilder.nonNullable.control(''),
   });
@@ -2195,11 +2337,11 @@ export class PaymentModesPage {
   });
   readonly formSubtitle = computed(() =>
     this.isProviderType(this.formType())
-      ? 'Choose a provider and give it a label you will recognize later.'
+      ? 'Choose the provider; the owner tag is added automatically.'
       : this.isCardType(this.formType())
-        ? 'Save the card name and last four digits for quick identification.'
+        ? 'Save the card type and last four digits for quick identification.'
         : this.formType() === 'internet-banking'
-          ? 'Save the bank and connect it to an account when useful.'
+          ? 'Link a payment account to identify the bank and account ending.'
           : 'Keep cash transactions available as a saved payment mode.',
   );
 
@@ -2287,9 +2429,7 @@ export class PaymentModesPage {
       type: paymentMode.type,
       provider: paymentProviderValue(paymentMode.provider),
       cardType: paymentCardTypeValue(paymentMode.cardType),
-      bankName: paymentBankNameValue(paymentMode.bankName),
       paymentAccountId: paymentMode.paymentAccountId ?? '',
-      name: paymentMode.name,
       lastFour: paymentMode.lastFour ?? '',
     });
     this.validationError.set('');
@@ -2298,7 +2438,6 @@ export class PaymentModesPage {
   editPaymentAccount(paymentAccount: PaymentAccount): void {
     this.editingPaymentAccountId.set(paymentAccount.id);
     this.accountForm.patchValue({
-      name: paymentAccount.name,
       bankName: paymentBankNameValue(paymentAccount.bankName),
       lastFour: paymentAccount.lastFour,
     });
@@ -2352,11 +2491,9 @@ export class PaymentModesPage {
       .find((paymentMode) => paymentMode.id === this.editingId());
     const paymentMode = buildPaymentModeFromForm(
       this.form.controls.type.value,
-      this.form.controls.name.value,
       this.form.controls.provider.value,
       this.form.controls.cardType.value,
       this.form.controls.lastFour.value,
-      this.form.controls.bankName.value,
       this.form.controls.paymentAccountId.value,
       existing,
       this.editingId(),
@@ -2379,7 +2516,6 @@ export class PaymentModesPage {
       .paymentAccounts()
       .find((paymentAccount) => paymentAccount.id === this.editingPaymentAccountId());
     const paymentAccount = buildPaymentAccountFromForm(
-      this.accountForm.controls.name.value,
       this.accountForm.controls.bankName.value,
       this.accountForm.controls.lastFour.value,
       existing,
@@ -2402,7 +2538,7 @@ export class PaymentModesPage {
     paymentAccount: ReturnType<BudgetStore['paymentAccountCards']>[number],
   ): void {
     this.bottomSheet.open(PaymentAccountModesSheet, {
-      ariaLabel: `${paymentAccount.name} mapped payment modes`,
+      ariaLabel: `${paymentAccount.displayName} mapped payment modes`,
       data: {
         detail: paymentAccount.detail,
         iconSrc: paymentAccount.iconSrc,
@@ -2423,9 +2559,7 @@ export class PaymentModesPage {
       type,
       provider: DEFAULT_PROVIDER,
       cardType: '',
-      bankName: DEFAULT_BANK_NAME,
       paymentAccountId: '',
-      name: '',
       lastFour: '',
     });
   }
@@ -2434,7 +2568,6 @@ export class PaymentModesPage {
     this.editingPaymentAccountId.set(null);
     this.accountValidationError.set('');
     this.accountForm.reset({
-      name: '',
       bankName: DEFAULT_BANK_NAME,
       lastFour: '',
     });

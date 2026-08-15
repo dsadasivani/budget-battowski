@@ -223,13 +223,22 @@
       mat-icon-button
       type="button"
       aria-label="Open navigation"
+      aria-controls="primary-navigation"
+      [attr.aria-expanded]="navOpen()"
       matTooltip="Open navigation"
-      (click)="toggleNav()"
+      (click)="toggleNav($event)"
     >
       <mat-icon aria-hidden="true">menu</mat-icon>
     </button>
 
-    <aside class="sidebar" aria-label="Primary navigation">
+    <aside
+      id="primary-navigation"
+      class="sidebar"
+      aria-label="Primary navigation"
+      [cdkTrapFocus]="navOpen()"
+      [cdkTrapFocusAutoCapture]="navOpen()"
+      (keydown.escape)="closeNav()"
+    >
       <div class="sidebar-brand">
         <span class="app-mark" aria-hidden="true">
           <mat-icon>account_balance_wallet</mat-icon>
@@ -247,7 +256,7 @@
       </button>
 
       <mat-menu #workspaceMenu="matMenu" class="workspace-menu">
-        @for (workspace of workspaces(); track workspace.id) {
+        @for (workspace of activeWorkspaces(); track workspace.id) {
           <button mat-menu-item type="button" (click)="selectWorkspace(workspace.id)">
             <mat-icon aria-hidden="true">home_work</mat-icon>
             <span>{{ workspace.name }}</span>
@@ -262,12 +271,7 @@
       </mat-menu>
 
       <nav class="side-nav">
-        <button
-          class="guided-tour-button"
-          type="button"
-          matTooltip="Open a plain-English walkthrough of the app"
-          (click)="openOnboarding()"
-        >
+        <button class="guided-tour-button" type="button" (click)="openOnboarding()">
           <mat-icon aria-hidden="true">tips_and_updates</mat-icon>
           <span>Guided tour</span>
         </button>
@@ -275,8 +279,10 @@
           <a
             [routerLink]="item.path"
             routerLinkActive="active"
+            #sideNavLink="routerLinkActive"
             [routerLinkActiveOptions]="{ exact: true }"
-            (click)="closeNav()"
+            [attr.aria-current]="sideNavLink.isActive ? 'page' : null"
+            (click)="closeNav(false)"
           >
             <mat-icon aria-hidden="true">{{ item.icon }}</mat-icon>
             <span>{{ item.label }}</span>
@@ -317,6 +323,65 @@
     ></button>
 
     <main class="content-shell" id="main-content">
+      <header class="mobile-app-bar" aria-label="Current page">
+        <button
+          class="mobile-menu-trigger"
+          type="button"
+          aria-label="Open navigation"
+          aria-controls="primary-navigation"
+          [attr.aria-expanded]="navOpen()"
+          matTooltip="Open navigation"
+          (click)="toggleNav($event)"
+        >
+          <mat-icon aria-hidden="true">apps</mat-icon>
+        </button>
+        <a class="mobile-brand" routerLink="/dashboard" aria-label="Budget Battowski home">
+          Budget Battowski
+        </a>
+        <button
+          class="mobile-utility-trigger"
+          type="button"
+          aria-label="Open account and utility menu"
+          matTooltip="Account and utilities"
+          [matMenuTriggerFor]="mobileUtilityMenu"
+        >
+          @if (userPhoto(); as photo) {
+            <img [src]="photo" alt="" referrerpolicy="no-referrer" />
+          } @else {
+            {{ memberInitial(userEmail() || undefined) }}
+          }
+        </button>
+
+        <mat-menu #mobileUtilityMenu="matMenu" class="mobile-utility-menu">
+          @for (item of utilityMobileNavItems; track item.path) {
+            <a mat-menu-item [routerLink]="item.path">
+              <mat-icon aria-hidden="true">{{ item.icon }}</mat-icon>
+              <span>{{ item.label }}</span>
+            </a>
+          }
+          <button mat-menu-item type="button" (click)="openOnboarding()">
+            <mat-icon aria-hidden="true">tips_and_updates</mat-icon>
+            <span>Guided tour</span>
+          </button>
+          <button
+            mat-menu-item
+            type="button"
+            (click)="logout()"
+            [disabled]="firebase.mode !== 'firebase' || isSyncing()"
+          >
+            <mat-icon aria-hidden="true">logout</mat-icon>
+            <span>Log out</span>
+          </button>
+        </mat-menu>
+      </header>
+
+      <div class="mobile-route-heading">
+        <span class="mobile-route-icon" aria-hidden="true">
+          <mat-icon>{{ activeMobileNavItem().icon }}</mat-icon>
+        </span>
+        <h1>{{ activeMobileNavItem().label }}</h1>
+      </div>
+
       <router-outlet></router-outlet>
     </main>
 
@@ -327,6 +392,9 @@
         aria-modal="true"
         aria-labelledby="onboarding-title"
         aria-describedby="onboarding-description"
+        cdkTrapFocus
+        [cdkTrapFocusAutoCapture]="true"
+        (keydown.escape)="closeOnboarding()"
       >
         <article class="onboarding-panel">
           <button
@@ -382,7 +450,7 @@
             <a
               mat-stroked-button
               [routerLink]="activeOnboardingStep().path"
-              (click)="closeOnboarding(); closeNav()"
+              (click)="closeOnboarding(); closeNav(false)"
             >
               {{ activeOnboardingStep().actionLabel }}
             </a>
@@ -399,7 +467,9 @@
         <a
           [routerLink]="item.path"
           routerLinkActive="active"
+          #mobileNavLink="routerLinkActive"
           [routerLinkActiveOptions]="{ exact: true }"
+          [attr.aria-current]="mobileNavLink.isActive ? 'page' : null"
         >
           <mat-icon aria-hidden="true">{{ item.icon }}</mat-icon>
           <span>{{ item.shortLabel || item.label }}</span>

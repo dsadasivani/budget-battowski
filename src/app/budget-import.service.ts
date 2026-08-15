@@ -47,6 +47,13 @@ type SheetDefinition = {
   sample: Record<string, string>;
 };
 
+type SpreadsheetCell = string | number | boolean | Date | null;
+type SpreadsheetRow = SpreadsheetCell[];
+type SpreadsheetSheet = {
+  sheet: string;
+  data: SpreadsheetRow[];
+};
+
 const SHEETS: Record<ImportRecordType, SheetDefinition> = {
   category: {
     collectionName: 'categories',
@@ -188,9 +195,6 @@ const MASTER_CATEGORIES_SHEET = 'master_categories';
 export async function createBudgetImportTemplateWorkbook(
   existingCategories: BudgetCategory[] = [],
 ): Promise<Blob> {
-  const XLSX = await import('xlsx');
-  const workbook = XLSX.utils.book_new();
-
   const masterRows = existingCategories
     .map((category) => ({
       name: category.name,
@@ -201,21 +205,20 @@ export async function createBudgetImportTemplateWorkbook(
     .sort((left, right) =>
       `${left.type}:${left.name}`.localeCompare(`${right.type}:${right.name}`),
     );
-  const masterWorksheet = XLSX.utils.json_to_sheet(masterRows, {
-    header: ['name', 'type', 'monthlyBudget', 'color'],
-  });
-  XLSX.utils.book_append_sheet(workbook, masterWorksheet, MASTER_CATEGORIES_SHEET);
+  const sheets: SpreadsheetSheet[] = [
+    {
+      sheet: MASTER_CATEGORIES_SHEET,
+      data: rowsToSheetData(['name', 'type', 'monthlyBudget', 'color'], masterRows),
+    },
+    ...(Object.entries(SHEETS) as Array<[ImportRecordType, SheetDefinition]>).map(
+      ([recordType, definition]) => ({
+        sheet: recordType,
+        data: rowsToSheetData(definition.headers, [definition.sample]),
+      }),
+    ),
+  ];
 
-  for (const [recordType, definition] of Object.entries(SHEETS) as Array<
-    [ImportRecordType, SheetDefinition]
-  >) {
-    const worksheet = XLSX.utils.json_to_sheet([definition.sample], {
-      header: definition.headers,
-    });
-    XLSX.utils.book_append_sheet(workbook, worksheet, recordType);
-  }
-
-  return workbookBlob(XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }));
+  return writeWorkbookBlob(sheets);
 }
 
 export function createBudgetImportTemplateCsv(): string {
@@ -242,15 +245,15 @@ export async function parseBudgetImportFile(
     return parseBudgetImportCsv(await file.text(), existingCategories, members);
   }
 
-  if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
-    return errorResult(file.name, 'Only CSV, XLS, and XLSX import files are supported.');
+  if (!fileName.endsWith('.xlsx')) {
+    return errorResult(file.name, 'Only CSV and XLSX import files are supported.');
   }
 
-  const XLSX = await import('xlsx');
-  const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+  const readExcelFile = (await import('read-excel-file/universal')).default;
+  const workbook = await readExcelFile(await file.arrayBuffer());
   const rows: BudgetImportRow[] = [];
 
-  for (const sheetName of workbook.SheetNames) {
+  for (const { sheet: sheetName, data } of workbook) {
     if (sheetName.trim().toLowerCase() === MASTER_CATEGORIES_SHEET) {
       continue;
     }
@@ -268,11 +271,7 @@ export async function parseBudgetImportFile(
       continue;
     }
 
-    const worksheet = workbook.Sheets[sheetName];
-    const records = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, {
-      defval: '',
-      raw: false,
-    });
+    const records = sheetDataToRecords(data);
 
     for (const [index, values] of records.entries()) {
       const normalizedValues = Object.fromEntries(
@@ -317,8 +316,7 @@ export function parseBudgetImportCsv(
 }
 
 export async function buildProcessedImportWorkbook(rows: BudgetImportRow[]): Promise<Blob> {
-  const XLSX = await import('xlsx');
-  const workbook = XLSX.utils.book_new();
+  const sheets: SpreadsheetSheet[] = [];
 
   for (const recordType of Object.keys(SHEETS) as ImportRecordType[]) {
     const definition = SHEETS[recordType];
@@ -329,25 +327,27 @@ export async function buildProcessedImportWorkbook(rows: BudgetImportRow[]): Pro
         status: row.status === 'pending' ? 'success' : row.status,
         comments: row.comments.join('; '),
       }));
-    const worksheet = XLSX.utils.json_to_sheet(sheetRows, {
-      header: [...definition.headers, ...STATUS_HEADERS],
+    sheets.push({
+      sheet: recordType,
+      data: rowsToSheetData([...definition.headers, ...STATUS_HEADERS], sheetRows),
     });
-    XLSX.utils.book_append_sheet(workbook, worksheet, recordType);
   }
 
   const unknownRows = rows.filter((row) => !row.recordType);
   if (unknownRows.length) {
-    const worksheet = XLSX.utils.json_to_sheet(
-      unknownRows.map((row) => ({
-        ...row.values,
-        status: row.status,
-        comments: row.comments.join('; '),
-      })),
-    );
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'errors');
+    const errorRows = unknownRows.map((row) => ({
+      ...row.values,
+      status: row.status,
+      comments: row.comments.join('; '),
+    }));
+    const errorHeaders = Object.keys(errorRows[0] ?? {});
+    sheets.push({
+      sheet: 'errors',
+      data: rowsToSheetData(errorHeaders, errorRows),
+    });
   }
 
-  return workbookBlob(XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }));
+  return writeWorkbookBlob(sheets);
 }
 
 export function buildProcessedImportCsv(headers: string[], rows: BudgetImportRow[]): string {
@@ -857,6 +857,35 @@ function toCsv(headers: string[], rows: Array<Record<string, string>>): string {
   ].join('\n');
 }
 
+function rowsToSheetData(
+  headers: string[],
+  rows: Array<Record<string, string | number | undefined>>,
+): SpreadsheetRow[] {
+  return [headers, ...rows.map((row) => headers.map((header) => row[header] ?? null))];
+}
+
+function sheetDataToRecords(
+  data: ReadonlyArray<ReadonlyArray<unknown>>,
+): Array<Record<string, unknown>> {
+  const [headerRow, ...dataRows] = data;
+  const headers = (headerRow ?? [])
+    .map((header) => normalizeCellValue(header))
+    .map((header) => header.trim());
+
+  return dataRows
+    .map((row) =>
+      Object.fromEntries(
+        headers.flatMap((header, index) => (header ? [[header, row[index] ?? '']] : [])),
+      ),
+    )
+    .filter((row) => Object.values(row).some((cellValue) => normalizeCellValue(cellValue).trim()));
+}
+
+async function writeWorkbookBlob(sheets: SpreadsheetSheet[]): Promise<Blob> {
+  const writeExcelFile = (await import('write-excel-file/universal')).default;
+  return writeExcelFile(sheets).toBlob();
+}
+
 function escapeCsvField(fieldValue: string): string {
   if (!/[",\n\r]/.test(fieldValue)) {
     return fieldValue;
@@ -940,10 +969,4 @@ function normalizeDateValue(valueToNormalize: string): string | undefined {
 
 function dateMonth(date?: string): string | undefined {
   return date?.slice(0, 7);
-}
-
-function workbookBlob(content: ArrayBuffer): Blob {
-  return new Blob([content], {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  });
 }

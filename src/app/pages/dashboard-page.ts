@@ -10,10 +10,6 @@ import { BudgetStore } from '../budget.store';
 import { MonthMemberControls } from '../shared/month-member-controls';
 import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 
-type TourCapableStore = BudgetStore & {
-  openOnboarding: () => void;
-};
-
 @Component({
   selector: 'app-dashboard-page',
   imports: [
@@ -31,50 +27,6 @@ type TourCapableStore = BudgetStore & {
       <app-page-skeleton variant="dashboard" />
     } @else {
       <section class="page mobile-dashboard-page">
-        <header class="mobile-home-header">
-          <div class="mobile-brand-row">
-            <span class="mobile-page-mark" aria-hidden="true">
-              <mat-icon>account_balance_wallet</mat-icon>
-            </span>
-            <strong>Budget Battowski</strong>
-            <h1 class="sr-only">Dashboard</h1>
-          </div>
-          <button
-            class="mobile-utility-trigger"
-            type="button"
-            aria-label="Open utility menu"
-            [matMenuTriggerFor]="mobileUtilityMenu"
-          >
-            @if (store.userPhoto(); as photo) {
-              <img [src]="photo" alt="" referrerpolicy="no-referrer" />
-            } @else {
-              {{ store.memberInitial(store.userEmail() || undefined) }}
-            }
-          </button>
-
-          <mat-menu #mobileUtilityMenu="matMenu" class="mobile-utility-menu">
-            @for (item of utilityMobileNavItems; track item.path) {
-              <a mat-menu-item [routerLink]="item.path">
-                <mat-icon aria-hidden="true">{{ item.icon }}</mat-icon>
-                <span>{{ item.label }}</span>
-              </a>
-            }
-            <button mat-menu-item type="button" (click)="store.openOnboarding()">
-              <mat-icon aria-hidden="true">tips_and_updates</mat-icon>
-              <span>Guided tour</span>
-            </button>
-            <button
-              mat-menu-item
-              type="button"
-              (click)="store.logout()"
-              [disabled]="store.firebase.mode !== 'firebase' || store.isSyncing()"
-            >
-              <mat-icon aria-hidden="true">logout</mat-icon>
-              <span>Log out</span>
-            </button>
-          </mat-menu>
-        </header>
-
         <button
           class="mobile-workspace-card"
           type="button"
@@ -87,7 +39,7 @@ type TourCapableStore = BudgetStore & {
         </button>
 
         <mat-menu #mobileWorkspaceMenu="matMenu" class="workspace-menu">
-          @for (workspace of store.workspaces(); track workspace.id) {
+          @for (workspace of store.activeWorkspaces(); track workspace.id) {
             <button mat-menu-item type="button" (click)="store.selectWorkspace(workspace.id)">
               <mat-icon aria-hidden="true">home_work</mat-icon>
               <span>{{ workspace.name }}</span>
@@ -115,33 +67,33 @@ type TourCapableStore = BudgetStore & {
           </div>
         </header>
 
-        <div class="mobile-dashboard-filters">
+        <div class="mobile-page-controls mobile-filter-strip mobile-dashboard-filters">
           <app-month-member-controls />
         </div>
 
         <section class="stat-grid five" tabindex="0" aria-label="Monthly financial summary">
-          <article class="stat-card">
+          <article class="stat-card income-stat">
             <span class="icon-chip blue"><mat-icon aria-hidden="true">download</mat-icon></span>
             <p>Total Income</p>
             <strong>{{
               store.monthlyIncome() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
             }}</strong>
           </article>
-          <article class="stat-card">
+          <article class="stat-card expense-stat">
             <span class="icon-chip red"><mat-icon aria-hidden="true">upload</mat-icon></span>
             <p>Total Expenses</p>
             <strong>{{
               store.outflowTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
             }}</strong>
           </article>
-          <article class="stat-card">
+          <article class="stat-card investment-stat">
             <span class="icon-chip teal"><mat-icon aria-hidden="true">trending_up</mat-icon></span>
             <p>Investments</p>
             <strong>{{
               store.investmentTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
             }}</strong>
           </article>
-          <article class="stat-card">
+          <article class="stat-card loan-stat">
             <span class="icon-chip orange"
               ><mat-icon aria-hidden="true">account_balance</mat-icon></span
             >
@@ -150,14 +102,45 @@ type TourCapableStore = BudgetStore & {
               store.debtEmiTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
             }}</strong>
           </article>
-          <article class="stat-card success">
+          <article class="stat-card success hero-runway">
             <span class="icon-chip green"><mat-icon aria-hidden="true">savings</mat-icon></span>
-            <p>Remaining</p>
+            <p>Remaining Runway</p>
             <strong>{{
               store.remainingFunds() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
             }}</strong>
           </article>
         </section>
+
+        <article class="panel-card mobile-budget-limits-panel">
+          <header class="panel-heading">
+            <div>
+              <h2>Budget Limits</h2>
+              <p>{{ store.monthLabel() }} category usage</p>
+            </div>
+            <a routerLink="/categories">Manage</a>
+          </header>
+          <div class="progress-list">
+            @for (category of store.categoryCards().slice(0, 4); track category.id) {
+              <article class="progress-row">
+                <div>
+                  <strong>{{ category.name }}</strong>
+                  <b>{{ category.used | percent: '1.0-0' }}</b>
+                </div>
+                <mat-progress-bar
+                  mode="determinate"
+                  [value]="category.percent"
+                  [attr.aria-label]="category.name + ' budget used'"
+                ></mat-progress-bar>
+                <small>
+                  {{ category.spent | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }} of
+                  {{ category.monthlyBudget | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}
+                </small>
+              </article>
+            } @empty {
+              <div class="empty-state">No category limits yet</div>
+            }
+          </div>
+        </article>
 
         <section class="dashboard-layout">
           <div class="panel-stack">
@@ -170,8 +153,7 @@ type TourCapableStore = BudgetStore & {
               </header>
               <div class="soft-list">
                 @for (expense of store.recurringEntries().slice(0, 4); track expense.id) {
-                  <article class="list-row">
-                    <span class="avatar mini">{{ store.memberInitial(expense.memberEmail) }}</span>
+                  <article class="list-row no-leading-icon">
                     <div>
                       <strong>{{ expense.name }}</strong>
                       <small>{{ store.categoryName(expense.categoryId) }}</small>
@@ -193,8 +175,7 @@ type TourCapableStore = BudgetStore & {
               </header>
               <div class="soft-list">
                 @for (expense of store.oneTimeEntries().slice(0, 4); track expense.id) {
-                  <article class="list-row">
-                    <span class="avatar mini">{{ store.memberInitial(expense.memberEmail) }}</span>
+                  <article class="list-row no-leading-icon">
                     <div>
                       <strong>{{ expense.name }}</strong>
                       <small
@@ -227,10 +208,7 @@ type TourCapableStore = BudgetStore & {
                     >
                     <div>
                       <strong>{{ investment.name }}</strong>
-                      <small
-                        >{{ store.investmentFrequencyLabel(investment) }} &middot;
-                        {{ investment.memberName }}</small
-                      >
+                      <small>{{ store.investmentFrequencyLabel(investment) }}</small>
                     </div>
                     <b class="teal-text">{{
                       investment.monthlyAmount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
@@ -282,12 +260,5 @@ type TourCapableStore = BudgetStore & {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class DashboardPage {
-  readonly store = inject(BudgetStore) as TourCapableStore;
-  readonly utilityMobileNavItems = [
-    { label: 'Categories', icon: 'sell', path: '/categories' },
-    { label: 'Payment Modes', icon: 'payments', path: '/payment-modes' },
-    { label: 'Import/Export', icon: 'upload_file', path: '/import-export' },
-    { label: 'Workspace', icon: 'group', path: '/workspace' },
-    { label: 'Settings', icon: 'settings', path: '/settings' },
-  ];
+  readonly store = inject(BudgetStore);
 }
