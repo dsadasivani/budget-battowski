@@ -7,7 +7,7 @@ The `CD` GitHub Actions workflow deploys Firestore rules and Firebase Hosting wi
 - Feature branches are cut from `develop` and merged back through a pull request.
 - Pull requests targeting `develop` must pass the `quality` and `dependency-security` CI checks.
 - A merge to `develop` automatically deploys Firestore rules and Hosting to QA.
-- A pull request promotes the already-validated `develop` revision to `master` without repeating CI; the `promotion-policy` check only verifies the source branch.
+- A pull request promotes the already-validated `develop` revision to `master` without repeating CI; the `branch-policy` check only verifies the source branch.
 - A merge to `master` automatically deploys Firestore rules and Hosting to production.
 - QA and production can be redeployed manually only from `develop` and `master`, respectively.
 - QA and production use separate Google Cloud service accounts and identity providers.
