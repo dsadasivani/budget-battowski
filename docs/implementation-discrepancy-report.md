@@ -81,7 +81,7 @@ The following follow-up work is meaningful but is not a release-blocking correct
 - Bulk Editor and payment configuration remain oversized UI surfaces and have not yet been meaningfully decomposed into domain-focused presentational components.
 - The root application shell has removed business-surface reflection and reduced eager dialog imports, but navigation, login/onboarding, and account-shell markup remain candidates for focused component extraction.
 - The two component-style budget warnings remain until Bulk Editor and App shell component extraction moves their scoped styles with the new components.
-- The legacy invite directory migration has been applied and verified in QA. It remains an explicit production rollout step and must be dry-run against the production project before production rules are deployed.
+- The legacy invite directory migration has been applied in QA and production. The production dry run resolved all legacy profiles before the idempotent directory upsert was applied, with no unresolved emails.
 - The credentialed QA fixture was reseeded before the passing regression and is intentionally left in its post-regression state for debugging, as documented by the QA runner.
 
 These items mean the full P2 maintainability definition is not yet complete. They should be addressed incrementally after the correctness and identity changes have had production soak time.
