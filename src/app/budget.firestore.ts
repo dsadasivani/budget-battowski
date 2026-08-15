@@ -106,21 +106,20 @@ export class BudgetFirestoreRepository {
 
   static async listAccessibleWorkspaces(
     app: FirebaseApp,
-    identity: { uid: string; email: string },
+    identity: { uid: string },
   ): Promise<Workspace[]> {
     const { collection, getDocs, getFirestore, query, where } = await import('firebase/firestore');
     const db = getFirestore(app);
     const workspacesRef = collection(db, WORKSPACE_COLLECTION);
-    const [uidSnapshot, emailSnapshot] = await Promise.all([
-      getDocs(query(workspacesRef, where('memberUids', 'array-contains', identity.uid))),
-      getDocs(query(workspacesRef, where('memberEmails', 'array-contains', identity.email))),
-    ]);
+    // UID-authoritative rules cannot safely authorize a collection query filtered only by email:
+    // that query could also return migrated workspaces whose memberUids do not contain this user.
+    // Legacy self-workspaces are loaded and migrated by ensureLegacyWorkspace; shared workspaces
+    // must have memberUids populated by the administrative migration before they are discoverable.
+    const uidSnapshot = await getDocs(
+      query(workspacesRef, where('memberUids', 'array-contains', identity.uid)),
+    );
 
-    return [
-      ...new Map(
-        [...uidSnapshot.docs, ...emailSnapshot.docs].map((item) => [item.id, item]),
-      ).values(),
-    ]
+    return uidSnapshot.docs
       .map((docSnapshot) => {
         const data = docSnapshot.data() as Omit<Workspace, 'id'> & {
           memberEmails?: string[];

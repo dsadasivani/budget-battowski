@@ -7,9 +7,12 @@ service cloud.firestore {
     function workspacePath(id) { return /databases/$(database)/documents/budgetWorkspaces/$(id); }
     function workspace(id) { return get(workspacePath(id)).data; }
     function legacyOwner(id) { return hasEmail() && request.auth.token.email == id; }
+    function uidMemberData(data) {
+      return signedIn() && 'memberUids' in data && request.auth.uid in data.memberUids;
+    }
     function memberData(data) {
       return signedIn() && (
-        ('memberUids' in data && data.memberUids.size() > 0 && request.auth.uid in data.memberUids) ||
+        uidMemberData(data) ||
         ((!('memberUids' in data) || data.memberUids.size() == 0) && hasEmail() &&
           'memberEmails' in data && request.auth.token.email in data.memberEmails)
       );
@@ -141,7 +144,8 @@ service cloud.firestore {
           (!('ownerUid' in request.resource.data) && hasEmail() &&
             request.resource.data.ownerEmail == request.auth.token.email &&
             request.auth.token.email in request.resource.data.memberEmails));
-      allow read: if legacyOwner(workspaceId) || memberData(resource.data);
+      allow get: if legacyOwner(workspaceId) || memberData(resource.data);
+      allow list: if uidMemberData(resource.data);
       allow update: if owner(workspaceId) && workspaceSchema(request.resource.data) && request.resource.data.ownerEmail == resource.data.ownerEmail &&
         ((!('ownerUid' in resource.data) &&
             (!('ownerUid' in request.resource.data) || request.resource.data.ownerUid == request.auth.uid)) ||

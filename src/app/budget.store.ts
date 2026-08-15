@@ -4038,7 +4038,7 @@ export class BudgetStore implements OnDestroy {
       );
       const accessibleWorkspaces = await BudgetFirestoreRepository.listAccessibleWorkspaces(
         this.firebase.app,
-        { uid: user.uid, email },
+        { uid: user.uid },
       );
       const workspaceMap = new Map(
         [legacyWorkspace, ...accessibleWorkspaces].map((workspace) => [workspace.id, workspace]),

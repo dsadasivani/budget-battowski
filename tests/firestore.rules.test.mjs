@@ -6,7 +6,17 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { deleteDoc, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  setDoc,
+  updateDoc,
+  where,
+} from 'firebase/firestore';
 
 import { buildQaSeedData, QA_ACCOUNTS, QA_COLLECTIONS } from '../scripts/qa-data.mjs';
 
@@ -351,6 +361,31 @@ test('migrated workspace membership denies a matching email with the wrong UID',
     .authenticatedContext('wrong-member-uid', { email: memberEmail })
     .firestore();
   await assertFails(getDoc(doc(wrongUidDb, 'budgetWorkspaces', uidWorkspace)));
+});
+
+test('workspace discovery must query authoritative UID membership instead of email', async () => {
+  const uidWorkspace = 'uid-workspace-discovery';
+  await testEnvironment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'budgetWorkspaces', uidWorkspace), {
+      name: 'UID workspace',
+      ownerUid: `uid-${ownerEmail}`,
+      ownerEmail,
+      memberUids: [`uid-${ownerEmail}`, `uid-${memberEmail}`],
+      memberEmails: [ownerEmail, memberEmail],
+      members: [
+        { uid: `uid-${ownerEmail}`, email: ownerEmail, role: 'owner' },
+        { uid: `uid-${memberEmail}`, email: memberEmail, role: 'editor' },
+      ],
+    });
+  });
+
+  const memberDb = authenticatedDatabase(memberEmail);
+  const workspaces = collection(memberDb, 'budgetWorkspaces');
+  const uidQuery = query(workspaces, where('memberUids', 'array-contains', `uid-${memberEmail}`));
+  const legacyEmailQuery = query(workspaces, where('memberEmails', 'array-contains', memberEmail));
+
+  await assertSucceeds(getDocs(uidQuery));
+  await assertFails(getDocs(legacyEmailQuery));
 });
 
 test('migrated ownership denies owner privileges to a matching email with the wrong UID', async () => {
