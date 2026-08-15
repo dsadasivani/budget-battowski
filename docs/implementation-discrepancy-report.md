@@ -13,6 +13,7 @@ The release-blocking correctness and security findings are resolved:
 - Monthly Review distinguishes inherited source values from reviewer overrides. Approval re-resolves the effective expense or investment source, uses its latest amount when the row was not edited, preserves an explicit occurrence override, and raises a typed conflict when the source is no longer applicable.
 - `FirestoreWriteCoordinator` limits rule-heavy transactions to five mutations, processes independent groups with at most five concurrent transactions, limits non-transactional batches to 100 writes, reports group and operation context, and supports idempotent retries.
 - Firestore authorization treats Firebase UID as authoritative after migration. Matching email cannot bypass a mismatching UID for workspace membership, workspace administration, record ownership, or related-record ownership checks.
+- Workspace discovery queries the authoritative `memberUids` field. Legacy email membership remains available for direct document access during migration, but is not used for collection discovery because Firestore cannot prove that fallback safely for a list query.
 - Legacy owned records can adopt the authenticated user's UID exactly once when their legacy email matches the authenticated email. The UID is immutable afterward.
 - Frontend workspace, member, and related-record identity checks use the same UID-first compatibility policy as the rules.
 - Public invite lookup uses UID and normalized-email directory records containing only public identity fields. Private legacy profiles remain private.
@@ -55,8 +56,8 @@ The completed implementation was validated with:
 
 - Angular production build: **passed**
 - Angular/Vitest application and domain tests: **170/170 passed**
-- Firestore emulator rules, concurrency, and production-coordinator tests: **36/36 passed**
-- Credentialed Firebase QA regression: **52/52 passed**, including desktop/mobile AXE route checks
+- Firestore emulator rules, concurrency, and production-coordinator tests: **37/37 passed**
+- Credentialed regression against the deployed QA rules and Hosting release: **52/52 passed**, including authenticated workspace discovery and desktop/mobile AXE route checks
 - Production dependency audit: **0 vulnerabilities**
 - Targeted Prettier validation: **passed**
 - `git diff --check`: **passed**
@@ -68,7 +69,7 @@ Known non-blocking production-build warnings:
 - `src/app/bulk-editor-dialog.scss` exceeds the 30 kB component-style warning budget by approximately 0.28 kB.
 - `src/app/app.scss` exceeds the 30 kB component-style warning budget by approximately 2.44 kB.
 
-The optimized initial bundle is approximately 948.87 kB raw / 211.41 kB transferred. Heavy editors remain in lazy chunks.
+The optimized initial bundle is approximately 948.73 kB raw / 211.41 kB transferred. Heavy editors remain in lazy chunks.
 
 ## 6. Remaining architectural debt
 
@@ -80,7 +81,7 @@ The following follow-up work is meaningful but is not a release-blocking correct
 - Bulk Editor and payment configuration remain oversized UI surfaces and have not yet been meaningfully decomposed into domain-focused presentational components.
 - The root application shell has removed business-surface reflection and reduced eager dialog imports, but navigation, login/onboarding, and account-shell markup remain candidates for focused component extraction.
 - The two component-style budget warnings remain until Bulk Editor and App shell component extraction moves their scoped styles with the new components.
-- The legacy invite directory migration is operational work and has not been applied to a remote Firebase project by this repository-only change.
+- The legacy invite directory migration has been applied and verified in QA. It remains an explicit production rollout step and must be dry-run against the production project before production rules are deployed.
 - The credentialed QA fixture was reseeded before the passing regression and is intentionally left in its post-regression state for debugging, as documented by the QA runner.
 
 These items mean the full P2 maintainability definition is not yet complete. They should be addressed incrementally after the correctness and identity changes have had production soak time.
