@@ -24,6 +24,7 @@ import { appEnvironment } from '../environments/environment';
 import { BudgetStore } from './budget.store';
 import { BudgetFacade } from './core/budget.facade';
 import type { OnboardingProgress, OnboardingStepStatus } from './budget.models';
+import { OnboardingStore } from './stores/onboarding.store';
 
 type NavItem = {
   label: string;
@@ -90,7 +91,9 @@ export class App {
   private navFocusRestoreTimer: ReturnType<typeof setTimeout> | null = null;
   private navTriggerElement: HTMLElement | null = null;
   private onboardingHydratedIdentity: string | null = null;
+  private handledTourLaunchRequest = 0;
   readonly budget = inject(BudgetFacade);
+  private readonly tourState = inject(OnboardingStore);
 
   readonly activeRoutePath = signal('/dashboard');
   readonly navOpen = signal(false);
@@ -349,6 +352,15 @@ export class App {
       });
     this.startLoginCarousel();
     effect(() => this.hydrateOnboardingWhenReady());
+    effect(() => {
+      const request = this.tourState.tourLaunchRequest();
+      if (request === this.handledTourLaunchRequest) {
+        return;
+      }
+
+      this.handledTourLaunchRequest = request;
+      this.openOnboarding();
+    });
   }
 
   ngOnDestroy(): void {
@@ -359,7 +371,6 @@ export class App {
     if (this.navFocusRestoreTimer) {
       clearTimeout(this.navFocusRestoreTimer);
     }
-
   }
 
   private exposeFacadeCompatibilityApi(): void {

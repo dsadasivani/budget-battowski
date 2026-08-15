@@ -2046,32 +2046,6 @@
   }
 }
 
-.guided-tour-button {
-  display: grid;
-  width: 100%;
-  min-height: 46px;
-  grid-template-columns: 24px minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  padding: 0 14px;
-  border: 1px solid rgba(147, 197, 253, 0.28);
-  border-radius: 8px;
-  background: rgba(47, 128, 237, 0.14);
-  color: #fff;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.94rem;
-  font-weight: 700;
-  text-align: left;
-
-  &:hover,
-  &:focus-visible {
-    background: rgba(47, 128, 237, 0.24);
-    outline: 3px solid rgba(147, 197, 253, 0.28);
-    outline-offset: 2px;
-  }
-}
-
 .onboarding-backdrop {
   position: fixed;
   inset: 0;

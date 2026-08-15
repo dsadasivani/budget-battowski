@@ -533,13 +533,14 @@ describe('App', () => {
 
     app.firebase.mode = 'local';
     app.isSessionChecking.set(false);
-    await router.navigateByUrl('/dashboard');
+    await router.navigateByUrl('/settings');
     fixture.detectChanges();
     await fixture.whenStable();
 
     const trigger = (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>(
       '.guided-tour-button',
     );
+    expect(trigger?.textContent).toContain('Start guided tour');
     trigger?.focus();
     trigger?.click();
     fixture.detectChanges();
@@ -623,7 +624,7 @@ describe('App', () => {
 
     const menuText = document.body.textContent ?? '';
     expect(menuText).toContain('Payment Modes');
-    expect(menuText).toContain('Guided tour');
+    expect(menuText).not.toContain('Guided tour');
     expect(menuText).toContain('Log out');
   });
 
