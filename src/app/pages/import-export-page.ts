@@ -17,7 +17,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
         <header class="page-header desktop-page-header">
           <div>
             <h1>Import &amp; Export</h1>
-            <p>Move budget data through the validated Excel workflow.</p>
+            <p>Import validated workbooks or export a complete workspace snapshot.</p>
           </div>
         </header>
 
@@ -33,6 +33,25 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
             <button mat-flat-button type="button" (click)="store.downloadImportTemplate()">
               <mat-icon aria-hidden="true">download</mat-icon>
               Download template
+            </button>
+          </article>
+
+          <article class="panel-card action-card import-export-card">
+            <div class="import-export-card-heading">
+              <span class="icon-chip green"><mat-icon aria-hidden="true">archive</mat-icon></span>
+              <div>
+                <h2>Export Workspace</h2>
+                <p>Download all workspace records, configuration, ownership, and audit history.</p>
+              </div>
+            </div>
+            <button
+              mat-flat-button
+              type="button"
+              (click)="store.downloadWorkspaceExport()"
+              [disabled]="!store.activeWorkspace()"
+            >
+              <mat-icon aria-hidden="true">file_download</mat-icon>
+              Export complete data
             </button>
           </article>
 

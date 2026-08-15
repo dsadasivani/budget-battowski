@@ -7,16 +7,12 @@ import type {
   IncomeSource,
   InvestmentEntry,
   Loan,
+  PaymentMode,
   WorkspaceMember,
 } from './budget.models';
 
 export type ImportRecordType =
-  | 'category'
-  | 'income'
-  | 'expense'
-  | 'recurring_expense'
-  | 'investment'
-  | 'loan';
+  'category' | 'income' | 'expense' | 'recurring_expense' | 'investment' | 'loan';
 
 export type ImportStatus = 'pending' | 'success' | 'error';
 
@@ -90,7 +86,16 @@ const SHEETS: Record<ImportRecordType, SheetDefinition> = {
   },
   expense: {
     collectionName: 'expenses',
-    headers: ['name', 'categoryName', 'amount', 'month', 'date', 'note', 'memberEmail'],
+    headers: [
+      'name',
+      'categoryName',
+      'amount',
+      'month',
+      'date',
+      'paymentModeName',
+      'note',
+      'memberEmail',
+    ],
     sample: {
       name: 'Supermarket',
       categoryName: 'Groceries',
@@ -103,7 +108,16 @@ const SHEETS: Record<ImportRecordType, SheetDefinition> = {
   },
   recurring_expense: {
     collectionName: 'templates',
-    headers: ['name', 'categoryName', 'amount', 'frequency', 'startDate', 'endDate', 'memberEmail'],
+    headers: [
+      'name',
+      'categoryName',
+      'amount',
+      'frequency',
+      'startDate',
+      'endDate',
+      'paymentModeName',
+      'memberEmail',
+    ],
     sample: {
       name: 'Rent',
       categoryName: 'Housing',
@@ -125,6 +139,7 @@ const SHEETS: Record<ImportRecordType, SheetDefinition> = {
       'startDate',
       'endDate',
       'notes',
+      'paymentModeName',
       'memberEmail',
     ],
     sample: {
@@ -150,6 +165,7 @@ const SHEETS: Record<ImportRecordType, SheetDefinition> = {
       'startDate',
       'endDate',
       'notes',
+      'paymentModeName',
       'memberEmail',
     ],
     sample: {
@@ -168,16 +184,7 @@ const SHEETS: Record<ImportRecordType, SheetDefinition> = {
 };
 
 const RECORD_TYPES = new Set<ImportRecordType>(Object.keys(SHEETS) as ImportRecordType[]);
-const CADENCES = new Set([
-  'daily',
-  'weekly',
-  'bi-weekly',
-  'monthly',
-  'quarterly',
-  'half-yearly',
-  'annual',
-  'one-time',
-]);
+const CADENCES = new Set(['monthly', 'one-time']);
 const CATEGORY_TYPES = new Set<CategoryType>(['Income', 'Investments', 'Expenses']);
 const INVESTMENT_FREQUENCIES = new Set([
   'weekly',
@@ -239,10 +246,11 @@ export async function parseBudgetImportFile(
   file: File,
   existingCategories: BudgetCategory[],
   members: WorkspaceMember[] = [],
+  paymentModes: PaymentMode[] = [],
 ): Promise<BudgetImportParseResult> {
   const fileName = file.name.toLowerCase();
   if (fileName.endsWith('.csv')) {
-    return parseBudgetImportCsv(await file.text(), existingCategories, members);
+    return parseBudgetImportCsv(await file.text(), existingCategories, members, paymentModes);
   }
 
   if (!fileName.endsWith('.xlsx')) {
@@ -287,13 +295,14 @@ export async function parseBudgetImportFile(
     }
   }
 
-  return validateRows(rows, existingCategories, members);
+  return validateRows(rows, existingCategories, members, paymentModes);
 }
 
 export function parseBudgetImportCsv(
   text: string,
   existingCategories: BudgetCategory[],
   members: WorkspaceMember[] = [],
+  paymentModes: PaymentMode[] = [],
 ): BudgetImportParseResult {
   const parsed = parseCsv(text);
   if (!parsed.headers.length) {
@@ -312,7 +321,7 @@ export function parseBudgetImportCsv(
     };
   });
 
-  return validateRows(rows, existingCategories, members);
+  return validateRows(rows, existingCategories, members, paymentModes);
 }
 
 export async function buildProcessedImportWorkbook(rows: BudgetImportRow[]): Promise<Blob> {
@@ -380,6 +389,7 @@ function validateRows(
   rows: BudgetImportRow[],
   existingCategories: BudgetCategory[],
   members: WorkspaceMember[],
+  paymentModes: PaymentMode[],
 ): BudgetImportParseResult {
   const categoryNameToId = new Map(
     existingCategories.map(
@@ -388,6 +398,11 @@ function validateRows(
   );
   const memberEmails = new Set(
     members.filter((member) => !member.archivedDate).map((member) => member.email),
+  );
+  const paymentModeNameToMode = new Map(
+    paymentModes
+      .filter((paymentMode) => !paymentMode.archivedDate)
+      .map((paymentMode) => [normalizeKey(paymentMode.name), paymentMode] as const),
   );
 
   for (const row of rows) {
@@ -419,16 +434,16 @@ function validateRows(
         validateIncome(row, categoryNameToId, memberEmails);
         break;
       case 'expense':
-        validateExpense(row, categoryNameToId, memberEmails);
+        validateExpense(row, categoryNameToId, memberEmails, paymentModeNameToMode);
         break;
       case 'recurring_expense':
-        validateTemplate(row, categoryNameToId, memberEmails);
+        validateTemplate(row, categoryNameToId, memberEmails, paymentModeNameToMode);
         break;
       case 'investment':
-        validateInvestment(row, categoryNameToId, memberEmails);
+        validateInvestment(row, categoryNameToId, memberEmails, paymentModeNameToMode);
         break;
       case 'loan':
-        validateLoan(row, memberEmails);
+        validateLoan(row, memberEmails, paymentModeNameToMode);
         break;
       default:
         break;
@@ -447,7 +462,7 @@ function validateRows(
 function validateCategory(row: BudgetImportRow, categoryNameToId: Map<string, string>): void {
   const name = required(row, 'name');
   const type = categoryTypeField(row);
-  const monthlyBudget = numberField(row, 'monthlyBudget');
+  const monthlyBudget = type === 'Expenses' ? numberField(row, 'monthlyBudget') : 0;
   const color = optional(row, 'color') || '#1f7a8c';
 
   if (row.comments.length) {
@@ -502,6 +517,7 @@ function validateExpense(
   row: BudgetImportRow,
   categoryNameToId: Map<string, string>,
   memberEmails: Set<string>,
+  paymentModes: Map<string, PaymentMode>,
 ): void {
   const name = required(row, 'name');
   const amount = numberField(row, 'amount');
@@ -509,6 +525,7 @@ function validateExpense(
   const date = optionalDate(row, 'date');
   const categoryId = categoryIdField(row, categoryNameToId, 'Expenses');
   const memberEmail = optionalMemberEmailField(row, memberEmails);
+  const paymentModeId = paymentModeIdField(row, paymentModes, false);
 
   if (!month && !date) {
     row.comments.push('Either month or date is required.');
@@ -529,6 +546,7 @@ function validateExpense(
     type: 'one-time',
     note: optional(row, 'note') || optional(row, 'notes'),
     memberEmail,
+    paymentModeId,
   } satisfies ExpenseEntry;
 }
 
@@ -536,6 +554,7 @@ function validateTemplate(
   row: BudgetImportRow,
   categoryNameToId: Map<string, string>,
   memberEmails: Set<string>,
+  paymentModes: Map<string, PaymentMode>,
 ): void {
   const name = required(row, 'name');
   const amount = numberField(row, 'amount');
@@ -546,6 +565,7 @@ function validateTemplate(
   const endDate = optionalDate(row, 'endDate');
   const categoryId = categoryIdField(row, categoryNameToId, 'Expenses');
   const memberEmail = optionalMemberEmailField(row, memberEmails);
+  const paymentModeId = paymentModeIdField(row, paymentModes, false);
 
   if (!startDate) {
     row.comments.push('startDate is required for recurring_expense rows.');
@@ -567,6 +587,7 @@ function validateTemplate(
     startDate,
     endDate,
     memberEmail,
+    paymentModeId,
   } satisfies ExpenseTemplate;
 }
 
@@ -574,6 +595,7 @@ function validateInvestment(
   row: BudgetImportRow,
   categoryNameToId: Map<string, string>,
   memberEmails: Set<string>,
+  paymentModes: Map<string, PaymentMode>,
 ): void {
   const name = required(row, 'name');
   const amount = numberField(row, 'amount');
@@ -583,6 +605,7 @@ function validateInvestment(
   const endDate = optionalDate(row, 'endDate');
   const categoryId = optionalCategoryIdField(row, categoryNameToId, 'Investments');
   const memberEmail = optionalMemberEmailField(row, memberEmails);
+  const paymentModeId = paymentModeIdField(row, paymentModes, true);
 
   if (!date && !startDate) {
     row.comments.push('Either date or startDate is required for investment rows.');
@@ -605,10 +628,15 @@ function validateInvestment(
     notes: optional(row, 'notes'),
     createdDate: todayDate(),
     memberEmail,
+    paymentModeId,
   } satisfies InvestmentEntry;
 }
 
-function validateLoan(row: BudgetImportRow, memberEmails: Set<string>): void {
+function validateLoan(
+  row: BudgetImportRow,
+  memberEmails: Set<string>,
+  paymentModes: Map<string, PaymentMode>,
+): void {
   const lender = required(row, 'lender');
   const loanType = required(row, 'loanType');
   const principal = numberField(row, 'principal');
@@ -618,6 +646,7 @@ function validateLoan(row: BudgetImportRow, memberEmails: Set<string>): void {
   const startDate = optionalDate(row, 'startDate');
   const endDate = optionalDate(row, 'endDate');
   const memberEmail = optionalMemberEmailField(row, memberEmails);
+  const paymentModeId = paymentModeIdField(row, paymentModes, true);
 
   if (!startDate) {
     row.comments.push('startDate is required.');
@@ -644,6 +673,7 @@ function validateLoan(row: BudgetImportRow, memberEmails: Set<string>): void {
     endDate: endDate!,
     notes: optional(row, 'notes'),
     memberEmail,
+    paymentModeId,
   } satisfies Loan;
 }
 
@@ -759,19 +789,48 @@ function optionalCategoryIdField(
 
 function optionalMemberEmailField(
   row: BudgetImportRow,
-  memberEmails: Set<string>,
+  _memberEmails: Set<string>,
 ): string | undefined {
   const memberEmail = optional(row, 'memberEmail').trim().toLowerCase();
   if (!memberEmail) {
     return undefined;
   }
 
-  if (memberEmails.size && !memberEmails.has(memberEmail)) {
-    row.comments.push(`memberEmail "${memberEmail}" is not an active workspace member.`);
+  row.comments.push(
+    'memberEmail must be blank; imported records belong to the authenticated importer.',
+  );
+  return undefined;
+}
+
+function paymentModeIdField(
+  row: BudgetImportRow,
+  paymentModes: Map<string, PaymentMode>,
+  requiredWithAccount: boolean,
+): string | undefined {
+  const paymentModeName = optional(row, 'paymentModeName');
+  if (!paymentModeName) {
+    if (requiredWithAccount) {
+      row.comments.push(
+        'paymentModeName is required and must identify a mode linked to an account.',
+      );
+    }
     return undefined;
   }
 
-  return memberEmail;
+  const paymentMode = paymentModes.get(normalizeKey(paymentModeName));
+  if (!paymentMode) {
+    row.comments.push(
+      `paymentModeName "${paymentModeName}" was not found in active payment modes.`,
+    );
+    return undefined;
+  }
+
+  if (requiredWithAccount && !paymentMode.paymentAccountId) {
+    row.comments.push(`paymentModeName "${paymentModeName}" is not linked to a payment account.`);
+    return undefined;
+  }
+
+  return paymentMode.id;
 }
 
 function value(row: BudgetImportRow, field: string): string {

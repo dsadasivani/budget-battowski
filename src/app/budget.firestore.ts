@@ -6,8 +6,9 @@ import type {
   BudgetCollectionName,
   BudgetDataMap,
   BudgetRecord,
+  CategoryRemapOperation,
+  CategoryRemapStep,
   ExpenseEntry,
-  ExpenseTemplate,
   InvestmentEntry,
   UserProfile,
   Workspace,
@@ -15,6 +16,14 @@ import type {
 
 const WORKSPACE_COLLECTION = 'budgetWorkspaces';
 const PROFILE_COLLECTION = 'budgetUserProfiles';
+const CATEGORY_REMAP_COLLECTION = 'categoryRemapOperations';
+const CATEGORY_REMAP_STEPS: CategoryRemapStep[] = [
+  'categories',
+  'expenses',
+  'templates',
+  'incomes',
+  'investments',
+];
 
 type FirestoreRecord<T extends BudgetRecord> = Omit<T, 'id'> & {
   createdAt?: unknown;
@@ -107,7 +116,7 @@ export class BudgetFirestoreRepository {
     const { collection, deleteDoc, doc, getDocs, getFirestore, writeBatch } =
       await import('firebase/firestore');
     const db = getFirestore(app);
-    const collectionNames: BudgetCollectionName[] = [
+    const collectionNames: Array<BudgetCollectionName | typeof CATEGORY_REMAP_COLLECTION> = [
       'paymentAccounts',
       'paymentModes',
       'categories',
@@ -116,6 +125,7 @@ export class BudgetFirestoreRepository {
       'expenses',
       'investments',
       'loans',
+      CATEGORY_REMAP_COLLECTION,
     ];
 
     for (const collectionName of collectionNames) {
@@ -325,35 +335,120 @@ export class BudgetFirestoreRepository {
     await deleteDoc(doc(db, WORKSPACE_COLLECTION, this.workspaceId, collectionName, recordId));
   }
 
-  async deleteCategory(
-    categoryId: string,
-    affectedTemplates: ExpenseTemplate[],
-    affectedExpenses: ExpenseEntry[],
-  ): Promise<void> {
-    const { deleteField, doc, serverTimestamp, writeBatch } = await import('firebase/firestore');
+  async saveCategoryRemapOperation(operation: CategoryRemapOperation): Promise<void> {
+    const { doc, serverTimestamp, setDoc } = await import('firebase/firestore');
     const db = await this.database();
-    const batch = writeBatch(db);
-    const timestamp = serverTimestamp();
+    const { id, ...data } = operation;
+    await setDoc(
+      doc(db, WORKSPACE_COLLECTION, this.workspaceId, CATEGORY_REMAP_COLLECTION, id),
+      { ...stripUndefined(data), updatedAt: serverTimestamp() },
+      { merge: true },
+    );
+  }
 
-    batch.delete(doc(db, WORKSPACE_COLLECTION, this.workspaceId, 'categories', categoryId));
+  async pendingCategoryRemapOperations(): Promise<CategoryRemapOperation[]> {
+    const { collection, getDocs, query, where } = await import('firebase/firestore');
+    const db = await this.database();
+    const snapshot = await getDocs(
+      query(
+        collection(db, WORKSPACE_COLLECTION, this.workspaceId, CATEGORY_REMAP_COLLECTION),
+        where('status', 'in', ['pending', 'running', 'failed']),
+      ),
+    );
+    return snapshot.docs.map((snapshotDocument) => ({
+      id: snapshotDocument.id,
+      ...snapshotDocument.data(),
+    })) as CategoryRemapOperation[];
+  }
 
-    for (const template of affectedTemplates) {
-      batch.delete(doc(db, WORKSPACE_COLLECTION, this.workspaceId, 'templates', template.id));
-    }
-
-    for (const expense of affectedExpenses) {
-      batch.set(
-        doc(db, WORKSPACE_COLLECTION, this.workspaceId, 'expenses', expense.id),
+  async executeCategoryRemapOperation(operation: CategoryRemapOperation): Promise<void> {
+    const { collection, doc, getDocs, query, serverTimestamp, setDoc, where, writeBatch } =
+      await import('firebase/firestore');
+    const db = await this.database();
+    const operationRef = doc(
+      db,
+      WORKSPACE_COLLECTION,
+      this.workspaceId,
+      CATEGORY_REMAP_COLLECTION,
+      operation.id,
+    );
+    const completedSteps = new Set(operation.completedSteps ?? []);
+    const updateOperation = async (
+      changes: Partial<Omit<CategoryRemapOperation, 'id'>>,
+    ): Promise<void> => {
+      await setDoc(
+        operationRef,
         {
-          categoryId: '',
-          updatedAt: timestamp,
-          templateId: deleteField(),
+          ...stripUndefined(changes),
+          updatedDate: new Date().toISOString(),
+          updatedAt: serverTimestamp(),
         },
         { merge: true },
       );
-    }
+    };
 
-    await batch.commit();
+    await updateOperation({
+      status: 'running',
+      attempts: (operation.attempts ?? 0) + 1,
+      lastError: '',
+    });
+
+    try {
+      if (!completedSteps.has('categories')) {
+        if (operation.replacementCategory) {
+          const { id: replacementId, ...replacementData } = operation.replacementCategory;
+          await setDoc(
+            doc(db, WORKSPACE_COLLECTION, this.workspaceId, 'categories', replacementId),
+            { ...stripUndefined(replacementData), updatedAt: serverTimestamp() },
+            { merge: true },
+          );
+        }
+        await setDoc(
+          doc(db, WORKSPACE_COLLECTION, this.workspaceId, 'categories', operation.sourceCategoryId),
+          { archivedDate: operation.sourceArchivedDate, updatedAt: serverTimestamp() },
+          { merge: true },
+        );
+        completedSteps.add('categories');
+        await updateOperation({ completedSteps: [...completedSteps] });
+      }
+
+      for (const step of CATEGORY_REMAP_STEPS.filter((item) => item !== 'categories')) {
+        if (completedSteps.has(step)) {
+          continue;
+        }
+        const snapshot = await getDocs(
+          query(
+            collection(db, WORKSPACE_COLLECTION, this.workspaceId, step),
+            where('categoryId', '==', operation.sourceCategoryId),
+          ),
+        );
+        for (let offset = 0; offset < snapshot.docs.length; offset += 400) {
+          const batch = writeBatch(db);
+          for (const snapshotDocument of snapshot.docs.slice(offset, offset + 400)) {
+            batch.update(snapshotDocument.ref, {
+              categoryId: operation.replacementCategoryId,
+              updatedAt: serverTimestamp(),
+            });
+          }
+          await batch.commit();
+        }
+        completedSteps.add(step);
+        await updateOperation({ completedSteps: [...completedSteps] });
+      }
+
+      await updateOperation({
+        status: 'completed',
+        completedSteps: [...completedSteps],
+        lastError: '',
+      });
+    } catch (error) {
+      await updateOperation({
+        status: 'failed',
+        completedSteps: [...completedSteps],
+        lastError: error instanceof Error ? error.message : 'Category remap failed.',
+      });
+      throw error;
+    }
   }
 
   private async database(): Promise<Firestore> {
@@ -393,7 +488,9 @@ export class BudgetFirestoreRepository {
           return leftMode.archivedDate ? 1 : -1;
         }
 
-        return `${leftMode.type}-${leftMode.name}`.localeCompare(`${rightMode.type}-${rightMode.name}`);
+        return `${leftMode.type}-${leftMode.name}`.localeCompare(
+          `${rightMode.type}-${rightMode.name}`,
+        );
       }
 
       if (collectionName === 'paymentAccounts') {

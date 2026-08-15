@@ -32,16 +32,26 @@ firebase deploy --only firestore:rules
 The app stores data under:
 
 ```text
-budgetWorkspaces/{userEmail}/categories
-budgetWorkspaces/{userEmail}/incomes
-budgetWorkspaces/{userEmail}/templates
-budgetWorkspaces/{userEmail}/expenses
-budgetWorkspaces/{userEmail}/loans
+budgetWorkspaces/{workspaceId}
+budgetWorkspaces/{workspaceId}/paymentAccounts
+budgetWorkspaces/{workspaceId}/paymentModes
+budgetWorkspaces/{workspaceId}/categories
+budgetWorkspaces/{workspaceId}/incomes
+budgetWorkspaces/{workspaceId}/templates
+budgetWorkspaces/{workspaceId}/expenses
+budgetWorkspaces/{workspaceId}/investments
+budgetWorkspaces/{workspaceId}/loans
+budgetWorkspaces/{workspaceId}/categoryRemapOperations
 ```
+
+Category remap operations are internal retry metadata. Interrupted remaps resume when the workspace is opened and can also be retried from the Workspace page.
 
 ## Checks
 
 ```bash
 npm run build
 npm test -- --watch=false
+npm run test:rules
 ```
+
+`test:rules` starts an isolated Firestore emulator on port `8085`, loads `firestore.rules`, runs the authorization suite, and then shuts the emulator down. Java is required by the Firestore emulator.

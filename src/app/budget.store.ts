@@ -10,6 +10,11 @@ import { firstValueFrom } from 'rxjs';
 
 import { BudgetFirestoreRepository } from './budget.firestore';
 import {
+  CategoryRetirementDialog,
+  type CategoryRetirementData,
+  type CategoryRetirementResult,
+} from './category-retirement-dialog';
+import {
   BulkEditorDialog,
   type BulkEditorResult,
   type BulkEditorScope,
@@ -19,6 +24,7 @@ import {
   type MonthlyReviewResult,
   type MonthlyReviewRow,
 } from './monthly-review-dialog';
+import { IncomeEditorDialog, type IncomeEditorData } from './income-editor-dialog';
 import {
   WorkspaceConfirmDialog,
   WorkspaceFormDialog,
@@ -41,11 +47,13 @@ import {
   type BudgetImportRow,
   type BudgetImportSummary,
 } from './budget-import.service';
+import { buildWorkspaceExport, workspaceExportFilename } from './budget-export.service';
 import { PAYMENT_BANK_OPTIONS } from './budget.models';
 import type {
   BudgetCategory,
   BudgetCollectionName,
   BudgetDataMap,
+  CategoryRemapOperation,
   Cadence,
   ExpenseEntry,
   ExpenseTemplate,
@@ -64,6 +72,7 @@ import type {
   PaymentMode,
   PaymentModeProvider,
   PaymentModeType,
+  OnboardingProgress,
   UserProfile,
   Workspace,
   WorkspaceMember,
@@ -97,6 +106,13 @@ function monthStartDate(month: string): string {
   return `${month}-01`;
 }
 
+function todayDate(): string {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
+    date.getDate(),
+  ).padStart(2, '0')}`;
+}
+
 function monthEndDate(month: string): string {
   return previousDate(monthStartDate(addMonths(month, 1)));
 }
@@ -117,6 +133,17 @@ function laterDate(first: string, second: string): string {
 function dateInMonth(month: string, sourceDate?: string): string {
   const day = Math.max(1, Math.min(28, Number(sourceDate?.split('-')[2]) || 1));
   return `${month}-${String(day).padStart(2, '0')}`;
+}
+
+function loanOccurrenceDate(month: string, startDate: string): string {
+  const nominalDay = Math.max(1, Math.min(31, Number(startDate.split('-')[2]) || 1));
+  const lastDay = Number(monthEndDate(month).split('-')[2]);
+  return `${month}-${String(Math.min(nominalDay, lastDay)).padStart(2, '0')}`;
+}
+
+function isLoanOccurrenceInRange(month: string, startDate: string, endDate?: string): boolean {
+  const occurrenceDate = loanOccurrenceDate(month, startDate);
+  return occurrenceDate >= startDate && (!endDate || occurrenceDate <= endDate);
 }
 
 function dateFromIso(date: string): Date {
@@ -215,6 +242,7 @@ type ScheduledPlan = {
   frequency?: InvestmentFrequency;
   date?: string;
   startDate?: string;
+  effectiveStartDate?: string;
   endDate?: string;
   createdDate?: string;
 };
@@ -271,7 +299,9 @@ function planScheduleForMonth(
     const planMonth = dateMonthKey(plan.date || plan.startDate || plan.createdDate);
     if (
       planMonth !== month ||
-      !isMonthInRange(month, plan.date || plan.startDate || plan.createdDate, plan.endDate)
+      !isMonthInRange(month, plan.date || plan.startDate || plan.createdDate, plan.endDate) ||
+      (!!plan.effectiveStartDate &&
+        (plan.date || plan.startDate || plan.createdDate || '') < plan.effectiveStartDate)
     ) {
       return null;
     }
@@ -289,7 +319,10 @@ function planScheduleForMonth(
 
   const monthStart = monthStartDate(month);
   const monthEnd = monthEndDate(month);
-  const effectiveStart = laterDate(anchorDate, monthStart);
+  const effectiveStart = laterDate(
+    laterDate(anchorDate, monthStart),
+    plan.effectiveStartDate || '',
+  );
   const effectiveEnd = plan.endDate && plan.endDate < monthEnd ? plan.endDate : monthEnd;
 
   if (effectiveStart > effectiveEnd) {
@@ -384,6 +417,7 @@ const DEFAULT_CASH_PAYMENT_MODE: PaymentMode = {
   id: 'payment-mode-cash',
   type: 'cash',
   name: 'Cash',
+  workspaceGlobal: true,
 };
 const PAYMENT_PROVIDER_ICONS: Record<string, string> = {
   PhonePe: '/payment-icons/phonepe.svg',
@@ -458,6 +492,7 @@ export class BudgetStore implements OnDestroy {
     this.firebase.mode === 'firebase' ? 'Sign in with Google' : 'Firebase config needed',
   );
   readonly syncError = signal<string | null>(null);
+  readonly pendingCategoryRemapCount = signal(0);
   readonly workspaceId = signal<string | null>(null);
   readonly workspaces = signal<Workspace[]>([]);
   readonly activeWorkspaces = computed(() =>
@@ -476,6 +511,7 @@ export class BudgetStore implements OnDestroy {
   readonly userName = signal<string | null>(null);
   readonly userEmail = signal<string | null>(null);
   readonly userPhoto = signal<string | null>(null);
+  readonly onboardingProgress = signal<OnboardingProgress | null>(null);
   readonly selectedMemberEmail = signal('ALL');
   readonly selectedMonth = signal(currentMonth());
   readonly monthPickerOpen = signal(false);
@@ -524,7 +560,7 @@ export class BudgetStore implements OnDestroy {
   );
   readonly hasBudgetData = computed(
     () =>
-        this.categories().length +
+      this.categories().length +
         this.paymentAccounts().length +
         this.paymentModes().length +
         this.incomes().length +
@@ -536,22 +572,35 @@ export class BudgetStore implements OnDestroy {
   );
   readonly activePaymentAccounts = computed(() =>
     this.paymentAccounts()
-      .filter((paymentAccount) => !paymentAccount.archivedDate)
+      .filter(
+        (paymentAccount) =>
+          !paymentAccount.archivedDate && this.matchesSelectedMember(paymentAccount),
+      )
       .sort(comparePaymentAccounts),
   );
   readonly archivedPaymentAccounts = computed(() =>
     this.paymentAccounts()
-      .filter((paymentAccount) => !!paymentAccount.archivedDate)
+      .filter(
+        (paymentAccount) =>
+          !!paymentAccount.archivedDate && this.matchesSelectedMember(paymentAccount),
+      )
       .sort(comparePaymentAccounts),
   );
   readonly activePaymentModes = computed(() =>
     this.withDefaultPaymentModes(this.paymentModes())
-      .filter((paymentMode) => !paymentMode.archivedDate)
+      .filter(
+        (paymentMode) =>
+          !paymentMode.archivedDate &&
+          (paymentMode.type !== 'cash' || this.isWorkspaceGlobalCashMode(paymentMode)) &&
+          (this.isWorkspaceGlobalCashMode(paymentMode) || this.matchesSelectedMember(paymentMode)),
+      )
       .sort(comparePaymentModes),
   );
   readonly archivedPaymentModes = computed(() =>
     this.paymentModes()
-      .filter((paymentMode) => !!paymentMode.archivedDate)
+      .filter(
+        (paymentMode) => !!paymentMode.archivedDate && this.matchesSelectedMember(paymentMode),
+      )
       .sort(comparePaymentModes),
   );
   readonly paymentAccountCards = computed(() =>
@@ -572,11 +621,8 @@ export class BudgetStore implements OnDestroy {
       };
     }),
   );
-  readonly upiWalletPaymentModeCount = computed(
-    () =>
-      this.activePaymentModes().filter(
-        (paymentMode) => paymentMode.type === 'upi' || paymentMode.type === 'wallet',
-      ).length,
+  readonly upiPaymentModeCount = computed(
+    () => this.activePaymentModes().filter((paymentMode) => paymentMode.type === 'upi').length,
   );
   readonly cardPaymentModeCount = computed(
     () =>
@@ -605,7 +651,9 @@ export class BudgetStore implements OnDestroy {
         providerTone: this.paymentModeVisualTone(paymentMode),
         recordCount: usage.count,
         shortLabel: this.paymentModeShortLabel(paymentMode),
-        ownerTag: this.memberTag(this.paymentModeMemberEmail(paymentMode)),
+        ownerTag: this.isWorkspaceGlobalCashMode(paymentMode)
+          ? 'Workspace'
+          : this.memberTag(this.paymentModeMemberEmail(paymentMode)),
         typeLabel: this.paymentModeTypeLabel(paymentMode.type),
         usageAmount: usage.amount,
       };
@@ -654,13 +702,19 @@ export class BudgetStore implements OnDestroy {
     return count ? `${count} pending` : 'All reviewed';
   });
   readonly expenseCategories = computed(() =>
-    this.categories().filter((category) => this.categoryType(category) === 'Expenses'),
+    this.categories().filter(
+      (category) => !category.archivedDate && this.categoryType(category) === 'Expenses',
+    ),
   );
   readonly incomeCategories = computed(() =>
-    this.categories().filter((category) => this.categoryType(category) === 'Income'),
+    this.categories().filter(
+      (category) => !category.archivedDate && this.categoryType(category) === 'Income',
+    ),
   );
   readonly investmentCategories = computed(() =>
-    this.categories().filter((category) => this.categoryType(category) === 'Investments'),
+    this.categories().filter(
+      (category) => !category.archivedDate && this.categoryType(category) === 'Investments',
+    ),
   );
   readonly statusIcon = computed(() =>
     this.syncError()
@@ -715,11 +769,16 @@ export class BudgetStore implements OnDestroy {
   });
   readonly activeLoans = computed(() =>
     this.filteredLoans().filter(
-      (loan) => loan.emi > 0 && isMonthInRange(this.selectedMonth(), loan.startDate, loan.endDate),
+      (loan) =>
+        loan.emi > 0 && isLoanOccurrenceInRange(this.selectedMonth(), loan.startDate, loan.endDate),
     ),
   );
   readonly investmentPlans = computed(() =>
-    this.filteredInvestments().filter((investment) => !investment.sourceInvestmentId),
+    this.filteredInvestments().filter(
+      (investment) =>
+        !investment.sourceInvestmentId &&
+        !!investmentScheduleForMonth(investment, this.selectedMonth()),
+    ),
   );
   readonly monthlyIncome = computed(() =>
     this.activeIncomeSources().reduce(
@@ -735,16 +794,32 @@ export class BudgetStore implements OnDestroy {
     ),
   );
   readonly selectedInvestments = computed(() =>
-    this.filteredInvestments().filter((investment) => {
-      if (!isOneTimeInvestment(investment)) {
-        if (this.selectedMonth() >= currentMonth()) {
-          return false;
-        }
-      }
-
-      return !!investmentScheduleForMonth(investment, this.selectedMonth());
-    }),
+    this.confirmedInvestmentsForMonth(this.selectedMonth()),
   );
+  readonly incomeRows = computed(() =>
+    this.activeIncomeSources()
+      .map((income) => ({
+        ...income,
+        categoryName: income.categoryId ? this.categoryName(income.categoryId) : 'Uncategorized',
+        memberName: this.memberName(income.memberEmail),
+      }))
+      .sort((left, right) => right.amount - left.amount),
+  );
+  readonly incomeHistoryRows = computed(() => {
+    const months = Array.from({ length: 12 }, (_, index) =>
+      addMonths(this.selectedMonth(), index - 11),
+    );
+    return months.map((month) => ({
+      month,
+      label: monthLabel(month),
+      amount: this.incomeTotalForMonth(month),
+    }));
+  });
+  readonly previousMonthIncome = computed(() => this.incomeHistoryRows().at(-2)?.amount ?? 0);
+  readonly incomeGrowthRate = computed(() => {
+    const previous = this.previousMonthIncome();
+    return previous ? (this.monthlyIncome() - previous) / previous : 0;
+  });
   readonly legacyInvestmentEntries = computed(() =>
     this.filteredExpenses().filter(
       (expense) =>
@@ -778,15 +853,17 @@ export class BudgetStore implements OnDestroy {
   readonly debtRatio = computed(() => this.ratio(this.debtEmiTotal(), this.monthlyIncome()));
   readonly categoryStats = computed(() =>
     this.expenseCategories().map((category) => {
+      const monthlyBudget = this.categoryBudgetForMonth(category, this.selectedMonth());
       const spent = this.selectedEntries()
         .filter((expense) => expense.categoryId === category.id)
         .reduce((total, expense) => total + expense.amount, 0);
 
       return {
         ...category,
+        monthlyBudget,
         spent,
-        remaining: category.monthlyBudget - spent,
-        used: this.ratio(spent, category.monthlyBudget),
+        remaining: monthlyBudget - spent,
+        used: this.ratio(spent, monthlyBudget),
       };
     }),
   );
@@ -804,13 +881,11 @@ export class BudgetStore implements OnDestroy {
       );
       const outflow = entries.reduce((total, expense) => total + expense.amount, 0);
       const invested =
-        this.filteredInvestments()
-          .filter((investment) => isOneTimeInvestment(investment) || month < currentMonth())
-          .reduce(
-            (total, investment) =>
-              total + (investmentScheduleForMonth(investment, month)?.amount ?? 0),
-            0,
-          ) +
+        this.confirmedInvestmentsForMonth(month).reduce(
+          (total, investment) =>
+            total + (investmentScheduleForMonth(investment, month)?.amount ?? investment.amount),
+          0,
+        ) +
         this.filteredExpenses()
           .filter(
             (expense) =>
@@ -829,7 +904,7 @@ export class BudgetStore implements OnDestroy {
     });
   });
   readonly loanPlans = computed(() =>
-    this.filteredLoans().map((loan) => {
+    this.activeLoans().map((loan) => {
       const monthsLeft = Math.max(1, Math.ceil(loan.outstanding / loan.emi));
       const payoff = loan.endDate ? new Date(loan.endDate) : new Date();
       if (!loan.endDate) {
@@ -845,7 +920,7 @@ export class BudgetStore implements OnDestroy {
     }),
   );
   readonly totalDebt = computed(() =>
-    this.filteredLoans().reduce((total, loan) => total + loan.outstanding, 0),
+    this.activeLoans().reduce((total, loan) => total + loan.outstanding, 0),
   );
   readonly donutStyle = computed(() => {
     const stats = this.categoryStats().filter((category) => category.spent > 0);
@@ -1094,7 +1169,7 @@ export class BudgetStore implements OnDestroy {
       rows.push({
         amount: loan.emi,
         color: '#f97316',
-        date: dateInMonth(month, loan.startDate),
+        date: loanOccurrenceDate(month, loan.startDate),
         label: `${loan.loanType} due`,
         tone: 'loan',
       });
@@ -1121,6 +1196,18 @@ export class BudgetStore implements OnDestroy {
           totalInvested: this.scheduledInvestmentTotalThrough(investment, this.selectedMonth()),
         };
       })
+      .sort((left, right) => right.monthlyAmount - left.monthlyAmount),
+  );
+  readonly confirmedInvestmentRows = computed(() =>
+    this.selectedInvestments()
+      .map((investment) => ({
+        ...investment,
+        categoryName: investment.categoryId
+          ? this.categoryName(investment.categoryId)
+          : 'Uncategorized',
+        monthlyAmount: investment.amount,
+        paymentModeMeta: this.paymentModeMeta(investment.paymentModeId),
+      }))
       .sort((left, right) => right.monthlyAmount - left.monthlyAmount),
   );
   readonly portfolioValue = computed(() =>
@@ -1151,7 +1238,7 @@ export class BudgetStore implements OnDestroy {
     return payoff ?? null;
   });
   readonly totalLoanPrincipal = computed(() =>
-    this.filteredLoans().reduce((total, loan) => total + loan.principal, 0),
+    this.activeLoans().reduce((total, loan) => total + loan.principal, 0),
   );
   readonly loanRepaymentRows = computed(() =>
     this.loanPlans()
@@ -1173,7 +1260,10 @@ export class BudgetStore implements OnDestroy {
       const day = dayIndex + 1;
       const date = `${this.selectedMonth()}-${String(day).padStart(2, '0')}`;
       const items = this.activeLoans()
-        .filter((loan) => Math.min(Number(loan.startDate.split('-')[2]) || 1, daysInMonth) === day)
+        .filter(
+          (loan) =>
+            Number(loanOccurrenceDate(this.selectedMonth(), loan.startDate).slice(-2)) === day,
+        )
         .map((loan) => ({
           id: loan.id,
           color: this.loanColor(loan.id),
@@ -1352,6 +1442,7 @@ export class BudgetStore implements OnDestroy {
     this.workspaceId.set(workspaceId);
     this.selectedMemberEmail.set('ALL');
     this.repository.set(new BudgetFirestoreRepository(this.firebase.app, workspaceId));
+    await this.resumeCategoryRemaps();
     await this.listenToWorkspaceData();
   }
 
@@ -1491,6 +1582,49 @@ export class BudgetStore implements OnDestroy {
     return !!email && !!workspace && workspace.ownerEmail === email;
   }
 
+  async retryCategoryRemaps(): Promise<void> {
+    await this.resumeCategoryRemaps(true);
+  }
+
+  async openIncomeEditor(income?: IncomeSource): Promise<void> {
+    const dialogRef = this.dialog.open<IncomeEditorDialog, IncomeEditorData, IncomeSource>(
+      IncomeEditorDialog,
+      {
+        autoFocus: 'first-tabbable',
+        data: {
+          categories: this.incomeCategories(),
+          income,
+          memberEmail: this.actingMemberEmail(),
+          selectedMonth: this.selectedMonth(),
+        },
+        maxWidth: '94vw',
+        width: 'min(680px, 94vw)',
+      },
+    );
+    const result = await firstValueFrom(dialogRef.afterClosed());
+    if (!result) {
+      return;
+    }
+    const previous = this.incomes().find((item) => item.id === result.id);
+    const normalized = this.normalizeIncomeRecord(
+      {
+        ...result,
+        memberEmail: previous?.memberEmail ?? result.memberEmail ?? this.actingMemberEmail(),
+      },
+      previous,
+      todayDate(),
+    );
+    const saved = await this.saveRecords('incomes', [normalized], () =>
+      this.incomes.update((items) => [
+        ...items.filter((item) => item.id !== normalized.id),
+        normalized,
+      ]),
+    );
+    if (saved) {
+      this.syncStatus.set(this.repository() ? 'Income saved to Firebase' : 'Income saved');
+    }
+  }
+
   async deleteArchivedWorkspace(workspaceId: string): Promise<void> {
     const workspace = this.workspaces().find((item) => item.id === workspaceId);
     if (!workspace?.archivedDate || !this.canManageWorkspaceRecord(workspace)) {
@@ -1616,6 +1750,36 @@ export class BudgetStore implements OnDestroy {
     );
   }
 
+  downloadWorkspaceExport(): void {
+    const workspace = this.activeWorkspace();
+    if (!workspace) {
+      this.syncStatus.set('Select a workspace before exporting');
+      return;
+    }
+    const exportedAt = new Date().toISOString();
+    const workspaceExport = buildWorkspaceExport(
+      workspace,
+      {
+        paymentAccounts: this.paymentAccounts(),
+        paymentModes: this.withDefaultPaymentModes(this.paymentModes()),
+        categories: this.categories(),
+        incomes: this.incomes(),
+        templates: this.templates(),
+        expenses: this.expenses(),
+        investments: this.investments(),
+        loans: this.loans(),
+      },
+      exportedAt,
+    );
+    this.downloadBlob(
+      new Blob([JSON.stringify(workspaceExport, null, 2)], {
+        type: 'application/json;charset=utf-8',
+      }),
+      workspaceExportFilename(workspace, exportedAt),
+    );
+    this.syncStatus.set('Workspace export downloaded');
+  }
+
   downloadProcessedImport(): void {
     const processedFile = this.processedImportFile();
     if (!processedFile) {
@@ -1638,7 +1802,12 @@ export class BudgetStore implements OnDestroy {
     this.syncError.set(null);
 
     try {
-      const parsed = await parseBudgetImportFile(file, this.categories(), this.activeMembers());
+      const parsed = await parseBudgetImportFile(
+        file,
+        this.categories(),
+        this.activeMembers(),
+        this.paymentModes(),
+      );
       const validRows = parsed.rows.filter(
         (row) => row.status !== 'error' && row.record && row.collectionName,
       );
@@ -1691,7 +1860,7 @@ export class BudgetStore implements OnDestroy {
       actingMemberEmail: this.actingMemberEmail(),
       paymentAccounts: this.paymentAccounts(),
       paymentModes: this.paymentModes(),
-      categories: this.categories(),
+      categories: this.categories().filter((category) => !category.archivedDate),
       incomes: this.filteredIncomes(),
       templates: this.filteredTemplates(),
       expenses: this.filteredExpenses(),
@@ -1787,11 +1956,11 @@ export class BudgetStore implements OnDestroy {
 
   buildMonthlyReviewRows(month: string): MonthlyReviewRow[] {
     const existingExpensesByTemplateId = new Map(
-      this.filteredExpenses()
+      this.expenses()
         .filter((expense) => entryMonthKey(expense) === month && expense.templateId)
         .map((expense) => [expense.templateId!, expense]),
     );
-    const expenseRows = this.filteredTemplates()
+    const expenseRows = this.templates()
       .filter((template) => !this.isTemplateMonthSkipped(template, month))
       .map((template) => this.templateVersionForMonth(template, month))
       .filter((template): template is ExpenseTemplate => !!template)
@@ -1812,7 +1981,7 @@ export class BudgetStore implements OnDestroy {
       });
 
     const existingInvestmentsByPlanId = new Map(
-      this.filteredInvestments()
+      this.investments()
         .filter(
           (investment) =>
             isOneTimeInvestment(investment) &&
@@ -1822,15 +1991,16 @@ export class BudgetStore implements OnDestroy {
         )
         .map((investment) => [investment.sourceInvestmentId!, investment]),
     );
-    const investmentRows = this.filteredInvestments()
+    const investmentRows = this.investments()
       .filter(
         (investment) =>
-          !isOneTimeInvestment(investment) &&
+          !investment.sourceInvestmentId &&
           !existingInvestmentsByPlanId.has(investment.id) &&
-          !this.filteredInvestments().some(
+          !this.investments().some(
             (record) => record.id === this.reviewedInvestmentId(investment.id, month),
           ) &&
           !this.isInvestmentMonthSkipped(investment, month) &&
+          (!isOneTimeInvestment(investment) || month > currentMonth()) &&
           !!investmentScheduleForMonth(investment, month),
       )
       .map<MonthlyReviewRow>((investment) => {
@@ -1899,13 +2069,13 @@ export class BudgetStore implements OnDestroy {
         approvedExpenses.push({
           ...this.expenseFromTemplate(effectiveTemplate, month, existing),
           amount: row.amount,
-          memberEmail: this.actingMemberEmail() ?? effectiveTemplate.memberEmail,
+          memberEmail: existing?.memberEmail ?? effectiveTemplate.memberEmail,
         });
         continue;
       }
 
       const plan = investmentsById.get(row.sourceId);
-      if (!plan || isOneTimeInvestment(plan)) {
+      if (!plan) {
         continue;
       }
 
@@ -1942,7 +2112,7 @@ export class BudgetStore implements OnDestroy {
         notes: plan.notes || 'Approved from recurring investment plan',
         createdDate: existing?.createdDate || new Date().toISOString(),
         sourceInvestmentId: plan.id,
-        memberEmail: this.actingMemberEmail() ?? plan.memberEmail,
+        memberEmail: existing?.memberEmail ?? plan.memberEmail,
         paymentModeId: plan.paymentModeId,
         auditTrail: existing?.auditTrail ?? [],
       });
@@ -1998,30 +2168,72 @@ export class BudgetStore implements OnDestroy {
   }
 
   private async applyImportRows(rows: BudgetImportRow[]): Promise<boolean> {
+    const importerEmail = this.actingMemberEmail();
     const records = {
       paymentAccounts: rows
         .filter((row) => row.collectionName === 'paymentAccounts')
-        .map((row) => row.record as PaymentAccount),
+        .map((row) => ({ ...(row.record as PaymentAccount), memberEmail: importerEmail })),
       paymentModes: rows
         .filter((row) => row.collectionName === 'paymentModes')
-        .map((row) => row.record as PaymentMode),
+        .map((row) => ({ ...(row.record as PaymentMode), memberEmail: importerEmail })),
       categories: rows
         .filter((row) => row.collectionName === 'categories')
         .map((row) => row.record as BudgetCategory),
       incomes: rows
         .filter((row) => row.collectionName === 'incomes')
-        .map((row) => row.record as IncomeSource),
+        .map((row) => ({ ...(row.record as IncomeSource), memberEmail: importerEmail })),
       templates: rows
         .filter((row) => row.collectionName === 'templates')
-        .map((row) => row.record as ExpenseTemplate),
+        .map((row) => ({ ...(row.record as ExpenseTemplate), memberEmail: importerEmail })),
       expenses: rows
         .filter((row) => row.collectionName === 'expenses')
-        .map((row) => row.record as ExpenseEntry),
+        .map((row) => ({ ...(row.record as ExpenseEntry), memberEmail: importerEmail })),
       investments: rows
         .filter((row) => row.collectionName === 'investments')
-        .map((row) => row.record as InvestmentEntry),
-      loans: rows.filter((row) => row.collectionName === 'loans').map((row) => row.record as Loan),
+        .map((row) => ({ ...(row.record as InvestmentEntry), memberEmail: importerEmail })),
+      loans: rows
+        .filter((row) => row.collectionName === 'loans')
+        .map((row) => ({ ...(row.record as Loan), memberEmail: importerEmail })),
     } satisfies { [TName in BudgetCollectionName]: BudgetDataMap[TName][] };
+
+    const availableAccounts = [...this.paymentAccounts(), ...records.paymentAccounts];
+    const availableModes = [...this.paymentModes(), ...records.paymentModes];
+    const invalidImportedMode = records.paymentModes.some((mode) => {
+      if (!mode.paymentAccountId) {
+        return false;
+      }
+      const account = availableAccounts.find((item) => item.id === mode.paymentAccountId);
+      return !account || account.memberEmail !== mode.memberEmail;
+    });
+    const importedFinancialRecords = [
+      ...records.templates,
+      ...records.expenses,
+      ...records.investments,
+      ...records.loans,
+    ];
+    const invalidImportedRecord = importedFinancialRecords.some((record) => {
+      if (!record.paymentModeId) {
+        return false;
+      }
+      const mode = availableModes.find((item) => item.id === record.paymentModeId);
+      const account = mode?.paymentAccountId
+        ? availableAccounts.find((item) => item.id === mode.paymentAccountId)
+        : undefined;
+      return (
+        !mode ||
+        (!this.isWorkspaceGlobalCashMode(mode) && mode.memberEmail !== record.memberEmail) ||
+        (!!mode.paymentAccountId &&
+          (!account ||
+            account.memberEmail !== mode.memberEmail ||
+            account.memberEmail !== record.memberEmail))
+      );
+    });
+    if (invalidImportedMode || invalidImportedRecord) {
+      this.syncStatus.set(
+        'Imported accounts, payment modes, and financial records must have the same owner',
+      );
+      return false;
+    }
 
     return this.runFirebaseWrite(
       async () => {
@@ -2139,13 +2351,13 @@ export class BudgetStore implements OnDestroy {
         return (
           loan.emi > 0 &&
           !existingTemplateIds.has(templateId) &&
-          isMonthInRange(month, loan.startDate, loan.endDate)
+          isLoanOccurrenceInRange(month, loan.startDate, loan.endDate)
         );
       })
       .map<ExpenseEntry>((loan) => ({
         id: id('emi'),
         month,
-        date: dateInMonth(month, loan.startDate),
+        date: loanOccurrenceDate(month, loan.startDate),
         name: this.loanExpenseName(loan),
         categoryId: this.loanEmiCategoryId(),
         amount: loan.emi,
@@ -2186,7 +2398,9 @@ export class BudgetStore implements OnDestroy {
 
   paymentModeDetail(paymentMode: PaymentMode): string {
     if (paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card') {
-      return paymentMode.lastFour ? `xxxx xxxx xxxx ${paymentMode.lastFour}` : 'xxxx xxxx xxxx ----';
+      return paymentMode.lastFour
+        ? `xxxx xxxx xxxx ${paymentMode.lastFour}`
+        : 'xxxx xxxx xxxx ----';
     }
 
     if (paymentMode.type === 'cash') {
@@ -2197,7 +2411,7 @@ export class BudgetStore implements OnDestroy {
       const paymentAccount = this.paymentAccountForMode(paymentMode);
       return paymentAccount
         ? this.paymentAccountDetail(paymentAccount)
-        : paymentMode.bankName ?? DEFAULT_BANK_NAME;
+        : (paymentMode.bankName ?? DEFAULT_BANK_NAME);
     }
 
     return (
@@ -2209,7 +2423,6 @@ export class BudgetStore implements OnDestroy {
     const labels: Record<PaymentModeType, string> = {
       cash: 'Cash',
       upi: 'UPI',
-      wallet: 'Wallet',
       'credit-card': 'Credit Card',
       'debit-card': 'Debit Card',
       'internet-banking': 'Internet Banking',
@@ -2225,10 +2438,6 @@ export class BudgetStore implements OnDestroy {
 
     if (type === 'upi') {
       return 'qr_code_2';
-    }
-
-    if (type === 'wallet') {
-      return 'account_balance_wallet';
     }
 
     if (type === 'internet-banking') {
@@ -2282,9 +2491,10 @@ export class BudgetStore implements OnDestroy {
 
     const paymentAccount = this.paymentAccountForMode(paymentMode);
 
-    if (paymentMode.type === 'upi' || paymentMode.type === 'wallet') {
+    if (paymentMode.type === 'upi') {
       return (
-        this.paymentProviderLabel(paymentMode.provider) ?? this.paymentModeTypeLabel(paymentMode.type)
+        this.paymentProviderLabel(paymentMode.provider) ??
+        this.paymentModeTypeLabel(paymentMode.type)
       );
     }
 
@@ -2493,18 +2703,48 @@ export class BudgetStore implements OnDestroy {
       }
     }
 
-    for (const loan of this.activeLoans()) {
-      if (loan.paymentModeId === paymentModeId) {
-        amount += loan.emi;
-        count += 1;
-      }
+    return { amount, count };
+  }
+
+  async saveOnboardingProgress(progress: OnboardingProgress): Promise<void> {
+    this.onboardingProgress.set(progress);
+    const email = this.userEmail();
+    if (!email || !this.firebase.app) {
+      return;
     }
 
-    return { amount, count };
+    await BudgetFirestoreRepository.upsertUserProfile(this.firebase.app, {
+      email,
+      displayName: this.userName() || email,
+      photoUrl: this.userPhoto() || undefined,
+      updatedDate: new Date().toISOString(),
+      onboarding: progress,
+    }).catch(() => {
+      this.syncStatus.set('Onboarding progress will retry on the next update');
+    });
   }
 
   async savePaymentMode(paymentMode: PaymentMode): Promise<boolean> {
     const normalized = this.normalizePaymentMode(paymentMode);
+    if (normalized.type === 'cash' && !this.isWorkspaceGlobalCashMode(normalized)) {
+      this.syncStatus.set('Cash is a workspace-global mode and cannot be created per member');
+      return false;
+    }
+    const linkedAccount = normalized.paymentAccountId
+      ? this.paymentAccounts().find((account) => account.id === normalized.paymentAccountId)
+      : undefined;
+    if (
+      normalized.paymentAccountId &&
+      (!linkedAccount ||
+        !!linkedAccount.archivedDate ||
+        linkedAccount.memberEmail !== normalized.memberEmail)
+    ) {
+      this.syncStatus.set(
+        'A payment mode can only link to an active account owned by the same member',
+      );
+      return false;
+    }
+
     const saved = await this.saveRecords('paymentModes', [normalized], () => {
       this.paymentModes.update((paymentModes) => {
         const others = paymentModes.filter((mode) => mode.id !== normalized.id);
@@ -2561,6 +2801,16 @@ export class BudgetStore implements OnDestroy {
       return false;
     }
 
+    const isReferenced =
+      this.expenses().some((record) => record.paymentModeId === paymentModeId) ||
+      this.templates().some((record) => record.paymentModeId === paymentModeId) ||
+      this.investments().some((record) => record.paymentModeId === paymentModeId) ||
+      this.loans().some((record) => record.paymentModeId === paymentModeId);
+    if (isReferenced) {
+      this.syncStatus.set('This payment mode is retained because financial records reference it');
+      return false;
+    }
+
     const confirmed = await this.openWorkspaceConfirm({
       title: 'Delete Payment Mode',
       message: `Permanently delete ${this.paymentModeDisplayLabel(paymentMode)}?`,
@@ -2571,13 +2821,16 @@ export class BudgetStore implements OnDestroy {
       return false;
     }
 
-    const deleted = await this.runFirebaseWrite(async () => {
-      await this.repository()?.delete('paymentModes', paymentMode.id);
-    }, () => {
-      this.paymentModes.update((paymentModes) =>
-        paymentModes.filter((mode) => mode.id !== paymentMode.id),
-      );
-    });
+    const deleted = await this.runFirebaseWrite(
+      async () => {
+        await this.repository()?.delete('paymentModes', paymentMode.id);
+      },
+      () => {
+        this.paymentModes.update((paymentModes) =>
+          paymentModes.filter((mode) => mode.id !== paymentMode.id),
+        );
+      },
+    );
 
     if (deleted) {
       this.syncStatus.set('Archived payment mode deleted');
@@ -2610,7 +2863,9 @@ export class BudgetStore implements OnDestroy {
       return false;
     }
 
-    const paymentAccount = this.paymentAccounts().find((account) => account.id === paymentAccountId);
+    const paymentAccount = this.paymentAccounts().find(
+      (account) => account.id === paymentAccountId,
+    );
     if (!paymentAccount) {
       return false;
     }
@@ -2623,7 +2878,9 @@ export class BudgetStore implements OnDestroy {
   }
 
   async restorePaymentAccount(paymentAccountId: string): Promise<boolean> {
-    const paymentAccount = this.paymentAccounts().find((account) => account.id === paymentAccountId);
+    const paymentAccount = this.paymentAccounts().find(
+      (account) => account.id === paymentAccountId,
+    );
     if (!paymentAccount?.archivedDate) {
       return false;
     }
@@ -2636,17 +2893,17 @@ export class BudgetStore implements OnDestroy {
   }
 
   async deleteArchivedPaymentAccount(paymentAccountId: string): Promise<boolean> {
-    const paymentAccount = this.paymentAccounts().find((account) => account.id === paymentAccountId);
+    const paymentAccount = this.paymentAccounts().find(
+      (account) => account.id === paymentAccountId,
+    );
     if (!paymentAccount?.archivedDate) {
       return false;
     }
 
     if (
-      this.paymentModes().some(
-        (paymentMode) => paymentMode.paymentAccountId === paymentAccount.id,
-      )
+      this.paymentModes().some((paymentMode) => paymentMode.paymentAccountId === paymentAccount.id)
     ) {
-      this.syncStatus.set('Delete linked payment modes before deleting this account');
+      this.syncStatus.set('This account is retained because payment modes reference it');
       return false;
     }
 
@@ -2660,13 +2917,16 @@ export class BudgetStore implements OnDestroy {
       return false;
     }
 
-    const deleted = await this.runFirebaseWrite(async () => {
-      await this.repository()?.delete('paymentAccounts', paymentAccount.id);
-    }, () => {
-      this.paymentAccounts.update((paymentAccounts) =>
-        paymentAccounts.filter((account) => account.id !== paymentAccount.id),
-      );
-    });
+    const deleted = await this.runFirebaseWrite(
+      async () => {
+        await this.repository()?.delete('paymentAccounts', paymentAccount.id);
+      },
+      () => {
+        this.paymentAccounts.update((paymentAccounts) =>
+          paymentAccounts.filter((account) => account.id !== paymentAccount.id),
+        );
+      },
+    );
 
     if (deleted) {
       this.syncStatus.set('Archived payment account deleted');
@@ -2710,6 +2970,23 @@ export class BudgetStore implements OnDestroy {
 
     const selected = this.selectedMemberEmail();
     return selected === 'ALL' ? undefined : selected;
+  }
+
+  isWorkspaceGlobalCashMode(paymentMode: Pick<PaymentMode, 'id' | 'type'>): boolean {
+    return paymentMode.id === DEFAULT_CASH_PAYMENT_MODE.id && paymentMode.type === 'cash';
+  }
+
+  paymentAccountsForPaymentMode(
+    paymentMode?: Pick<PaymentMode, 'memberEmail' | 'paymentAccountId'>,
+  ): PaymentAccount[] {
+    const ownerEmail = paymentMode?.memberEmail ?? this.actingMemberEmail();
+    return this.paymentAccounts()
+      .filter(
+        (account) =>
+          (!account.archivedDate && !!ownerEmail && account.memberEmail === ownerEmail) ||
+          account.id === paymentMode?.paymentAccountId,
+      )
+      .sort(comparePaymentAccounts);
   }
 
   categoryColor(categoryId: string): string {
@@ -2889,18 +3166,82 @@ export class BudgetStore implements OnDestroy {
       return incomeMonth === this.selectedMonth() ? income.amount : 0;
     }
 
-    const cadenceMultipliers: Record<string, number> = {
-      daily: 365 / 12,
-      weekly: 52 / 12,
-      'bi-weekly': 26 / 12,
-      monthly: 1,
-      quarterly: 1 / 3,
-      'half-yearly': 1 / 6,
-      annual: 1 / 12,
-      'one-time': 1,
-    };
+    return income.amount;
+  }
 
-    return income.amount * (cadenceMultipliers[income.cadence] ?? 1);
+  private incomeTotalForMonth(month: string): number {
+    return this.filteredIncomes().reduce((total, income) => {
+      const version = this.incomeVersionForMonth(income, month);
+      if (!version) {
+        return total;
+      }
+      if (version.cadence === 'one-time') {
+        const incomeMonth = version.month ?? dateMonthKey(version.startDate || income.createdDate);
+        return total + (incomeMonth === month ? version.amount : 0);
+      }
+      return total + version.amount;
+    }, 0);
+  }
+
+  private incomeVersionForMonth(income: IncomeSource, month: string): IncomeSource | null {
+    const monthStart = monthStartDate(month);
+    const monthEnd = monthEndDate(month);
+    const audit = [...(income.auditTrail ?? [])]
+      .filter(
+        (version) =>
+          (!version.effectiveStartDate || version.effectiveStartDate <= monthEnd) &&
+          (!version.effectiveEndDate || version.effectiveEndDate >= monthStart),
+      )
+      .sort((left, right) =>
+        (right.effectiveStartDate || '').localeCompare(left.effectiveStartDate || ''),
+      )[0];
+    if (audit) {
+      return {
+        ...income,
+        source: audit.source,
+        amount: audit.amount,
+        cadence: audit.cadence,
+        categoryId: audit.categoryId,
+        notes: audit.notes ?? '',
+        month: audit.month,
+        startDate: audit.startDate,
+        endDate: audit.endDate,
+        memberEmail: audit.memberEmail,
+      };
+    }
+
+    const startDate = activeStartDate(
+      income.startDate,
+      incomeMonthStartDate(income.month) || income.createdDate,
+    );
+    return isMonthInRange(month, startDate, income.endDate) ? income : null;
+  }
+
+  private confirmedInvestmentsForMonth(month: string): InvestmentEntry[] {
+    return this.filteredInvestments().filter((investment) => {
+      if (investment.sourceInvestmentId) {
+        return (
+          dateMonthKey(investment.date || investment.startDate || investment.createdDate) === month
+        );
+      }
+
+      if (!isOneTimeInvestment(investment)) {
+        return false;
+      }
+
+      const scheduledMonth = dateMonthKey(
+        investment.date || investment.startDate || investment.createdDate,
+      );
+      return !!scheduledMonth && scheduledMonth <= currentMonth() && scheduledMonth === month;
+    });
+  }
+
+  private categoryBudgetForMonth(category: BudgetCategory, month: string): number {
+    const effectiveVersion = [...(category.budgetVersions ?? [])]
+      .filter((version) => version.effectiveMonth <= month)
+      .sort((left, right) => right.effectiveMonth.localeCompare(left.effectiveMonth))[0];
+
+    return effectiveVersion?.monthlyBudget ?? category.monthlyBudget;
   }
 
   private scheduledInvestmentTotalThrough(investment: InvestmentEntry, endMonth: string): number {
@@ -2941,17 +3282,16 @@ export class BudgetStore implements OnDestroy {
   }
 
   private findCashPaymentMode(paymentModes: PaymentMode[]): PaymentMode | undefined {
-    return paymentModes.find(
-      (paymentMode) =>
-        paymentMode.id === DEFAULT_CASH_PAYMENT_MODE.id ||
-        (paymentMode.type === 'cash' &&
-          paymentMode.name.trim().toLowerCase() === DEFAULT_CASH_PAYMENT_MODE.name.toLowerCase()),
-    );
+    return paymentModes.find((paymentMode) => paymentMode.id === DEFAULT_CASH_PAYMENT_MODE.id);
   }
 
   private withDefaultPaymentModes(paymentModes: PaymentMode[]): PaymentMode[] {
     if (this.findCashPaymentMode(paymentModes)) {
-      return [...paymentModes];
+      return paymentModes.map((paymentMode) =>
+        paymentMode.id === DEFAULT_CASH_PAYMENT_MODE.id
+          ? { ...paymentMode, ...DEFAULT_CASH_PAYMENT_MODE, memberEmail: undefined }
+          : paymentMode,
+      );
     }
 
     return [...paymentModes, DEFAULT_CASH_PAYMENT_MODE];
@@ -3003,7 +3343,7 @@ export class BudgetStore implements OnDestroy {
     const repository = this.repository();
     if (
       !repository ||
-      this.findCashPaymentMode(paymentModes) ||
+      this.findCashPaymentMode(paymentModes)?.workspaceGlobal === true ||
       this.cashPaymentModeUpsertInFlight()
     ) {
       return;
@@ -3052,15 +3392,27 @@ export class BudgetStore implements OnDestroy {
       return null;
     }
 
-    const auditVersion = (template.auditTrail ?? []).find(
-      (audit) =>
-        audit.operation !== 'deleted' &&
-        isMonthInRange(
-          month,
-          audit.effectiveStartDate || audit.startDate,
-          audit.effectiveEndDate || audit.endDate,
-        ),
-    );
+    const auditVersion = (template.auditTrail ?? []).find((audit) => {
+      if (audit.operation === 'deleted') {
+        return false;
+      }
+      const auditTemplate: ExpenseTemplate = {
+        ...template,
+        name: audit.name,
+        categoryId: audit.categoryId,
+        amount: audit.amount,
+        frequency: audit.frequency ?? 'monthly',
+        startDate: audit.startDate,
+        effectiveStartDate: audit.effectiveStartDate,
+        endDate: audit.endDate,
+      };
+      const occurrence = templateScheduleForMonth(auditTemplate, month);
+      return (
+        !!occurrence &&
+        (!audit.effectiveStartDate || occurrence.date >= audit.effectiveStartDate) &&
+        (!audit.effectiveEndDate || occurrence.date <= audit.effectiveEndDate)
+      );
+    });
 
     if (auditVersion) {
       return {
@@ -3069,19 +3421,18 @@ export class BudgetStore implements OnDestroy {
         categoryId: auditVersion.categoryId,
         amount: auditVersion.amount,
         frequency: auditVersion.frequency ?? template.frequency ?? 'monthly',
-        startDate: auditVersion.effectiveStartDate || auditVersion.startDate,
-        endDate: auditVersion.effectiveEndDate || auditVersion.endDate,
+        startDate: auditVersion.startDate,
+        effectiveStartDate: auditVersion.effectiveStartDate,
+        endDate: auditVersion.endDate,
         memberEmail: auditVersion.memberEmail ?? template.memberEmail,
         paymentModeId: auditVersion.paymentModeId ?? template.paymentModeId,
       };
     }
 
+    const currentOccurrence = templateScheduleForMonth(template, month);
     if (
-      isMonthInRange(
-        month,
-        activeStartDate(template.startDate, template.createdDate),
-        template.endDate,
-      )
+      currentOccurrence &&
+      (!template.effectiveStartDate || currentOccurrence.date >= template.effectiveStartDate)
     ) {
       return template;
     }
@@ -3110,7 +3461,8 @@ export class BudgetStore implements OnDestroy {
       id: id('audit'),
       operation,
       recordedDate: new Date().toISOString(),
-      effectiveStartDate: activeStartDate(template.startDate, template.createdDate),
+      effectiveStartDate:
+        template.effectiveStartDate ?? activeStartDate(template.startDate, template.createdDate),
       effectiveEndDate,
       name: template.name,
       categoryId: template.categoryId,
@@ -3148,7 +3500,8 @@ export class BudgetStore implements OnDestroy {
       id: id('audit'),
       operation: 'created',
       recordedDate: new Date().toISOString(),
-      effectiveStartDate: activeStartDate(template.startDate, template.createdDate),
+      effectiveStartDate:
+        template.effectiveStartDate ?? activeStartDate(template.startDate, template.createdDate),
       name: template.name,
       categoryId: template.categoryId,
       amount: template.amount,
@@ -3163,13 +3516,15 @@ export class BudgetStore implements OnDestroy {
   normalizeMonthlyTemplate(
     template: ExpenseTemplate,
     previous: ExpenseTemplate | undefined,
-    selectedMonth: string,
+    operationDate: string,
   ): ExpenseTemplate {
+    operationDate = operationDate.length === 7 ? monthStartDate(operationDate) : operationDate;
     if (!previous) {
       return {
         ...template,
         frequency: template.frequency ?? 'monthly',
-        startDate: template.startDate || monthStartDate(selectedMonth),
+        startDate: template.startDate || operationDate,
+        effectiveStartDate: template.effectiveStartDate || template.startDate || operationDate,
         auditTrail: template.auditTrail ?? [],
       };
     }
@@ -3178,6 +3533,7 @@ export class BudgetStore implements OnDestroy {
       ...template,
       name: previous.name,
       categoryId: previous.categoryId,
+      memberEmail: previous.memberEmail,
     };
 
     if (!this.isTemplateChanged(previous, immutableTemplate)) {
@@ -3189,10 +3545,9 @@ export class BudgetStore implements OnDestroy {
       };
     }
 
-    const selectedStartDate = monthStartDate(selectedMonth);
     const effectiveStartDate = laterDate(
-      immutableTemplate.startDate || selectedStartDate,
-      selectedStartDate,
+      immutableTemplate.startDate || operationDate,
+      operationDate,
     );
     const effectiveEndDate = previousDate(effectiveStartDate);
     const auditVersion = this.auditVersionFromTemplate(previous, 'updated', effectiveEndDate);
@@ -3204,7 +3559,8 @@ export class BudgetStore implements OnDestroy {
       ...immutableTemplate,
       frequency: immutableTemplate.frequency ?? 'monthly',
       createdDate: previous.createdDate || template.createdDate,
-      startDate: effectiveStartDate,
+      startDate: immutableTemplate.startDate || previous.startDate,
+      effectiveStartDate,
       auditTrail,
     };
   }
@@ -3254,7 +3610,7 @@ export class BudgetStore implements OnDestroy {
   private normalizeIncomeRecord(
     income: IncomeSource,
     previous: IncomeSource | undefined,
-    operationMonth: string,
+    operationDate: string,
   ): IncomeSource {
     if (!previous) {
       return {
@@ -3268,6 +3624,7 @@ export class BudgetStore implements OnDestroy {
       source: previous.source,
       cadence: previous.cadence,
       createdDate: previous.createdDate || income.createdDate,
+      memberEmail: previous.memberEmail,
     };
 
     if (!this.isIncomeChanged(previous, immutableIncome)) {
@@ -3282,8 +3639,8 @@ export class BudgetStore implements OnDestroy {
         previous.startDate ||
         incomeMonthStartDate(previous.month) ||
         incomeMonthStartDate(immutableIncome.month) ||
-        monthStartDate(operationMonth),
-      monthStartDate(operationMonth),
+        operationDate,
+      operationDate,
     );
     const auditVersion = this.auditVersionFromIncome(
       previous,
@@ -3293,27 +3650,23 @@ export class BudgetStore implements OnDestroy {
 
     return {
       ...immutableIncome,
-      month: immutableIncome.month || dateMonthKey(effectiveStartDate) || operationMonth,
+      month: immutableIncome.month || dateMonthKey(effectiveStartDate) || currentMonth(),
       startDate: effectiveStartDate,
       auditTrail: this.appendIncomeAudit(previous.auditTrail, auditVersion),
     };
   }
 
-  private closeIncomeRecord(previous: IncomeSource, operationMonth: string): IncomeSource {
-    const effectiveEndDate = monthEndDate(operationMonth);
-    if (previous.endDate && (dateMonthKey(previous.endDate) ?? '') <= operationMonth) {
+  private closeIncomeRecord(previous: IncomeSource, operationDate: string): IncomeSource {
+    const effectiveEndDate = previousDate(operationDate);
+    if (previous.endDate && previous.endDate < operationDate) {
       return previous;
     }
-
-    const nextMonth = addMonths(operationMonth, 1);
     const auditVersion = this.auditVersionFromIncome(previous, 'deleted', effectiveEndDate);
 
     return {
       ...previous,
       endDate:
-        previous.endDate && dateMonthKey(previous.endDate)! < nextMonth
-          ? previous.endDate
-          : effectiveEndDate,
+        previous.endDate && previous.endDate < operationDate ? previous.endDate : effectiveEndDate,
       auditTrail: this.appendIncomeAudit(previous.auditTrail, auditVersion),
     };
   }
@@ -3321,11 +3674,13 @@ export class BudgetStore implements OnDestroy {
   private normalizeInvestmentRecord(
     investment: InvestmentEntry,
     previous: InvestmentEntry | undefined,
-    operationMonth: string,
+    operationDate: string,
   ): InvestmentEntry {
     if (!previous) {
       return {
         ...investment,
+        effectiveStartDate:
+          investment.effectiveStartDate || investment.startDate || investment.date,
         auditTrail: investment.auditTrail ?? [],
       };
     }
@@ -3334,6 +3689,7 @@ export class BudgetStore implements OnDestroy {
       ...investment,
       name: previous.name,
       createdDate: previous.createdDate || investment.createdDate,
+      memberEmail: previous.memberEmail,
     };
 
     if (!this.isInvestmentChanged(previous, immutableInvestment)) {
@@ -3348,8 +3704,8 @@ export class BudgetStore implements OnDestroy {
         immutableInvestment.date ||
         previous.startDate ||
         previous.date ||
-        monthStartDate(operationMonth),
-      monthStartDate(operationMonth),
+        operationDate,
+      operationDate,
     );
     const auditVersion = this.auditVersionFromInvestment(
       previous,
@@ -3359,7 +3715,10 @@ export class BudgetStore implements OnDestroy {
 
     return {
       ...immutableInvestment,
-      startDate: !isOneTimeInvestment(immutableInvestment) ? effectiveStartDate : undefined,
+      startDate: !isOneTimeInvestment(immutableInvestment)
+        ? immutableInvestment.startDate || previous.startDate
+        : undefined,
+      effectiveStartDate,
       date: isOneTimeInvestment(immutableInvestment)
         ? effectiveStartDate
         : immutableInvestment.date,
@@ -3367,33 +3726,22 @@ export class BudgetStore implements OnDestroy {
     };
   }
 
-  private closeInvestmentRecord(
-    previous: InvestmentEntry,
-    operationMonth: string,
-  ): InvestmentEntry {
-    const effectiveEndDate = monthEndDate(operationMonth);
-    if (previous.endDate && (dateMonthKey(previous.endDate) ?? '') <= operationMonth) {
+  private closeInvestmentRecord(previous: InvestmentEntry, operationDate: string): InvestmentEntry {
+    const effectiveEndDate = previousDate(operationDate);
+    if (previous.endDate && previous.endDate < operationDate) {
       return previous;
     }
-
-    const nextMonth = addMonths(operationMonth, 1);
     const auditVersion = this.auditVersionFromInvestment(previous, 'deleted', effectiveEndDate);
 
     return {
       ...previous,
       endDate:
-        previous.endDate && dateMonthKey(previous.endDate)! < nextMonth
-          ? previous.endDate
-          : effectiveEndDate,
+        previous.endDate && previous.endDate < operationDate ? previous.endDate : effectiveEndDate,
       auditTrail: this.appendInvestmentAudit(previous.auditTrail, auditVersion),
     };
   }
 
-  private normalizeLoanRecord(
-    loan: Loan,
-    previous: Loan | undefined,
-    operationMonth: string,
-  ): Loan {
+  private normalizeLoanRecord(loan: Loan, previous: Loan | undefined, operationDate: string): Loan {
     if (!previous) {
       return {
         ...loan,
@@ -3405,6 +3753,7 @@ export class BudgetStore implements OnDestroy {
       ...loan,
       lender: previous.lender,
       loanType: previous.loanType,
+      memberEmail: previous.memberEmail,
     };
 
     if (!this.isLoanChanged(previous, immutableLoan)) {
@@ -3414,35 +3763,27 @@ export class BudgetStore implements OnDestroy {
       };
     }
 
-    const effectiveStartDate =
-      immutableLoan.startDate || previous.startDate || monthStartDate(operationMonth);
-    const auditEndDate = previousDate(
-      laterDate(effectiveStartDate, monthStartDate(operationMonth)),
-    );
+    const auditEndDate = previousDate(operationDate);
     const auditVersion = this.auditVersionFromLoan(previous, 'updated', auditEndDate);
 
     return {
       ...immutableLoan,
-      startDate: effectiveStartDate,
+      startDate: immutableLoan.startDate,
       auditTrail: this.appendLoanAudit(previous.auditTrail, auditVersion),
     };
   }
 
-  private closeLoanRecord(previous: Loan, operationMonth: string): Loan {
-    const effectiveEndDate = monthEndDate(operationMonth);
-    if (previous.endDate && (dateMonthKey(previous.endDate) ?? '') <= operationMonth) {
+  private closeLoanRecord(previous: Loan, operationDate: string): Loan {
+    const effectiveEndDate = previousDate(operationDate);
+    if (previous.endDate && previous.endDate < operationDate) {
       return previous;
     }
-
-    const nextMonth = addMonths(operationMonth, 1);
     const auditVersion = this.auditVersionFromLoan(previous, 'deleted', effectiveEndDate);
 
     return {
       ...previous,
       endDate:
-        previous.endDate && dateMonthKey(previous.endDate)! < nextMonth
-          ? previous.endDate
-          : effectiveEndDate,
+        previous.endDate && previous.endDate < operationDate ? previous.endDate : effectiveEndDate,
       auditTrail: this.appendLoanAudit(previous.auditTrail, auditVersion),
     };
   }
@@ -3523,7 +3864,7 @@ export class BudgetStore implements OnDestroy {
       operation,
       recordedDate: new Date().toISOString(),
       effectiveStartDate: activeStartDate(
-        investment.startDate,
+        investment.effectiveStartDate || investment.startDate,
         investment.date || investment.createdDate,
       ),
       effectiveEndDate,
@@ -3725,6 +4066,7 @@ export class BudgetStore implements OnDestroy {
     this.userName.set(user?.displayName ?? null);
     this.userEmail.set(email);
     this.userPhoto.set(user?.photoURL ?? null);
+    this.onboardingProgress.set(null);
 
     if (!user || !this.firebase.app || !email) {
       this.workspaces.set([]);
@@ -3742,12 +4084,18 @@ export class BudgetStore implements OnDestroy {
     this.syncError.set(null);
 
     try {
+      const existingProfile = await BudgetFirestoreRepository.findUserProfile(
+        this.firebase.app,
+        email,
+      );
       const userProfile: UserProfile = {
         email,
         displayName: user.displayName ?? email,
         photoUrl: user.photoURL ?? undefined,
         updatedDate: new Date().toISOString(),
+        onboarding: existingProfile?.onboarding,
       };
+      this.onboardingProgress.set(existingProfile?.onboarding ?? null);
       void BudgetFirestoreRepository.upsertUserProfile(this.firebase.app, userProfile).catch(() => {
         // Profile sync is helpful for member lookup, but it should never block login.
       });
@@ -3800,7 +4148,10 @@ export class BudgetStore implements OnDestroy {
 
   private normalizePaymentMode(paymentMode: PaymentMode): PaymentMode {
     const now = new Date().toISOString();
-    const memberEmail = paymentMode.memberEmail ?? this.actingMemberEmail();
+    const workspaceGlobal = this.isWorkspaceGlobalCashMode(paymentMode);
+    const memberEmail = workspaceGlobal
+      ? undefined
+      : (paymentMode.memberEmail ?? this.actingMemberEmail());
     const paymentAccountId = this.isAccountBackedPaymentMode(paymentMode)
       ? paymentMode.paymentAccountId
       : undefined;
@@ -3813,12 +4164,13 @@ export class BudgetStore implements OnDestroy {
       name: paymentMode.name.trim() || this.paymentModeTypeLabel(paymentMode.type),
       paymentAccountId,
       memberEmail,
+      workspaceGlobal: workspaceGlobal || undefined,
       createdDate: paymentMode.createdDate || now,
       updatedDate: paymentMode.updatedDate || now,
-      archivedDate: paymentMode.archivedDate,
+      archivedDate: workspaceGlobal ? undefined : paymentMode.archivedDate,
     };
 
-    if (paymentMode.type === 'upi' || paymentMode.type === 'wallet') {
+    if (paymentMode.type === 'upi') {
       return this.withDerivedPaymentModeName({
         ...base,
         provider: paymentMode.provider,
@@ -4113,6 +4465,30 @@ export class BudgetStore implements OnDestroy {
     }
   }
 
+  private async resumeCategoryRemaps(reportStatus = false): Promise<void> {
+    const repository = this.repository();
+    if (!repository) {
+      this.pendingCategoryRemapCount.set(0);
+      return;
+    }
+
+    try {
+      const operations = await repository.pendingCategoryRemapOperations();
+      this.pendingCategoryRemapCount.set(operations.length);
+      for (const operation of operations) {
+        await repository.executeCategoryRemapOperation(operation);
+        this.pendingCategoryRemapCount.update((count) => Math.max(0, count - 1));
+      }
+      if (reportStatus && operations.length) {
+        this.syncStatus.set('Pending category remaps completed');
+      }
+    } catch (error) {
+      this.handleSyncError(
+        error instanceof Error ? error.message : 'Unable to resume category remapping.',
+      );
+    }
+  }
+
   private markWorkspaceCollectionLoaded(
     collectionName: BudgetCollectionName,
     workspaceId: string | null,
@@ -4129,14 +4505,166 @@ export class BudgetStore implements OnDestroy {
     );
   }
 
+  private async openCategoryRetirement(
+    category: BudgetCategory,
+  ): Promise<CategoryRetirementResult | undefined> {
+    const data: CategoryRetirementData = {
+      category,
+      candidates: this.categories().filter(
+        (candidate) =>
+          candidate.id !== category.id &&
+          !candidate.archivedDate &&
+          this.categoryType(candidate) === this.categoryType(category),
+      ),
+      usage: {
+        expenses: this.expenses().filter((expense) => expense.categoryId === category.id).length,
+        recurringExpenses: this.templates().filter(
+          (template) => template.categoryId === category.id,
+        ).length,
+        incomes: this.incomes().filter((income) => income.categoryId === category.id).length,
+        investments: this.investments().filter(
+          (investment) => investment.categoryId === category.id,
+        ).length,
+        totalAmount:
+          this.expenses()
+            .filter((expense) => expense.categoryId === category.id)
+            .reduce((total, expense) => total + expense.amount, 0) +
+          this.investments()
+            .filter((investment) => investment.categoryId === category.id)
+            .reduce((total, investment) => total + investment.amount, 0),
+      },
+    };
+    const dialogRef = this.dialog.open<
+      CategoryRetirementDialog,
+      CategoryRetirementData,
+      CategoryRetirementResult
+    >(CategoryRetirementDialog, {
+      autoFocus: 'first-tabbable',
+      data,
+      maxWidth: '94vw',
+      width: 'min(560px, 94vw)',
+    });
+
+    return (await firstValueFrom(dialogRef.afterClosed())) ?? undefined;
+  }
+
+  private normalizeCategoryBudget(
+    category: BudgetCategory,
+    previous: BudgetCategory | undefined,
+    effectiveMonth: string,
+  ): BudgetCategory {
+    if (this.categoryType(category) !== 'Expenses') {
+      return { ...category, monthlyBudget: 0, budgetVersions: [] };
+    }
+
+    if (!previous) {
+      return {
+        ...category,
+        budgetVersions:
+          this.categoryType(category) === 'Expenses'
+            ? [
+                {
+                  effectiveMonth,
+                  monthlyBudget: category.monthlyBudget,
+                  recordedDate: new Date().toISOString(),
+                },
+              ]
+            : [],
+      };
+    }
+
+    if (category.monthlyBudget === previous.monthlyBudget) {
+      return { ...category, budgetVersions: previous.budgetVersions ?? [] };
+    }
+
+    const version = {
+      effectiveMonth,
+      monthlyBudget: category.monthlyBudget,
+      recordedDate: new Date().toISOString(),
+    };
+    const priorVersions = previous.budgetVersions?.length
+      ? previous.budgetVersions
+      : [
+          {
+            effectiveMonth: '0000-01',
+            monthlyBudget: previous.monthlyBudget,
+            recordedDate: version.recordedDate,
+          },
+        ];
+    return {
+      ...category,
+      budgetVersions: [
+        ...priorVersions.filter((item) => item.effectiveMonth !== effectiveMonth),
+        version,
+      ].sort((left, right) => left.effectiveMonth.localeCompare(right.effectiveMonth)),
+    };
+  }
+
   private async applyBulkChanges(result: BulkEditorResult): Promise<void> {
     const protectedLoanCategoryId = this.loanEmiCategoryId([
       ...this.categories(),
       ...result.categories,
     ]);
-    const deletedCategoryIds = new Set(
+    const requestedCategoryIds = new Set(
       result.deleted.categories.filter((categoryId) => categoryId !== protectedLoanCategoryId),
     );
+    const retiredCategories: BudgetCategory[] = [];
+    const categoryRemaps = new Map<string, string>();
+    const createdReplacementCategories: BudgetCategory[] = [];
+
+    for (const categoryId of requestedCategoryIds) {
+      const category = this.categories().find((item) => item.id === categoryId);
+      if (!category) {
+        continue;
+      }
+
+      const decision = await this.openCategoryRetirement(category);
+      if (!decision) {
+        retiredCategories.push(category);
+        continue;
+      }
+
+      retiredCategories.push({ ...category, archivedDate: new Date().toISOString() });
+      if (decision.action === 'remap') {
+        if ('replacementCategoryId' in decision) {
+          categoryRemaps.set(categoryId, decision.replacementCategoryId);
+        } else {
+          const replacement: BudgetCategory = {
+            id: id('category'),
+            name: decision.newCategoryName,
+            monthlyBudget: category.monthlyBudget,
+            color: category.color,
+            type: category.type,
+            budgetVersions: category.budgetVersions ?? [],
+          };
+          createdReplacementCategories.push(replacement);
+          categoryRemaps.set(categoryId, replacement.id);
+        }
+      }
+    }
+    const categoryRemapOperations: CategoryRemapOperation[] = [...categoryRemaps].map(
+      ([sourceCategoryId, replacementCategoryId]) => {
+        const createdDate = new Date().toISOString();
+        return {
+          id: id('category-remap'),
+          sourceCategoryId,
+          replacementCategoryId,
+          replacementCategory: createdReplacementCategories.find(
+            (category) => category.id === replacementCategoryId,
+          ),
+          sourceArchivedDate:
+            retiredCategories.find((category) => category.id === sourceCategoryId)?.archivedDate ??
+            createdDate,
+          createdBy: this.actingMemberEmail(),
+          createdDate,
+          updatedDate: createdDate,
+          status: 'pending',
+          completedSteps: [],
+          attempts: 0,
+        };
+      },
+    );
+    const deletedCategoryIds = new Set<string>();
     const deletedExpenseIds = new Set(result.deleted.expenses);
     const deletedIncomeIds = new Set(result.deleted.incomes);
     const deletedInvestmentIds = new Set(result.deleted.investments);
@@ -4144,12 +4672,23 @@ export class BudgetStore implements OnDestroy {
     const deletedTemplateIds = new Set(result.deleted.templates);
     const hardDeletedTemplateIds = deletedTemplateIds;
     const selectedMonth = this.selectedMonth();
+    const operationDate = todayDate();
     const recurringOperationMonth = currentMonth();
     const planOperationMonth = currentMonth();
 
-    const categories = this.withDefaultCategories(
-      result.categories.filter((category) => !deletedCategoryIds.has(category.id)),
-    );
+    const effectiveBudgetMonth = this.selectedMonth();
+    const categories = this.withDefaultCategories([
+      ...this.categories().filter((category) => !!category.archivedDate),
+      ...result.categories.map((category) =>
+        this.normalizeCategoryBudget(
+          category,
+          this.categories().find((item) => item.id === category.id),
+          effectiveBudgetMonth,
+        ),
+      ),
+      ...retiredCategories,
+      ...createdReplacementCategories,
+    ]);
     const existingIncomesById = new Map(this.incomes().map((income) => [income.id, income]));
     const existingInvestmentsById = new Map(
       this.investments().map((investment) => [investment.id, investment]),
@@ -4159,23 +4698,25 @@ export class BudgetStore implements OnDestroy {
     const returnedTemplateIds = new Set(result.templates.map((template) => template.id));
     const returnedInvestmentIds = new Set(result.investments.map((investment) => investment.id));
     const returnedLoanIds = new Set(result.loans.map((loan) => loan.id));
-    const incomes = [
+    let incomes = [
       ...this.incomes().filter(
         (income) => !returnedIncomeIds.has(income.id) && !deletedIncomeIds.has(income.id),
       ),
       ...result.incomes
         .filter((income) => !deletedIncomeIds.has(income.id))
+        .map((income) => ({
+          ...income,
+          categoryId: income.categoryId
+            ? (categoryRemaps.get(income.categoryId) ?? income.categoryId)
+            : undefined,
+        }))
         .map((income) =>
-          this.normalizeIncomeRecord(
-            income,
-            existingIncomesById.get(income.id),
-            planOperationMonth,
-          ),
+          this.normalizeIncomeRecord(income, existingIncomesById.get(income.id), operationDate),
         ),
       ...result.deleted.incomes
         .map((recordId) => existingIncomesById.get(recordId))
         .filter((income): income is IncomeSource => !!income)
-        .map((income) => this.closeIncomeRecord(income, planOperationMonth)),
+        .map((income) => this.closeIncomeRecord(income, operationDate)),
     ];
     let templates = [
       ...this.templates().filter(
@@ -4184,37 +4725,48 @@ export class BudgetStore implements OnDestroy {
           !hardDeletedTemplateIds.has(template.id) &&
           !deletedCategoryIds.has(template.categoryId),
       ),
-      ...result.templates.filter(
-        (template) =>
-          !hardDeletedTemplateIds.has(template.id) && !deletedCategoryIds.has(template.categoryId),
-      ),
+      ...result.templates
+        .filter(
+          (template) =>
+            !hardDeletedTemplateIds.has(template.id) &&
+            !deletedCategoryIds.has(template.categoryId),
+        )
+        .map((template) => ({
+          ...template,
+          categoryId: categoryRemaps.get(template.categoryId) ?? template.categoryId,
+        })),
     ];
-    const investments = [
+    let investments = [
       ...this.investments().filter(
         (investment) =>
           !returnedInvestmentIds.has(investment.id) && !deletedInvestmentIds.has(investment.id),
       ),
       ...result.investments
         .filter((investment) => !deletedInvestmentIds.has(investment.id))
+        .map((investment) => ({
+          ...investment,
+          categoryId: investment.categoryId
+            ? (categoryRemaps.get(investment.categoryId) ?? investment.categoryId)
+            : undefined,
+        }))
         .map((investment) =>
           this.normalizeInvestmentRecord(
             investment,
             existingInvestmentsById.get(investment.id),
-            planOperationMonth,
+            operationDate,
           ),
         ),
       ...result.deleted.investments
         .map((recordId) => existingInvestmentsById.get(recordId))
         .filter((investment): investment is InvestmentEntry => !!investment)
-        .map((investment) => this.closeInvestmentRecord(investment, planOperationMonth)),
+        .map((investment) => this.closeInvestmentRecord(investment, operationDate)),
     ];
     let expenses = result.expenses
       .filter((expense) => !deletedExpenseIds.has(expense.id))
-      .map((expense) =>
-        deletedCategoryIds.has(expense.categoryId)
-          ? { ...expense, categoryId: '', templateId: undefined }
-          : expense,
-      );
+      .map((expense) => ({
+        ...expense,
+        categoryId: categoryRemaps.get(expense.categoryId) ?? expense.categoryId,
+      }));
     const loans = [
       ...this.loans().filter(
         (loan) => !returnedLoanIds.has(loan.id) && !deletedLoanIds.has(loan.id),
@@ -4222,13 +4774,32 @@ export class BudgetStore implements OnDestroy {
       ...result.loans
         .filter((loan) => !deletedLoanIds.has(loan.id))
         .map((loan) =>
-          this.normalizeLoanRecord(loan, existingLoansById.get(loan.id), planOperationMonth),
+          this.normalizeLoanRecord(loan, existingLoansById.get(loan.id), operationDate),
         ),
       ...result.deleted.loans
         .map((recordId) => existingLoansById.get(recordId))
         .filter((loan): loan is Loan => !!loan)
-        .map((loan) => this.closeLoanRecord(loan, planOperationMonth)),
+        .map((loan) => this.closeLoanRecord(loan, operationDate)),
     ];
+
+    const remapCategoryId = (categoryId: string | undefined): string | undefined =>
+      categoryId ? (categoryRemaps.get(categoryId) ?? categoryId) : undefined;
+    incomes = incomes.map((income) => ({
+      ...income,
+      categoryId: remapCategoryId(income.categoryId),
+    }));
+    templates = templates.map((template) => ({
+      ...template,
+      categoryId: remapCategoryId(template.categoryId) ?? template.categoryId,
+    }));
+    investments = investments.map((investment) => ({
+      ...investment,
+      categoryId: remapCategoryId(investment.categoryId),
+    }));
+    expenses = expenses.map((expense) => ({
+      ...expense,
+      categoryId: remapCategoryId(expense.categoryId) ?? expense.categoryId,
+    }));
 
     const existingTemplates = this.templates();
     const existingExpenses = this.expenses();
@@ -4249,6 +4820,49 @@ export class BudgetStore implements OnDestroy {
         .map((loan) => loan.id),
     );
 
+    const investmentPlansById = new Map(
+      investments
+        .filter((investment) => !investment.sourceInvestmentId)
+        .map((investment) => [investment.id, investment]),
+    );
+    const changedInvestmentIds = new Set(
+      [...investmentPlansById.values()]
+        .filter((investment) =>
+          this.isInvestmentChanged(
+            existingInvestmentsById.get(investment.id) ?? investment,
+            investment,
+          ),
+        )
+        .map((investment) => investment.id),
+    );
+    investments = investments.map((investment) => {
+      const sourceId = investment.sourceInvestmentId;
+      const occurrenceDate =
+        investment.date || investment.startDate || investment.createdDate || '';
+      if (!sourceId || !changedInvestmentIds.has(sourceId) || occurrenceDate < operationDate) {
+        return investment;
+      }
+
+      const source = investmentPlansById.get(sourceId);
+      const occurrenceMonth = dateMonthKey(occurrenceDate);
+      const schedule =
+        source && occurrenceMonth ? investmentScheduleForMonth(source, occurrenceMonth) : null;
+      if (!source || !schedule) {
+        return investment;
+      }
+
+      return {
+        ...investment,
+        name: source.name,
+        amount: schedule.amount,
+        categoryId: source.categoryId,
+        date: schedule.date,
+        notes: source.notes,
+        memberEmail: source.memberEmail,
+        paymentModeId: source.paymentModeId,
+      };
+    });
+
     expenses = expenses.flatMap((expense) => {
       if (!expense.templateId?.startsWith('loan:')) {
         return [expense];
@@ -4267,11 +4881,16 @@ export class BudgetStore implements OnDestroy {
       }
 
       const loan = loansById.get(loanId);
-      if (!loan || !changedLoanIds.has(loanId) || expenseMonth < planOperationMonth) {
+      if (
+        !loan ||
+        !changedLoanIds.has(loanId) ||
+        expenseMonth < planOperationMonth ||
+        this.recordDate(expense) < operationDate
+      ) {
         return [expense];
       }
 
-      if (!isMonthInRange(expenseMonth, loan.startDate, loan.endDate)) {
+      if (!isLoanOccurrenceInRange(expenseMonth, loan.startDate, loan.endDate)) {
         extraDeletedExpenseIds.add(expense.id);
         return [];
       }
@@ -4279,7 +4898,7 @@ export class BudgetStore implements OnDestroy {
       return [
         {
           ...expense,
-          date: dateInMonth(expenseMonth, loan.startDate),
+          date: loanOccurrenceDate(expenseMonth, loan.startDate),
           name: this.loanExpenseName(loan),
           categoryId: this.loanEmiCategoryId(),
           amount: loan.emi,
@@ -4297,7 +4916,7 @@ export class BudgetStore implements OnDestroy {
           this.normalizeMonthlyTemplate(
             template,
             existingTemplatesById.get(template.id),
-            recurringOperationMonth,
+            operationDate,
           ),
         ),
       ];
@@ -4346,9 +4965,10 @@ export class BudgetStore implements OnDestroy {
           return;
         }
 
-        let expense = deletedCategoryIds.has(source.categoryId)
-          ? { ...source, categoryId: '', templateId: undefined }
-          : source;
+        let expense = {
+          ...source,
+          categoryId: remapCategoryId(source.categoryId) ?? source.categoryId,
+        };
         const expenseMonth = entryMonthKey(expense);
         const templateId = expense.templateId;
 
@@ -4396,7 +5016,10 @@ export class BudgetStore implements OnDestroy {
           if (changedTemplateIds.has(templateId)) {
             const templateStartMonth = templateCascadeStartMonths.get(templateId);
 
-            if (templateStartMonth && expenseMonth < templateStartMonth) {
+            if (
+              (templateStartMonth && expenseMonth < templateStartMonth) ||
+              this.recordDate(expense) < operationDate
+            ) {
               nextExpensesById.set(expense.id, expense);
               return;
             }
@@ -4451,12 +5074,11 @@ export class BudgetStore implements OnDestroy {
           return;
         }
 
-        for (const categoryId of deletedCategoryIds) {
-          await repository.deleteCategory(
-            categoryId,
-            existingTemplates.filter((template) => template.categoryId === categoryId),
-            existingExpenses.filter((expense) => expense.categoryId === categoryId),
-          );
+        for (const operation of categoryRemapOperations) {
+          await repository.saveCategoryRemapOperation(operation);
+          this.pendingCategoryRemapCount.update((count) => count + 1);
+          await repository.executeCategoryRemapOperation(operation);
+          this.pendingCategoryRemapCount.update((count) => Math.max(0, count - 1));
         }
 
         await Promise.all([
@@ -4581,6 +5203,7 @@ export class BudgetStore implements OnDestroy {
   }
 
   private clearAppData(): void {
+    this.pendingCategoryRemapCount.set(0);
     this.paymentAccounts.set([]);
     this.paymentModes.set([]);
     this.categories.set([]);

@@ -5,6 +5,7 @@ import {
   Component,
   DestroyRef,
   computed,
+  effect,
   forwardRef,
   inject,
   signal,
@@ -22,6 +23,7 @@ import { filter } from 'rxjs';
 
 import { appEnvironment } from '../environments/environment';
 import { BudgetStore } from './budget.store';
+import type { OnboardingProgress, OnboardingStepStatus } from './budget.models';
 
 type NavItem = {
   label: string;
@@ -32,6 +34,7 @@ type NavItem = {
 };
 
 type OnboardingStep = {
+  id: string;
   icon: string;
   eyebrow: string;
   title: string;
@@ -78,17 +81,19 @@ type LoginFeature = {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class App extends BudgetStore {
-  private static readonly onboardingStorageKey = 'budget-battowski-onboarding-v1';
+  private static readonly onboardingStorageKey = 'budget-battowski-onboarding-v2';
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
   private loginCarouselTimer: ReturnType<typeof setInterval> | null = null;
   private navFocusRestoreTimer: ReturnType<typeof setTimeout> | null = null;
   private navTriggerElement: HTMLElement | null = null;
+  private onboardingHydratedIdentity: string | null = null;
 
   readonly activeRoutePath = signal('/dashboard');
   readonly navOpen = signal(false);
   readonly onboardingOpen = signal(false);
   readonly onboardingIndex = signal(0);
+  readonly onboardingStatuses = signal<Record<string, OnboardingStepStatus>>({});
   readonly loginCarouselIndex = signal(0);
   readonly loginCarouselPaused = signal(false);
   readonly passwordLoginEnabled = Boolean(appEnvironment.enablePasswordLogin);
@@ -106,62 +111,87 @@ export class App extends BudgetStore {
 
   readonly onboardingSteps: OnboardingStep[] = [
     {
-      icon: 'dashboard',
-      eyebrow: 'Start here',
-      title: 'Your dashboard is the quick health check.',
-      description:
-        'See income, expenses, investments, loan EMIs, and what is left for the selected month before making decisions.',
-      actionLabel: 'Open dashboard',
-      path: '/dashboard',
-      tips: ['Use month and member filters first.', 'Watch the remaining amount and runway badge.'],
+      id: 'payment-accounts',
+      icon: 'account_balance_wallet',
+      eyebrow: 'Payment setup',
+      title: 'Add your active payment accounts.',
+      description: 'Record the bank and last four digits for every account used by this workspace.',
+      actionLabel: 'Open payment accounts',
+      path: '/payment-modes?tab=accounts',
+      tips: ['Add accounts before payment modes.', 'Account ownership follows the creator.'],
     },
     {
+      id: 'payment-modes',
       icon: 'credit_card',
-      eyebrow: 'Daily tracking',
-      title: 'Add spending as recurring or one-time.',
-      description:
-        'Recurring entries are bills that repeat. One-time entries are ad-hoc purchases. Keeping them separate makes every month easier to review.',
-      actionLabel: 'Review expenses',
-      path: '/expenses',
-      tips: ['Use search to find a bill quickly.', 'Monthly review helps confirm expected rows.'],
+      eyebrow: 'Payment setup',
+      title: 'Create payment modes and link accounts.',
+      description: 'Set up UPI, cards, net banking, and other modes used for regular payments.',
+      actionLabel: 'Open payment modes',
+      path: '/payment-modes',
+      tips: ['Multiple modes can point to one account.', 'Cash is available by default.'],
     },
     {
-      icon: 'calendar_month',
-      eyebrow: 'Plan ahead',
-      title: 'Use planning before the money moves.',
+      id: 'categories',
+      icon: 'sell',
+      eyebrow: 'Budget setup',
+      title: 'Create categories and expense budgets.',
       description:
-        'Planning lets you compare expected income, commitments, and savings goals so there are fewer surprises later.',
-      actionLabel: 'Open planning',
-      path: '/planning',
-      tips: ['Plan by month.', 'Adjust categories before overspending.'],
+        'Organize expenses, income, and investments. Budgets apply only to expense categories.',
+      actionLabel: 'Open categories',
+      path: '/categories',
+      tips: ['Expense budgets repeat monthly.', 'Changes apply from the selected month forward.'],
     },
     {
+      id: 'income',
+      icon: 'payments',
+      eyebrow: 'Money coming in',
+      title: 'Add monthly and one-time income.',
+      description: 'Record each income source and view how income changes over time.',
+      actionLabel: 'Open income',
+      path: '/income',
+      tips: ['Monthly income repeats automatically.', 'Income does not require monthly review.'],
+    },
+    {
+      id: 'loans',
+      icon: 'account_balance',
+      eyebrow: 'Optional setup',
+      title: 'Add existing loans, if applicable.',
+      description: 'Record fixed monthly EMIs and the linked payment account used for debit.',
+      actionLabel: 'Open loans',
+      path: '/loans',
+      tips: ['Loan EMIs are confirmed automatically.', 'Skip this step if you have no loans.'],
+    },
+    {
+      id: 'investments',
       icon: 'trending_up',
-      eyebrow: 'Grow and repay',
-      title: 'Investments and loans stay in the same picture.',
-      description:
-        'Track SIPs, savings, and EMIs beside expenses so your budget reflects the full household cash flow.',
-      actionLabel: 'See investments',
+      eyebrow: 'Optional setup',
+      title: 'Add existing investments, if applicable.',
+      description: 'Record one-time investments or recurring plans and link their payment account.',
+      actionLabel: 'Open investments',
       path: '/investments',
-      tips: ['Keep SIPs updated.', 'Check loan EMI totals on the dashboard.'],
+      tips: [
+        'Future occurrences require monthly approval.',
+        'Skip this step if you have no investments.',
+      ],
     },
     {
-      icon: 'group',
-      eyebrow: 'Household setup',
-      title: 'Invite the right people and keep data organized.',
+      id: 'monthly-expenses',
+      icon: 'receipt_long',
+      eyebrow: 'Start tracking',
+      title: 'Add and review monthly expenses.',
       description:
-        'Workspaces, members, categories, payment modes, and import/export tools help you keep the app clean as usage grows.',
-      actionLabel: 'Open workspace',
-      path: '/workspace',
-      tips: [
-        'Create a workspace for each household.',
-        'Use categories and payment modes for cleaner reports.',
-      ],
+        'Record one-time spending and approve expected recurring expenses for the month.',
+      actionLabel: 'Open monthly expenses',
+      path: '/expenses',
+      tips: ['Pending plans stay out of dashboards.', 'Review covers the whole workspace.'],
     },
   ];
   readonly activeOnboardingStep = computed(() => this.onboardingSteps[this.onboardingIndex()]);
   readonly onboardingProgressLabel = computed(
     () => `Step ${this.onboardingIndex() + 1} of ${this.onboardingSteps.length}`,
+  );
+  readonly activeOnboardingStatus = computed(
+    () => this.onboardingStatuses()[this.activeOnboardingStep().id] ?? 'pending',
   );
 
   readonly loginFeatures: LoginFeature[] = [
@@ -242,6 +272,12 @@ export class App extends BudgetStore {
       mobilePlacement: 'primary',
     },
     {
+      label: 'Income',
+      icon: 'payments',
+      path: '/income',
+      mobilePlacement: 'utility',
+    },
+    {
       label: 'Planning',
       shortLabel: 'Plan',
       icon: 'calendar_month',
@@ -309,7 +345,7 @@ export class App extends BudgetStore {
         this.activeRoutePath.set(this.normalizedRoutePath(event.urlAfterRedirects));
       });
     this.startLoginCarousel();
-    this.openOnboardingForFirstVisit();
+    effect(() => this.hydrateOnboardingWhenReady());
   }
 
   override ngOnDestroy(): void {
@@ -325,30 +361,33 @@ export class App extends BudgetStore {
   }
 
   openOnboarding(): void {
-    this.onboardingIndex.set(0);
+    this.onboardingIndex.set(this.firstIncompleteOnboardingIndex());
     this.onboardingOpen.set(true);
   }
 
   closeOnboarding(): void {
     this.onboardingOpen.set(false);
-    this.markOnboardingSeen();
+    void this.persistOnboardingProgress();
   }
 
-  nextOnboardingStep(): void {
-    if (this.onboardingIndex() === this.onboardingSteps.length - 1) {
-      this.closeOnboarding();
-      return;
-    }
+  completeOnboardingStep(): void {
+    this.setActiveOnboardingStatus('completed');
+    this.advanceOnboarding();
+  }
 
-    this.onboardingIndex.update((index) => index + 1);
+  skipOnboardingStep(): void {
+    this.setActiveOnboardingStatus('skipped');
+    this.advanceOnboarding();
   }
 
   previousOnboardingStep(): void {
     this.onboardingIndex.update((index) => Math.max(0, index - 1));
+    void this.persistOnboardingProgress();
   }
 
   selectOnboardingStep(index: number): void {
     this.onboardingIndex.set(index);
+    void this.persistOnboardingProgress();
   }
 
   async loginWithPassword(): Promise<void> {
@@ -365,20 +404,100 @@ export class App extends BudgetStore {
     await this.loginWithEmailPassword(email.trim(), password);
   }
 
-  private openOnboardingForFirstVisit(): void {
-    if (this.firebase.mode === 'firebase' && !this.workspaceId()) {
+  private hydrateOnboardingWhenReady(): void {
+    const email = this.userEmail();
+    const workspaceId = this.workspaceId();
+    const progress = this.onboardingProgress();
+    const checking = this.isSessionChecking() || this.isWorkspaceDataLoading();
+    if (this.firebase.mode === 'firebase' && (!email || !workspaceId || checking)) {
       return;
     }
 
-    if (globalThis.localStorage?.getItem(App.onboardingStorageKey) === 'seen') {
+    const identity = email || 'local-user';
+    if (this.onboardingHydratedIdentity === identity) {
       return;
     }
+    this.onboardingHydratedIdentity = identity;
 
-    this.onboardingOpen.set(true);
+    const stored = progress ?? this.readLocalOnboardingProgress(identity);
+    const statuses = Object.fromEntries(
+      this.onboardingSteps.map((step) => [step.id, stored?.steps[step.id] ?? 'pending']),
+    ) as Record<string, OnboardingStepStatus>;
+    this.onboardingStatuses.set(statuses);
+    const activeIndex = stored
+      ? Math.max(
+          0,
+          this.onboardingSteps.findIndex((step) => step.id === stored.activeStepId),
+        )
+      : this.firstIncompleteOnboardingIndex(statuses);
+    this.onboardingIndex.set(activeIndex);
+
+    if (Object.values(statuses).some((status) => status === 'pending')) {
+      this.onboardingOpen.set(true);
+    }
   }
 
-  private markOnboardingSeen(): void {
-    globalThis.localStorage?.setItem(App.onboardingStorageKey, 'seen');
+  private setActiveOnboardingStatus(status: OnboardingStepStatus): void {
+    const stepId = this.activeOnboardingStep().id;
+    this.onboardingStatuses.update((statuses) => ({ ...statuses, [stepId]: status }));
+  }
+
+  private advanceOnboarding(): void {
+    const nextIndex = this.onboardingSteps.findIndex(
+      (step, index) =>
+        index > this.onboardingIndex() &&
+        (this.onboardingStatuses()[step.id] ?? 'pending') === 'pending',
+    );
+    if (nextIndex < 0) {
+      void this.persistOnboardingProgress();
+      this.onboardingOpen.set(false);
+      return;
+    }
+
+    this.onboardingIndex.set(nextIndex);
+    void this.persistOnboardingProgress();
+  }
+
+  private firstIncompleteOnboardingIndex(statuses = this.onboardingStatuses()): number {
+    const index = this.onboardingSteps.findIndex(
+      (step) => (statuses[step.id] ?? 'pending') === 'pending',
+    );
+    return index < 0 ? 0 : index;
+  }
+
+  private async persistOnboardingProgress(): Promise<void> {
+    const identity = this.userEmail() || 'local-user';
+    const progress: OnboardingProgress = {
+      activeStepId: this.activeOnboardingStep().id,
+      steps: this.onboardingStatuses(),
+      updatedDate: new Date().toISOString(),
+    };
+    globalThis.localStorage?.setItem(
+      `${App.onboardingStorageKey}:${identity}`,
+      JSON.stringify(progress),
+    );
+    await this.saveOnboardingProgress(progress);
+  }
+
+  private readLocalOnboardingProgress(identity: string): OnboardingProgress | null {
+    const value = globalThis.localStorage?.getItem(`${App.onboardingStorageKey}:${identity}`);
+    if (!value) {
+      if (globalThis.localStorage?.getItem('budget-battowski-onboarding-v1') === 'seen') {
+        return {
+          activeStepId: this.onboardingSteps.at(-1)?.id ?? this.onboardingSteps[0].id,
+          steps: Object.fromEntries(
+            this.onboardingSteps.map((step) => [step.id, 'completed' as const]),
+          ),
+          updatedDate: new Date().toISOString(),
+        };
+      }
+      return null;
+    }
+    try {
+      return JSON.parse(value) as OnboardingProgress;
+    } catch {
+      return null;
+    }
   }
 
   private normalizedRoutePath(url: string): string {

@@ -127,14 +127,7 @@ type BulkTableSortState = {
 };
 type SortOption = SelectOption<`${Exclude<BulkSortColumn, ''>}:${SortDirection}` | ''>;
 type BulkHeaderValueKind =
-  | 'category'
-  | 'categoryType'
-  | 'color'
-  | 'date'
-  | 'number'
-  | 'paymentMode'
-  | 'select'
-  | 'text';
+  'category' | 'categoryType' | 'color' | 'date' | 'number' | 'paymentMode' | 'select' | 'text';
 type BulkHeaderField =
   | ''
   | 'amount'
@@ -614,16 +607,7 @@ export class BulkEditorDialog {
   });
   protected readonly data = this.resolveData();
 
-  protected readonly incomeCadences: Cadence[] = [
-    'daily',
-    'weekly',
-    'bi-weekly',
-    'monthly',
-    'quarterly',
-    'half-yearly',
-    'annual',
-    'one-time',
-  ];
+  protected readonly incomeCadences: Cadence[] = ['monthly', 'one-time'];
   protected readonly expenseTypes: ExpenseType[] = ['one-time', 'recurring'];
   protected readonly investmentFrequencies: InvestmentFrequency[] = [
     'weekly',
@@ -1561,9 +1545,19 @@ export class BulkEditorDialog {
     }
 
     if (option.kind === 'paymentMode') {
+      const selectedOwners = new Set(
+        this.selectedRows(table).map((row) =>
+          this.recordMemberEmail(row as { memberEmail?: string }),
+        ),
+      );
+      const eligibleModes = this.activePaymentModes.filter(
+        (paymentMode) =>
+          (paymentMode.id === 'payment-mode-cash' && paymentMode.type === 'cash') ||
+          (selectedOwners.size === 1 && selectedOwners.has(paymentMode.memberEmail)),
+      );
       return [
         { value: NO_PAYMENT_MODE_FILTER_VALUE, label: 'Not set' },
-        ...this.activePaymentModes.map((paymentMode) => ({
+        ...eligibleModes.map((paymentMode) => ({
           value: paymentMode.id,
           label: this.paymentModeShortLabel(paymentMode),
         })),
@@ -1592,6 +1586,14 @@ export class BulkEditorDialog {
 
   private canBulkUpdateRow(row: BulkDisplayRow, option: BulkHeaderFieldOption): boolean {
     if (row.pendingDelete) {
+      return false;
+    }
+
+    if (
+      option.value === 'monthlyBudget' &&
+      'type' in row &&
+      (row.type || 'Expenses') !== 'Expenses'
+    ) {
       return false;
     }
 
@@ -1863,7 +1865,9 @@ export class BulkEditorDialog {
   }
 
   protected categoriesByType(type: CategoryType): Array<DraftRow<BudgetCategory>> {
-    return this.categories().filter((category) => (category.type ?? 'Expenses') === type);
+    return this.categories().filter(
+      (category) => !category.archivedDate && (category.type ?? 'Expenses') === type,
+    );
   }
 
   protected memberName(email: string | undefined): string {
@@ -1935,7 +1939,7 @@ export class BulkEditorDialog {
     const account = this.paymentAccountForMode(paymentMode);
     const ownerTag = this.memberTag(paymentMode.memberEmail ?? account?.memberEmail);
 
-    if (paymentMode.type === 'upi' || paymentMode.type === 'wallet') {
+    if (paymentMode.type === 'upi') {
       return `${this.paymentProviderLabel(paymentMode.provider) ?? paymentMode.type} ${ownerTag}`;
     }
 
@@ -2126,6 +2130,12 @@ export class BulkEditorDialog {
       return;
     }
 
+    const paymentLinkValidationError = this.paymentLinkValidationError();
+    if (paymentLinkValidationError) {
+      this.validationError.set(paymentLinkValidationError);
+      return;
+    }
+
     const createdDate = todayDate();
     const expenseRows = this.activeExpenseRows();
     const templates = this.templates()
@@ -2180,9 +2190,12 @@ export class BulkEditorDialog {
       categories: this.activeRows(this.categories()).map((category) => ({
         id: category.id,
         name: category.name.trim() || 'Category',
-        monthlyBudget: toNumber(category.monthlyBudget),
+        monthlyBudget:
+          (category.type || 'Expenses') === 'Expenses' ? toNumber(category.monthlyBudget) : 0,
         color: category.color || '#1f7a8c',
         type: category.type || 'Expenses',
+        budgetVersions: category.budgetVersions ?? [],
+        archivedDate: category.archivedDate,
       })),
       incomes: this.incomes()
         .filter((income) => !income.pendingDelete)
@@ -2924,8 +2937,94 @@ export class BulkEditorDialog {
     return '';
   }
 
+  private paymentLinkValidationError(): string {
+    const validPaymentMode = (
+      record: { memberEmail?: string; paymentModeId?: string },
+      requireLinkedAccount: boolean,
+    ): boolean => {
+      if (!record.paymentModeId) {
+        return !requireLinkedAccount;
+      }
+
+      const mode = this.paymentModes.find((item) => item.id === record.paymentModeId);
+      if (!mode) {
+        return false;
+      }
+
+      const workspaceCash = mode.id === 'payment-mode-cash' && mode.type === 'cash';
+      const recordOwner = this.recordMemberEmail(record);
+      if (!workspaceCash && mode.memberEmail !== recordOwner) {
+        return false;
+      }
+
+      if (!mode.paymentAccountId) {
+        return !requireLinkedAccount;
+      }
+
+      const account = this.paymentAccounts.find((item) => item.id === mode.paymentAccountId);
+      return (
+        !!account &&
+        !account.archivedDate &&
+        account.memberEmail === mode.memberEmail &&
+        account.memberEmail === recordOwner
+      );
+    };
+
+    const changedExpenses = this.activeRows(this.expenses()).filter(
+      (expense) =>
+        !this.originalExpensesById.has(expense.id) || this.isRowModified('expenses', expense),
+    );
+    const changedTemplates = this.activeRows(this.templates()).filter(
+      (template) =>
+        !this.originalTemplatesById.has(template.id) || this.isRowModified('templates', template),
+    );
+    if (
+      changedExpenses.some((expense) => !validPaymentMode(expense, false)) ||
+      changedTemplates.some((template) => !validPaymentMode(template, false))
+    ) {
+      return 'A record can only use a payment mode owned by the same member. Cash is shared by the workspace.';
+    }
+
+    if (
+      this.activeRows(this.loans()).some(
+        (loan) =>
+          (!this.originalLoansById.has(loan.id) || this.isRowModified('loans', loan)) &&
+          !validPaymentMode(loan, true),
+      )
+    ) {
+      return 'Every active loan must use a payment mode linked to an active payment account.';
+    }
+
+    if (
+      this.activeRows(this.investments()).some(
+        (investment) =>
+          (!this.originalInvestmentsById.has(investment.id) ||
+            this.isRowModified('investments', investment)) &&
+          !validPaymentMode(investment, true),
+      )
+    ) {
+      return 'Every investment must use a payment mode linked to an active payment account.';
+    }
+
+    return '';
+  }
+
   private recordMemberEmail(record: { memberEmail?: string }): string | undefined {
-    return this.defaultMemberEmail() ?? record.memberEmail ?? undefined;
+    return record.memberEmail ?? this.defaultMemberEmail() ?? undefined;
+  }
+
+  protected paymentModesForRecord(record: {
+    memberEmail?: string;
+    paymentModeId?: string;
+  }): PaymentMode[] {
+    const recordOwner = this.recordMemberEmail(record);
+    return this.paymentModes.filter(
+      (mode) =>
+        mode.id === record.paymentModeId ||
+        (!mode.archivedDate &&
+          ((mode.id === 'payment-mode-cash' && mode.type === 'cash') ||
+            (!!recordOwner && mode.memberEmail === recordOwner))),
+    );
   }
 
   private isMemberLocked(): boolean {

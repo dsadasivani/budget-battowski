@@ -52,7 +52,6 @@ function paymentModeTypeLabel(type: PaymentMode['type']): string {
   const labels: Record<PaymentMode['type'], string> = {
     cash: 'Cash',
     upi: 'UPI',
-    wallet: 'Wallet',
     'credit-card': 'Credit Card',
     'debit-card': 'Debit Card',
     'internet-banking': 'Internet Banking',
@@ -146,7 +145,7 @@ function createPaymentModeStore(
       return 'Cash';
     }
 
-    if (paymentMode.type === 'upi' || paymentMode.type === 'wallet') {
+    if (paymentMode.type === 'upi') {
       return paymentMode.provider ?? paymentModeTypeLabel(paymentMode.type);
     }
 
@@ -181,6 +180,13 @@ function createPaymentModeStore(
     }
 
     return paymentMode.provider ?? paymentModeTypeLabel(paymentMode.type);
+  };
+  const paymentAccountsForPaymentMode = (paymentMode?: PaymentMode) => {
+    const ownerEmail = paymentMode?.memberEmail ?? 'test@example.com';
+    return activePaymentAccounts().filter(
+      (account) =>
+        account.memberEmail === ownerEmail || account.id === paymentMode?.paymentAccountId,
+    );
   };
   const paymentModeShortLabel = (paymentMode: PaymentMode) => {
     const paymentAccount = paymentMode.paymentAccountId
@@ -310,17 +316,32 @@ function createPaymentModeStore(
   });
 
   return {
+    monthLabel: signal('June 2026'),
+    moveMonth: vi.fn(),
+    openMonthPicker: vi.fn(),
+    closeMonthPicker: vi.fn(),
+    monthPickerView: signal<'months' | 'years'>('months'),
+    pickerYearRangeLabel: signal('2020 - 2035'),
+    pickerYear: signal(2026),
+    pickerYears: signal([2026]),
+    showYearPicker: vi.fn(),
+    shiftMonthPicker: vi.fn(),
+    monthNames: ['January', 'February', 'March', 'April', 'May', 'June'],
+    selectedMonthParts: signal({ year: 2026, monthIndex: 5 }),
+    selectPickerYear: vi.fn(),
+    selectPickerMonth: vi.fn(),
+    selectedMemberEmail: signal('ALL'),
+    setSelectedMember: vi.fn(),
+    activeMembers: signal([]),
+    memberDisplayName: (member: { displayName: string }) => member.displayName,
     paymentAccounts,
     activePaymentAccounts,
     paymentAccountCards,
     paymentModes,
     activePaymentModes,
     paymentModeCards,
-    upiWalletPaymentModeCount: computed(
-      () =>
-        activePaymentModes().filter(
-          (paymentMode) => paymentMode.type === 'upi' || paymentMode.type === 'wallet',
-        ).length,
+    upiPaymentModeCount: computed(
+      () => activePaymentModes().filter((paymentMode) => paymentMode.type === 'upi').length,
     ),
     cardPaymentModeCount: computed(
       () =>
@@ -333,6 +354,7 @@ function createPaymentModeStore(
     paymentAccountDetail,
     paymentAccountIconSrc,
     paymentAccountLabel,
+    paymentAccountsForPaymentMode,
     paymentModeDisplayLabel,
     paymentModeDetail,
     paymentModeShortLabel,
@@ -675,6 +697,7 @@ describe('App', () => {
     const app = fixture.componentInstance;
 
     expect(app.utilityMobileNavItems.map((item) => item.label)).toEqual([
+      'Income',
       'Categories',
       'Payment Modes',
       'Import & Export',
@@ -1240,6 +1263,120 @@ describe('App', () => {
     expect(app.syncStatus()).toContain('current and future months');
   });
 
+  it('should require review for a future one-time investment and preserve its owner', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 11));
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      applyMonthlyReview: (result: unknown) => Promise<void>;
+      buildMonthlyReviewRows: (month: string) => Array<{
+        sourceId: string;
+        sourceType: string;
+        memberName: string;
+        amount: number;
+      }>;
+      firebase: { mode: string };
+      investmentTotal: () => number;
+      investments: {
+        set: (records: unknown[]) => void;
+        (): Array<{ sourceInvestmentId?: string; memberEmail?: string }>;
+      };
+      selectedMemberEmail: { set: (email: string) => void };
+      selectedMonth: { set: (month: string) => void };
+    };
+    app.firebase.mode = 'local';
+    app.selectedMemberEmail.set('ALL');
+    app.selectedMonth.set('2026-08');
+    app.investments.set([
+      {
+        id: 'investment-bonus',
+        name: 'Bonus investment',
+        amount: 50000,
+        frequency: 'one-time',
+        date: '2026-08-20',
+        notes: '',
+        memberEmail: 'owner@example.com',
+        paymentModeId: 'pm-bank',
+      },
+    ]);
+
+    const [row] = app.buildMonthlyReviewRows('2026-08');
+    expect(row).toMatchObject({
+      sourceId: 'investment-bonus',
+      sourceType: 'investment',
+      amount: 50000,
+    });
+    expect(app.investmentTotal()).toBe(0);
+
+    await app.applyMonthlyReview({ rows: [{ ...row, pendingDelete: false }] });
+
+    expect(app.investmentTotal()).toBe(50000);
+    expect(
+      app.investments().find((investment) => investment.sourceInvestmentId === 'investment-bonus'),
+    ).toEqual(expect.objectContaining({ memberEmail: 'owner@example.com' }));
+  });
+
+  it('should build monthly review rows for the whole workspace regardless of member filter', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      buildMonthlyReviewRows: (month: string) => Array<{ sourceId: string }>;
+      selectedMemberEmail: { set: (email: string) => void };
+      templates: { set: (records: unknown[]) => void };
+    };
+    app.selectedMemberEmail.set('member-b@example.com');
+    app.templates.set([
+      {
+        id: 'fixed-a',
+        name: 'A rent',
+        categoryId: 'category-home',
+        amount: 10000,
+        type: 'recurring',
+        frequency: 'monthly',
+        startDate: '2026-01-01',
+        memberEmail: 'member-a@example.com',
+      },
+      {
+        id: 'fixed-b',
+        name: 'B rent',
+        categoryId: 'category-home',
+        amount: 12000,
+        type: 'recurring',
+        frequency: 'monthly',
+        startDate: '2026-01-01',
+        memberEmail: 'member-b@example.com',
+      },
+    ]);
+
+    expect(app.buildMonthlyReviewRows('2026-08').map((row) => row.sourceId)).toEqual([
+      'fixed-a',
+      'fixed-b',
+    ]);
+  });
+
+  it('should retain the prior category budget before an effective-dated change', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      categoryBudgetForMonth: (category: unknown, month: string) => number;
+      normalizeCategoryBudget: (category: unknown, previous: unknown, month: string) => unknown;
+    };
+    const previous = {
+      id: 'category-food',
+      name: 'Food',
+      monthlyBudget: 10000,
+      color: '#047857',
+      type: 'Expenses',
+    };
+    const updated = app.normalizeCategoryBudget(
+      { ...previous, monthlyBudget: 15000 },
+      previous,
+      '2026-08',
+    );
+
+    expect(app.categoryBudgetForMonth(updated, '2026-07')).toBe(10000);
+    expect(app.categoryBudgetForMonth(updated, '2026-08')).toBe(15000);
+    expect(app.categoryBudgetForMonth(updated, '2027-01')).toBe(15000);
+  });
+
   it('should version recurring parent updates from the selected month forward', () => {
     const fixture = TestBed.createComponent(App);
     const app = fixture.componentInstance as unknown as {
@@ -1250,6 +1387,7 @@ describe('App', () => {
       ) => {
         amount: number;
         startDate?: string;
+        effectiveStartDate?: string;
         auditTrail?: Array<{ amount: number; effectiveEndDate?: string }>;
       };
     };
@@ -1265,7 +1403,8 @@ describe('App', () => {
     const next = app.normalizeMonthlyTemplate({ ...previous, amount: 30000 }, previous, '2022-07');
 
     expect(next.amount).toBe(30000);
-    expect(next.startDate).toBe('2022-07-01');
+    expect(next.startDate).toBe('2021-01-01');
+    expect(next.effectiveStartDate).toBe('2022-07-01');
     expect(next.auditTrail?.at(-1)).toMatchObject({
       amount: 25000,
       effectiveEndDate: '2022-06-30',
@@ -1470,7 +1609,7 @@ describe('App', () => {
     expect(juneExpense?.templateId).toBeUndefined();
   });
 
-  it('should close loan deletes at the current month and remove only future EMI expenses', async () => {
+  it('should close loan deletes on the operation date and remove only future EMI expenses', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 5, 11));
     const fixture = TestBed.createComponent(App);
@@ -1550,10 +1689,10 @@ describe('App', () => {
       },
     });
 
-    expect(app.loans()[0].endDate).toBe('2026-06-30');
+    expect(app.loans()[0].endDate).toBe('2026-06-10');
     expect(app.loans()[0].auditTrail?.at(-1)).toMatchObject({
       operation: 'deleted',
-      effectiveEndDate: '2026-06-30',
+      effectiveEndDate: '2026-06-10',
     });
     expect(app.expenses().map((expense) => expense.id)).toContain('emi-jun');
     expect(app.expenses().map((expense) => expense.id)).not.toContain('emi-jul');
@@ -1639,6 +1778,82 @@ describe('App', () => {
     expect(loanExpense?.name).toBe('Bank - Home loan');
     expect(loanExpense?.categoryId).toBe('category-loan-emi');
     expect(app.categoryName(loanExpense?.categoryId ?? '')).toBe('Loan EMI');
+  });
+
+  it('should clamp loan EMIs to the last valid day and restore the nominal day', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      buildDefaultMonthEntries: (month: string) => Array<{
+        date?: string;
+        templateId?: string;
+      }>;
+      loanCalendarDays: () => Array<{
+        date: string;
+        items: Array<{ id: string }>;
+      }>;
+      loans: { set: (records: unknown[]) => void };
+      selectedMonth: { set: (month: string) => void };
+    };
+    app.loans.set([
+      {
+        id: 'loan-day-31',
+        lender: 'Bank',
+        loanType: 'Home loan',
+        principal: 4000000,
+        outstanding: 3200000,
+        annualRate: 8.7,
+        emi: 38000,
+        startDate: '2026-01-31',
+        endDate: '2028-12-31',
+        notes: '',
+      },
+    ]);
+
+    const occurrenceDate = (month: string) =>
+      app
+        .buildDefaultMonthEntries(month)
+        .find((expense) => expense.templateId === 'loan:loan-day-31')?.date;
+
+    expect(occurrenceDate('2026-02')).toBe('2026-02-28');
+    expect(occurrenceDate('2028-02')).toBe('2028-02-29');
+    expect(occurrenceDate('2026-04')).toBe('2026-04-30');
+    expect(occurrenceDate('2026-05')).toBe('2026-05-31');
+
+    app.selectedMonth.set('2026-04');
+    expect(
+      app
+        .loanCalendarDays()
+        .find((day) => day.date === '2026-04-30')
+        ?.items.some((item) => item.id === 'loan-day-31'),
+    ).toBe(true);
+  });
+
+  it('should not generate a clamped EMI after the exact loan end date', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as {
+      buildDefaultMonthEntries: (month: string) => Array<{ templateId?: string }>;
+      loans: { set: (records: unknown[]) => void };
+    };
+    app.loans.set([
+      {
+        id: 'loan-ended-mid-month',
+        lender: 'Bank',
+        loanType: 'Vehicle loan',
+        principal: 500000,
+        outstanding: 300000,
+        annualRate: 9,
+        emi: 15000,
+        startDate: '2026-01-31',
+        endDate: '2026-02-15',
+        notes: '',
+      },
+    ]);
+
+    expect(
+      app
+        .buildDefaultMonthEntries('2026-02')
+        .some((expense) => expense.templateId === 'loan:loan-ended-mid-month'),
+    ).toBe(false);
   });
 
   it('should resolve payment mode labels including archived modes', () => {
@@ -1747,7 +1962,7 @@ describe('App', () => {
     ]);
 
     expect(app.paymentModeCards().find((paymentMode) => paymentMode.id === 'pm-gpay')).toEqual(
-      expect.objectContaining({ recordCount: 3, usageAmount: 6000 }),
+      expect.objectContaining({ recordCount: 2, usageAmount: 3000 }),
     );
   });
 
@@ -1943,9 +2158,7 @@ describe('App', () => {
     };
 
     app.selectedMonth.set('2026-06');
-    app.paymentModes.set([
-      { id: 'pm-paytm', type: 'wallet', provider: 'Paytm', name: 'Paytm Wallet' },
-    ]);
+    app.paymentModes.set([{ id: 'pm-paytm', type: 'upi', provider: 'Paytm', name: 'Paytm UPI' }]);
     app.expenses.set([
       {
         id: 'expense-food',
@@ -2354,20 +2567,43 @@ describe('PaymentModesPage', () => {
     expect(bottomSheetOpen).not.toHaveBeenCalled();
     expect(page.editingId()).toBeNull();
   });
+
+  it('should not offer wallet as a payment mode', () => {
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    const page = fixture.componentInstance;
+
+    expect(page.modeOptions.map((option) => option.value)).not.toContain('wallet');
+    expect(page.filterOptions.map((option) => option.value)).not.toContain('wallet');
+  });
 });
 
 describe('BulkEditorDialog', () => {
   const dialogData: BulkEditorData = {
     scope: 'monthly',
     selectedMonth: '2026-05',
+    paymentAccounts: [
+      {
+        id: 'account-hdfc',
+        name: 'HDFC account',
+        bankName: 'HDFC',
+        lastFour: '4321',
+      },
+    ],
     paymentModes: [
-      { id: 'pm-gpay', type: 'upi', provider: 'Google Pay', name: 'Personal Google Pay' },
+      {
+        id: 'pm-gpay',
+        type: 'upi',
+        provider: 'Google Pay',
+        name: 'Personal Google Pay',
+        paymentAccountId: 'account-hdfc',
+      },
       {
         id: 'pm-card',
         type: 'credit-card',
         name: 'Visa Credit',
         cardType: 'visa',
         lastFour: '1234',
+        paymentAccountId: 'account-hdfc',
       },
     ],
     categories: [{ id: 'category-home', name: 'Home', monthlyBudget: 35000, color: '#1f7a8c' }],
@@ -2406,6 +2642,7 @@ describe('BulkEditorDialog', () => {
         date: '2026-05-01',
         startDate: '2026-05-01',
         notes: '',
+        paymentModeId: 'pm-gpay',
       },
     ],
     loans: [
@@ -2420,6 +2657,7 @@ describe('BulkEditorDialog', () => {
         startDate: '2024-01-01',
         endDate: '2036-12-31',
         notes: '',
+        paymentModeId: 'pm-gpay',
       },
     ],
   };
@@ -2452,6 +2690,46 @@ describe('BulkEditorDialog', () => {
     expect(compiled.textContent).toContain('Recurring');
     expect(compiled.textContent).not.toContain('Income');
     expect(compiled.textContent).not.toContain('Loans');
+  });
+
+  it('should preserve the permanent owner when another member edits a record', () => {
+    const originalActingMember = dialogData.actingMemberEmail;
+    const originalTemplateOwner = dialogData.templates[0].memberEmail;
+    const originalExpenseOwner = dialogData.expenses[0].memberEmail;
+    dialogData.actingMemberEmail = 'editor@example.com';
+    dialogData.templates[0].memberEmail = 'owner@example.com';
+    dialogData.expenses[0].memberEmail = 'owner@example.com';
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as { apply: () => void };
+    const dialogRef = TestBed.inject(MatDialogRef) as unknown as {
+      close: ReturnType<typeof vi.fn>;
+    };
+
+    dialog.apply();
+
+    const result = dialogRef.close.mock.calls[0][0];
+    expect(result.templates[0].memberEmail).toBe('owner@example.com');
+    expect(result.expenses[0].memberEmail).toBe('owner@example.com');
+    dialogData.actingMemberEmail = originalActingMember;
+    dialogData.templates[0].memberEmail = originalTemplateOwner;
+    dialogData.expenses[0].memberEmail = originalExpenseOwner;
+  });
+
+  it('should require account-backed payment linkage for a new investment', () => {
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      addInvestment: () => void;
+      apply: () => void;
+      investments: () => Array<{ amount: number; name: string }>;
+      validationError: () => string;
+    };
+    dialog.addInvestment();
+    dialog.investments()[0].name = 'New SIP';
+    dialog.investments()[0].amount = 10000;
+
+    dialog.apply();
+
+    expect(dialog.validationError()).toContain('linked to an active payment account');
   });
 
   it('should expose the redesigned bulk editor shell controls', async () => {
@@ -3320,14 +3598,14 @@ describe('BulkEditorDialog', () => {
         paymentModes: [
           ...(dialogData.paymentModes ?? []),
           {
-            id: 'pm-old-wallet',
-            type: 'wallet',
+            id: 'pm-old-upi',
+            type: 'upi',
             provider: 'Paytm',
-            name: 'Old Paytm Wallet',
+            name: 'Old Paytm UPI',
             archivedDate: '2026-05-01T00:00:00.000Z',
           },
         ],
-        expenses: [{ ...dialogData.expenses[0], paymentModeId: 'pm-old-wallet' }],
+        expenses: [{ ...dialogData.expenses[0], paymentModeId: 'pm-old-upi' }],
       },
     });
     const fixture = TestBed.createComponent(BulkEditorDialog);
@@ -3336,10 +3614,106 @@ describe('BulkEditorDialog', () => {
       paymentModeName: (paymentModeId?: string) => string;
     };
 
-    expect(dialog.paymentModeName('pm-old-wallet')).toBe('Paytm Legacy');
+    expect(dialog.paymentModeName('pm-old-upi')).toBe('Paytm Legacy');
+    expect(dialog.activePaymentModes.some((paymentMode) => paymentMode.id === 'pm-old-upi')).toBe(
+      false,
+    );
+  });
+
+  it('should offer only same-owner modes while retaining a historical cross-owner selection', () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        actingMemberEmail: 'owner@example.com',
+        paymentModes: [
+          {
+            id: 'pm-owner',
+            type: 'upi',
+            name: 'Owner UPI',
+            memberEmail: 'owner@example.com',
+          },
+          {
+            id: 'pm-historical-other',
+            type: 'upi',
+            name: 'Historical other UPI',
+            memberEmail: 'other@example.com',
+          },
+          {
+            id: 'pm-other',
+            type: 'upi',
+            name: 'Other UPI',
+            memberEmail: 'other@example.com',
+          },
+          {
+            id: 'payment-mode-cash',
+            type: 'cash',
+            name: 'Cash',
+            workspaceGlobal: true,
+          },
+        ],
+        expenses: [
+          {
+            ...dialogData.expenses[0],
+            memberEmail: 'owner@example.com',
+            paymentModeId: 'pm-historical-other',
+          },
+        ],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      expenses: () => Array<{ memberEmail?: string; paymentModeId?: string }>;
+      paymentModesForRecord: (record: {
+        memberEmail?: string;
+        paymentModeId?: string;
+      }) => PaymentMode[];
+    };
+
+    const availableIds = dialog
+      .paymentModesForRecord(dialog.expenses()[0])
+      .map((paymentMode) => paymentMode.id);
+    expect(availableIds).toEqual(
+      expect.arrayContaining(['pm-owner', 'pm-historical-other', 'payment-mode-cash']),
+    );
+    expect(availableIds).not.toContain('pm-other');
+  });
+
+  it('should hide and clear budgets for non-expense categories', async () => {
+    TestBed.overrideProvider(MAT_DIALOG_DATA, {
+      useValue: {
+        ...dialogData,
+        scope: 'planning',
+        categories: [
+          {
+            id: 'category-income',
+            name: 'Salary',
+            monthlyBudget: 50000,
+            color: '#1f7a8c',
+            type: 'Income',
+          },
+        ],
+      },
+    });
+    const fixture = TestBed.createComponent(BulkEditorDialog);
+    const dialog = fixture.componentInstance as unknown as {
+      apply: () => void;
+      categories: () => Array<{ id: string; monthlyBudget: number; type?: string }>;
+      toggleRowEditing: (row: unknown, event: Event) => void;
+    };
+    const dialogRef = TestBed.inject(MatDialogRef) as unknown as {
+      close: ReturnType<typeof vi.fn>;
+    };
+    dialog.toggleRowEditing(dialog.categories()[0], new Event('click'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
     expect(
-      dialog.activePaymentModes.some((paymentMode) => paymentMode.id === 'pm-old-wallet'),
-    ).toBe(false);
+      (fixture.nativeElement as HTMLElement).querySelector(
+        'input[aria-label="Category monthly budget"]',
+      ),
+    ).toBeNull();
+    dialog.apply();
+    expect(dialogRef.close.mock.calls[0][0].categories[0].monthlyBudget).toBe(0);
   });
 
   it('should not persist untouched suggested one-time expense rows', () => {
@@ -3787,6 +4161,7 @@ describe('App accessibility', () => {
 
   it.each([
     '/dashboard',
+    '/income',
     '/expenses',
     '/planning',
     '/investments',
@@ -3913,7 +4288,7 @@ describe('budget import helpers', () => {
     expect(parsed.rows[2].comments.join(' ')).toContain('categoryName "Unknown" was not found');
   });
 
-  it('should validate imported member emails for financial rows', () => {
+  it('should reject explicit owner assignment in imported financial rows', () => {
     const csv = [
       'recordType,name,categoryName,monthlyBudget,color,amount,month,date,memberEmail',
       'category,Food,,15000,#1f7a8c,,,,',
@@ -3934,23 +4309,34 @@ describe('budget import helpers', () => {
       ],
     );
 
-    expect(parsed.rows[1].record).toEqual(
-      expect.objectContaining({ memberEmail: 'a@example.com' }),
-    );
+    expect(parsed.rows[1].status).toBe('error');
+    expect(parsed.rows[1].comments.join(' ')).toContain('must be blank');
     expect(parsed.rows[2].status).toBe('error');
-    expect(parsed.rows[2].comments.join(' ')).toContain('missing@example.com');
+    expect(parsed.rows[2].comments.join(' ')).toContain('must be blank');
   });
 
   it('should reject unsupported investment import frequencies', () => {
     const csv = [
-      'recordType,name,type,categoryName,monthlyBudget,color,amount,frequency,date,startDate',
-      'category,Mutual Funds,Investments,,0,#047857,,,,',
-      'investment,Legacy SIP,,Mutual Funds,,,12000,recurring,2026-06-01,2026-06-01',
-      'investment,Odd SIP,,Mutual Funds,,,8000,fortnightly,2026-06-01,2026-06-01',
-      'investment,Bonus,,Mutual Funds,,,5000,one-time,2026-06-10,',
+      'recordType,name,type,categoryName,monthlyBudget,color,amount,frequency,date,startDate,paymentModeName',
+      'category,Mutual Funds,Investments,,0,#047857,,,,,',
+      'investment,Legacy SIP,,Mutual Funds,,,12000,recurring,2026-06-01,2026-06-01,Bank UPI',
+      'investment,Odd SIP,,Mutual Funds,,,8000,fortnightly,2026-06-01,2026-06-01,Bank UPI',
+      'investment,Bonus,,Mutual Funds,,,5000,one-time,2026-06-10,,Bank UPI',
     ].join('\n');
 
-    const parsed = parseBudgetImportCsv(csv, []);
+    const parsed = parseBudgetImportCsv(
+      csv,
+      [],
+      [],
+      [
+        {
+          id: 'pm-bank-upi',
+          type: 'upi',
+          name: 'Bank UPI',
+          paymentAccountId: 'account-bank',
+        },
+      ],
+    );
     const comments = parsed.rows.flatMap((row) => row.comments).join(' ');
 
     expect(parsed.rows.filter((row) => row.recordType === 'investment' && row.record)).toHaveLength(

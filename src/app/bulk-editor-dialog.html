@@ -582,7 +582,10 @@
                             [disabled]="!!expense.pendingDelete"
                           >
                             <mat-option value="">Not set</mat-option>
-                            @for (paymentMode of activePaymentModes; track paymentMode.id) {
+                            @for (
+                              paymentMode of paymentModesForRecord(expense);
+                              track paymentMode.id
+                            ) {
                               <mat-option [value]="paymentMode.id">
                                 <span class="payment-mode-option">
                                   <img
@@ -805,7 +808,7 @@
                       [disabled]="!!expense.pendingDelete"
                     >
                       <mat-option value="">Not set</mat-option>
-                      @for (paymentMode of activePaymentModes; track paymentMode.id) {
+                      @for (paymentMode of paymentModesForRecord(expense); track paymentMode.id) {
                         <mat-option [value]="paymentMode.id">
                           <span class="payment-mode-option">
                             <img
@@ -1228,7 +1231,10 @@
                             [disabled]="!!template.pendingDelete"
                           >
                             <mat-option value="">Not set</mat-option>
-                            @for (paymentMode of activePaymentModes; track paymentMode.id) {
+                            @for (
+                              paymentMode of paymentModesForRecord(template);
+                              track paymentMode.id
+                            ) {
                               <mat-option [value]="paymentMode.id">
                                 <span class="payment-mode-option">
                                   <img
@@ -1487,7 +1493,10 @@
                         [disabled]="!!template.pendingDelete"
                       >
                         <mat-option value="">Not set</mat-option>
-                        @for (paymentMode of activePaymentModes; track paymentMode.id) {
+                        @for (
+                          paymentMode of paymentModesForRecord(template);
+                          track paymentMode.id
+                        ) {
                           <mat-option [value]="paymentMode.id">
                             <span class="payment-mode-option">
                               <img
@@ -2399,7 +2408,9 @@
                         isFieldModified('categories', category, 'monthlyBudget')
                       "
                     >
-                      @if (isRowEditing(category)) {
+                      @if ((category.type || 'Expenses') !== 'Expenses') {
+                        <span class="cell-muted">Not applicable</span>
+                      } @else if (isRowEditing(category)) {
                         <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <input
                             matInput
@@ -2571,17 +2582,19 @@
                         }
                       </mat-select>
                     </mat-form-field>
-                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
-                      <input
-                        matInput
-                        aria-label="Category monthly budget"
-                        type="number"
-                        min="0"
-                        placeholder="Monthly budget"
-                        [(ngModel)]="category.monthlyBudget"
-                        [disabled]="!!category.pendingDelete"
-                      />
-                    </mat-form-field>
+                    @if ((category.type || 'Expenses') === 'Expenses') {
+                      <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                        <input
+                          matInput
+                          aria-label="Category monthly budget"
+                          type="number"
+                          min="0"
+                          placeholder="Monthly budget"
+                          [(ngModel)]="category.monthlyBudget"
+                          [disabled]="!!category.pendingDelete"
+                        />
+                      </mat-form-field>
+                    }
                   </div>
                   <div class="color-control">
                     <input
@@ -2603,9 +2616,13 @@
                       [class.investment-pill]="category.type === 'Investments'"
                       >{{ category.type || 'Expenses' }}</span
                     >
-                    <strong class="mobile-card-amount">{{
-                      amountLabel(category.monthlyBudget)
-                    }}</strong>
+                    <strong class="mobile-card-amount">
+                      @if ((category.type || 'Expenses') === 'Expenses') {
+                        {{ amountLabel(category.monthlyBudget) }}
+                      } @else {
+                        Not applicable
+                      }
+                    </strong>
                   </div>
                   <div class="mobile-card-meta-row">
                     <span class="cell-color">
@@ -3048,7 +3065,10 @@
                             [disabled]="!!loan.pendingDelete"
                           >
                             <mat-option value="">Not set</mat-option>
-                            @for (paymentMode of activePaymentModes; track paymentMode.id) {
+                            @for (
+                              paymentMode of paymentModesForRecord(loan);
+                              track paymentMode.id
+                            ) {
                               <mat-option [value]="paymentMode.id">
                                 <span class="payment-mode-option">
                                   <img
@@ -3314,7 +3334,7 @@
                         [disabled]="!!loan.pendingDelete"
                       >
                         <mat-option value="">Not set</mat-option>
-                        @for (paymentMode of activePaymentModes; track paymentMode.id) {
+                        @for (paymentMode of paymentModesForRecord(loan); track paymentMode.id) {
                           <mat-option [value]="paymentMode.id">
                             <span class="payment-mode-option">
                               <img
@@ -3879,7 +3899,10 @@
                             [disabled]="!!investment.pendingDelete"
                           >
                             <mat-option value="">Not set</mat-option>
-                            @for (paymentMode of activePaymentModes; track paymentMode.id) {
+                            @for (
+                              paymentMode of paymentModesForRecord(investment);
+                              track paymentMode.id
+                            ) {
                               <mat-option [value]="paymentMode.id">
                                 <span class="payment-mode-option">
                                   <img
@@ -4132,7 +4155,10 @@
                         [disabled]="!!investment.pendingDelete"
                       >
                         <mat-option value="">Not set</mat-option>
-                        @for (paymentMode of activePaymentModes; track paymentMode.id) {
+                        @for (
+                          paymentMode of paymentModesForRecord(investment);
+                          track paymentMode.id
+                        ) {
                           <mat-option [value]="paymentMode.id">
                             <span class="payment-mode-option">
                               <img

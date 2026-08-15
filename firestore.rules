@@ -37,6 +37,119 @@ service cloud.firestore {
         && workspaceData(workspaceId).ownerEmail == request.auth.token.email;
     }
 
+    function hasRecordOwner(collectionName) {
+      return collectionName in [
+        'paymentAccounts',
+        'paymentModes',
+        'incomes',
+        'templates',
+        'expenses',
+        'investments',
+        'loans'
+      ];
+    }
+
+    function isWorkspaceGlobalCash(collectionName, recordId, data) {
+      return collectionName == 'paymentModes'
+        && recordId == 'payment-mode-cash'
+        && data.type == 'cash'
+        && data.workspaceGlobal == true
+        && !('memberEmail' in data)
+        && !('paymentAccountId' in data)
+        && !('archivedDate' in data);
+    }
+
+    function validOwnerOnCreate(collectionName, recordId) {
+      return !hasRecordOwner(collectionName)
+        || isWorkspaceGlobalCash(collectionName, recordId, request.resource.data)
+        || request.resource.data.memberEmail == request.auth.token.email;
+    }
+
+    function validOwnerOnUpdate(collectionName, recordId) {
+      return !hasRecordOwner(collectionName)
+        || (
+          isWorkspaceGlobalCash(collectionName, recordId, resource.data)
+          && isWorkspaceGlobalCash(collectionName, recordId, request.resource.data)
+        )
+        || (
+          recordId == 'payment-mode-cash'
+          && isWorkspaceGlobalCash(collectionName, recordId, request.resource.data)
+        )
+        || request.resource.data.memberEmail == resource.data.memberEmail;
+    }
+
+    function validPaymentModeType(collectionName, recordId) {
+      return collectionName != 'paymentModes'
+        || request.resource.data.type in ['upi', 'credit-card', 'debit-card', 'internet-banking']
+        || isWorkspaceGlobalCash(collectionName, recordId, request.resource.data);
+    }
+
+    function validPaymentModeAccountOwner(workspaceId, collectionName) {
+      return collectionName != 'paymentModes'
+        || !('paymentAccountId' in request.resource.data)
+        || (
+          request.resource.data.paymentAccountId is string
+          && exists(/databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/paymentAccounts/$(request.resource.data.paymentAccountId))
+          && get(/databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/paymentAccounts/$(request.resource.data.paymentAccountId)).data.memberEmail == request.resource.data.memberEmail
+        );
+    }
+
+    function requiresAccountBackedPayment(collectionName) {
+      return collectionName in ['investments', 'loans'];
+    }
+
+    function usesPaymentMode(collectionName) {
+      return collectionName in ['templates', 'expenses', 'investments', 'loans'];
+    }
+
+    function validLinkedRecordPaymentMode(workspaceId, collectionName) {
+      let modePath = /databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/paymentModes/$(request.resource.data.paymentModeId);
+      return request.resource.data.paymentModeId is string
+        && exists(modePath)
+        && (
+          isWorkspaceGlobalCash('paymentModes', request.resource.data.paymentModeId, get(modePath).data)
+          || (
+            get(modePath).data.memberEmail == request.resource.data.memberEmail
+            && (
+              !('paymentAccountId' in get(modePath).data)
+              || (
+                'paymentAccountId' in get(modePath).data
+                &&
+                get(modePath).data.paymentAccountId is string
+                && exists(/databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/paymentAccounts/$(get(modePath).data.paymentAccountId))
+                && get(/databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/paymentAccounts/$(get(modePath).data.paymentAccountId)).data.memberEmail == request.resource.data.memberEmail
+              )
+            )
+          )
+        )
+        && (
+          !requiresAccountBackedPayment(collectionName)
+          || (
+            'paymentAccountId' in get(modePath).data
+            &&
+            get(modePath).data.paymentAccountId is string
+            && exists(/databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/paymentAccounts/$(get(modePath).data.paymentAccountId))
+            && get(/databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/paymentAccounts/$(get(modePath).data.paymentAccountId)).data.memberEmail == request.resource.data.memberEmail
+          )
+        );
+    }
+
+    function validRecordPaymentMode(workspaceId, collectionName) {
+      return !usesPaymentMode(collectionName)
+        || (
+          requiresAccountBackedPayment(collectionName)
+          && 'paymentModeId' in request.resource.data
+          && validLinkedRecordPaymentMode(workspaceId, collectionName)
+        )
+        || (
+          !requiresAccountBackedPayment(collectionName)
+          && (
+            !('paymentModeId' in request.resource.data)
+            || validLinkedRecordPaymentMode(workspaceId, collectionName)
+          )
+        );
+    }
+
     match /budgetUserProfiles/{profileEmail} {
       allow get: if isSignedIn();
       allow list: if false;
@@ -54,7 +167,19 @@ service cloud.firestore {
       allow update, delete: if isWorkspaceOwner(workspaceId);
 
       match /{collectionName}/{recordId} {
-        allow read, write: if isLegacyOwner(workspaceId) || isWorkspaceMember(workspaceId);
+        allow read: if isLegacyOwner(workspaceId) || isWorkspaceMember(workspaceId);
+        allow create: if (isLegacyOwner(workspaceId) || isWorkspaceMember(workspaceId))
+          && validOwnerOnCreate(collectionName, recordId)
+          && validPaymentModeType(collectionName, recordId)
+          && validPaymentModeAccountOwner(workspaceId, collectionName)
+          && validRecordPaymentMode(workspaceId, collectionName);
+        allow update: if (isLegacyOwner(workspaceId) || isWorkspaceMember(workspaceId))
+          && validOwnerOnUpdate(collectionName, recordId)
+          && validPaymentModeType(collectionName, recordId)
+          && validPaymentModeAccountOwner(workspaceId, collectionName)
+          && validRecordPaymentMode(workspaceId, collectionName);
+        allow delete: if (isLegacyOwner(workspaceId) || isWorkspaceMember(workspaceId))
+          && !isWorkspaceGlobalCash(collectionName, recordId, resource.data);
       }
     }
   }

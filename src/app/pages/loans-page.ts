@@ -65,6 +65,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
             <strong>{{
               store.totalDebt() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
             }}</strong>
+            <small>Loans active in selected month</small>
           </article>
           <article class="stat-card active-loans-card">
             <span class="icon-chip blue"><mat-icon aria-hidden="true">article</mat-icon></span>
@@ -89,7 +90,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
             <header class="panel-heading mobile-panel-heading-with-action">
               <div>
                 <h2>Loan Accounts</h2>
-                <p>Track principal, outstanding balance, and repayment progress</p>
+                <p>Loans active in {{ store.monthLabel() }}</p>
               </div>
               <button
                 class="mobile-panel-add-button"

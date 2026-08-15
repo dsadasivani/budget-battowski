@@ -1,20 +1,7 @@
 export type ExpenseType = 'recurring' | 'one-time';
-export type Cadence =
-  | 'daily'
-  | 'weekly'
-  | 'bi-weekly'
-  | 'monthly'
-  | 'quarterly'
-  | 'half-yearly'
-  | 'annual'
-  | 'one-time';
+export type Cadence = 'monthly' | 'one-time';
 export type InvestmentFrequency =
-  | 'weekly'
-  | 'monthly'
-  | 'quarterly'
-  | 'half-yearly'
-  | 'annual'
-  | 'one-time';
+  'weekly' | 'monthly' | 'quarterly' | 'half-yearly' | 'annual' | 'one-time';
 export type CategoryType = 'Income' | 'Investments' | 'Expenses';
 export type WorkspaceRole = 'owner' | 'editor';
 export const PAYMENT_BANK_OPTIONS = [
@@ -41,27 +28,11 @@ export const PAYMENT_BANK_OPTIONS = [
   { name: 'ICICI', iconSrc: '/bank-icons/ICICI Bank Symbol SVG.svg' },
 ] as const;
 export type PaymentBankName = (typeof PAYMENT_BANK_OPTIONS)[number]['name'];
-export type PaymentModeType =
-  | 'cash'
-  | 'upi'
-  | 'wallet'
-  | 'credit-card'
-  | 'debit-card'
-  | 'internet-banking';
+export type PaymentModeType = 'cash' | 'upi' | 'credit-card' | 'debit-card' | 'internet-banking';
 export type PaymentModeProvider =
-  | 'PhonePe'
-  | 'Apple Pay'
-  | 'Samsung Pay'
-  | 'Google Pay'
-  | 'Paytm'
-  | 'BHIM';
+  'PhonePe' | 'Apple Pay' | 'Samsung Pay' | 'Google Pay' | 'Paytm' | 'BHIM';
 export type PaymentCardType =
-  | 'rupay'
-  | 'maestro'
-  | 'diners-club'
-  | 'master-card'
-  | 'american-express'
-  | 'visa';
+  'rupay' | 'maestro' | 'diners-club' | 'master-card' | 'american-express' | 'visa';
 
 export interface PaymentMode {
   id: string;
@@ -73,6 +44,7 @@ export interface PaymentMode {
   bankName?: PaymentBankName;
   paymentAccountId?: string;
   memberEmail?: string;
+  workspaceGlobal?: boolean;
   createdDate?: string;
   updatedDate?: string;
   archivedDate?: string;
@@ -102,6 +74,15 @@ export interface UserProfile {
   email: string;
   displayName: string;
   photoUrl?: string;
+  updatedDate: string;
+  onboarding?: OnboardingProgress;
+}
+
+export type OnboardingStepStatus = 'pending' | 'completed' | 'skipped';
+
+export interface OnboardingProgress {
+  activeStepId: string;
+  steps: Record<string, OnboardingStepStatus>;
   updatedDate: string;
 }
 
@@ -153,6 +134,31 @@ export interface BudgetCategory {
   monthlyBudget: number;
   color: string;
   type?: CategoryType;
+  budgetVersions?: CategoryBudgetVersion[];
+  archivedDate?: string;
+}
+
+export interface CategoryBudgetVersion {
+  effectiveMonth: string;
+  monthlyBudget: number;
+  recordedDate: string;
+}
+
+export type CategoryRemapStep = 'categories' | 'expenses' | 'templates' | 'incomes' | 'investments';
+
+export interface CategoryRemapOperation {
+  id: string;
+  sourceCategoryId: string;
+  replacementCategoryId: string;
+  replacementCategory?: BudgetCategory;
+  sourceArchivedDate: string;
+  createdBy?: string;
+  createdDate: string;
+  updatedDate: string;
+  status: 'pending' | 'running' | 'failed' | 'completed';
+  completedSteps: CategoryRemapStep[];
+  attempts: number;
+  lastError?: string;
 }
 
 export interface ExpenseTemplateAuditVersion {
@@ -180,6 +186,7 @@ export interface ExpenseTemplate {
   frequency?: InvestmentFrequency;
   createdDate?: string;
   startDate?: string;
+  effectiveStartDate?: string;
   endDate?: string;
   skippedMonths?: string[];
   archivedDate?: string;
@@ -210,6 +217,7 @@ export interface InvestmentEntry {
   frequency: InvestmentFrequency;
   date?: string;
   startDate?: string;
+  effectiveStartDate?: string;
   endDate?: string;
   notes: string;
   createdDate?: string;
