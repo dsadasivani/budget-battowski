@@ -2,7 +2,8 @@ import type { FirebaseApp } from 'firebase/app';
 import type { Firestore, Unsubscribe } from 'firebase/firestore';
 
 import { getBudgetFirestore } from './firebase.client';
-import { FirestoreWriteCoordinator, SAFE_BATCH_SIZE } from './data/firestore-write-coordinator';
+import { FirestoreWriteCoordinator, MAX_BATCH_WRITES } from './data/firestore-write-coordinator';
+import { adoptOwnerUid, normalizeEmail } from './domain/identity/identity';
 import type { BudgetMutationSet } from './domain/mutations/budget-mutations';
 import type {
   BudgetCollectionName,
@@ -19,6 +20,7 @@ import type {
 const WORKSPACE_COLLECTION = 'budgetWorkspaces';
 const LEGACY_PROFILE_COLLECTION = 'budgetUserProfiles';
 const USER_DIRECTORY_COLLECTION = 'budgetUserDirectory';
+const USER_DIRECTORY_EMAIL_COLLECTION = 'budgetUserDirectoryByEmail';
 const USER_PRIVATE_COLLECTION = 'budgetUserPrivate';
 const CATEGORY_REMAP_COLLECTION = 'categoryRemapOperations';
 const CATEGORY_REMAP_STEPS: CategoryRemapStep[] = [
@@ -104,17 +106,20 @@ export class BudgetFirestoreRepository {
 
   static async listAccessibleWorkspaces(
     app: FirebaseApp,
-    identity: { uid: string; email: string },
+    identity: { uid: string },
   ): Promise<Workspace[]> {
     const { collection, getDocs, getFirestore, query, where } = await import('firebase/firestore');
     const db = getFirestore(app);
     const workspacesRef = collection(db, WORKSPACE_COLLECTION);
-    const [uidSnapshot, emailSnapshot] = await Promise.all([
-      getDocs(query(workspacesRef, where('memberUids', 'array-contains', identity.uid))),
-      getDocs(query(workspacesRef, where('memberEmails', 'array-contains', identity.email))),
-    ]);
+    // UID-authoritative rules cannot safely authorize a collection query filtered only by email:
+    // that query could also return migrated workspaces whose memberUids do not contain this user.
+    // Legacy self-workspaces are loaded and migrated by ensureLegacyWorkspace; shared workspaces
+    // must have memberUids populated by the administrative migration before they are discoverable.
+    const uidSnapshot = await getDocs(
+      query(workspacesRef, where('memberUids', 'array-contains', identity.uid)),
+    );
 
-    return [...new Map([...uidSnapshot.docs, ...emailSnapshot.docs].map((item) => [item.id, item])).values()]
+    return uidSnapshot.docs
       .map((docSnapshot) => {
         const data = docSnapshot.data() as Omit<Workspace, 'id'> & {
           memberEmails?: string[];
@@ -154,7 +159,7 @@ export class BudgetFirestoreRepository {
         batch.delete(docSnapshot.ref);
         operationCount += 1;
 
-        if (operationCount === SAFE_BATCH_SIZE) {
+        if (operationCount === MAX_BATCH_WRITES) {
           await batch.commit();
           batch = writeBatch(db);
           operationCount = 0;
@@ -318,6 +323,17 @@ export class BudgetFirestoreRepository {
         { merge: true },
       ),
       setDoc(
+        doc(db, USER_DIRECTORY_EMAIL_COLLECTION, normalizeEmail(profile.email)),
+        {
+          uid: profile.uid,
+          email: normalizeEmail(profile.email),
+          displayName: profile.displayName,
+          photoUrl: profile.photoUrl,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      ),
+      setDoc(
         doc(db, USER_PRIVATE_COLLECTION, profile.uid),
         {
           uid: profile.uid,
@@ -347,17 +363,32 @@ export class BudgetFirestoreRepository {
     } as UserProfile;
   }
 
-  static async findUserProfileByEmail(app: FirebaseApp, email: string): Promise<UserProfile | null> {
-    const { collection, doc, getDoc, getDocs, getFirestore, limit, query, where } = await import('firebase/firestore');
+  static async findUserProfileByEmail(
+    app: FirebaseApp,
+    email: string,
+  ): Promise<UserProfile | null> {
+    const { collection, doc, getDoc, getDocs, getFirestore, limit, query, where } =
+      await import('firebase/firestore');
     const db = getFirestore(app);
+    const normalizedEmail = normalizeEmail(email);
+    const indexedDirectory = await getDoc(
+      doc(db, USER_DIRECTORY_EMAIL_COLLECTION, normalizedEmail),
+    );
+    if (indexedDirectory.exists()) {
+      return indexedDirectory.data() as UserProfile;
+    }
     const directory = await getDocs(
-      query(collection(db, USER_DIRECTORY_COLLECTION), where('email', '==', email), limit(1)),
+      query(
+        collection(db, USER_DIRECTORY_COLLECTION),
+        where('email', '==', normalizedEmail),
+        limit(1),
+      ),
     );
     if (!directory.empty) {
       const snapshot = directory.docs[0];
       return { uid: snapshot.id, ...snapshot.data() } as UserProfile;
     }
-    const legacy = await getDoc(doc(db, LEGACY_PROFILE_COLLECTION, email));
+    const legacy = await getDoc(doc(db, LEGACY_PROFILE_COLLECTION, normalizedEmail));
     return legacy.exists() ? (legacy.data() as UserProfile) : null;
   }
 
@@ -370,15 +401,10 @@ export class BudgetFirestoreRepository {
   }
 
   private ownedRecord<T extends BudgetRecord>(record: T): T {
-    if (
-      !this.identity ||
-      !('memberEmail' in record) ||
-      record.memberEmail !== this.identity.email ||
-      ('ownerUid' in record && record.ownerUid)
-    ) {
+    if (!this.identity || !('memberEmail' in record)) {
       return record;
     }
-    return { ...record, ownerUid: this.identity.uid };
+    return adoptOwnerUid(record as T & { ownerUid?: string; memberEmail?: string }, this.identity);
   }
 
   private withOwnedMutations(mutations: BudgetMutationSet): BudgetMutationSet {
@@ -394,8 +420,8 @@ export class BudgetFirestoreRepository {
             creates: value.creates.map((record: BudgetRecord) => this.ownedRecord(record)),
             updates: value.updates.map(
               (update: { record: BudgetRecord; expectedVersion: number }) => ({
-              ...update,
-              record: this.ownedRecord(update.record),
+                ...update,
+                record: this.ownedRecord(update.record),
               }),
             ),
           },
@@ -444,10 +470,10 @@ export class BudgetFirestoreRepository {
 
     const { doc, serverTimestamp, writeBatch } = await import('firebase/firestore');
     const db = await this.database();
-    for (let offset = 0; offset < records.length; offset += SAFE_BATCH_SIZE) {
+    for (let offset = 0; offset < records.length; offset += MAX_BATCH_WRITES) {
       const batch = writeBatch(db);
       const timestamp = serverTimestamp();
-      for (const record of records.slice(offset, offset + SAFE_BATCH_SIZE)) {
+      for (const record of records.slice(offset, offset + MAX_BATCH_WRITES)) {
         const { id, ...data } = this.ownedRecord(record);
         batch.set(doc(db, WORKSPACE_COLLECTION, this.workspaceId, collectionName, id), {
           ...stripUndefined(data),
@@ -559,9 +585,9 @@ export class BudgetFirestoreRepository {
             where('categoryId', '==', operation.sourceCategoryId),
           ),
         );
-        for (let offset = 0; offset < snapshot.docs.length; offset += SAFE_BATCH_SIZE) {
+        for (let offset = 0; offset < snapshot.docs.length; offset += MAX_BATCH_WRITES) {
           const batch = writeBatch(db);
-          for (const snapshotDocument of snapshot.docs.slice(offset, offset + SAFE_BATCH_SIZE)) {
+          for (const snapshotDocument of snapshot.docs.slice(offset, offset + MAX_BATCH_WRITES)) {
             batch.update(snapshotDocument.ref, {
               categoryId: operation.replacementCategoryId,
               updatedAt: serverTimestamp(),

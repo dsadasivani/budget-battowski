@@ -1,10 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import {
-  MAT_BOTTOM_SHEET_DATA,
-  MatBottomSheetRef,
-} from '@angular/material/bottom-sheet';
+import { MAT_BOTTOM_SHEET_DATA, MatBottomSheetRef } from '@angular/material/bottom-sheet';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -21,6 +18,9 @@ export interface MonthlyReviewRow {
   label: string;
   categoryName: string;
   amount: number;
+  originalAmount: number;
+  amountModified: boolean;
+  sourceVersion?: number;
   memberName?: string;
   pendingDelete?: boolean;
   existingRecordId?: string;
@@ -52,10 +52,12 @@ export interface MonthlyReviewResult {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MonthlyReviewDialog {
-  private readonly dialogRef =
-    inject<MatDialogRef<MonthlyReviewDialog, MonthlyReviewResult>>(MatDialogRef, {
+  private readonly dialogRef = inject<MatDialogRef<MonthlyReviewDialog, MonthlyReviewResult>>(
+    MatDialogRef,
+    {
       optional: true,
-    });
+    },
+  );
   private readonly bottomSheetRef = inject<
     MatBottomSheetRef<MonthlyReviewDialog, MonthlyReviewResult>
   >(MatBottomSheetRef, { optional: true });
@@ -79,6 +81,13 @@ export class MonthlyReviewDialog {
 
   protected toggleDelete(row: MonthlyReviewRow): void {
     row.pendingDelete = !row.pendingDelete;
+    this.rows.update((rows) => [...rows]);
+  }
+
+  protected updateAmount(row: MonthlyReviewRow, value: number | string): void {
+    const amount = Number(value);
+    row.amount = amount;
+    row.amountModified = !sameReviewAmount(amount, row.originalAmount);
     this.rows.update((rows) => [...rows]);
   }
 
@@ -140,4 +149,8 @@ export class MonthlyReviewDialog {
 
     return data;
   }
+}
+
+export function sameReviewAmount(left: number, right: number): boolean {
+  return Number.isFinite(left) && Number.isFinite(right) && Math.abs(left - right) < 0.005;
 }

@@ -9,16 +9,18 @@ import type { User } from 'firebase/auth';
 import { firstValueFrom } from 'rxjs';
 
 import { BudgetFirestoreRepository } from './budget.firestore';
-import { isVersionEffectiveOnDate } from './domain/effective-dating/effective-dating-engine';
+import { effectiveValueForOccurrence } from './domain/effective-dating/effective-dating-engine';
+import { MonthlyReviewSourceConflictError } from './domain/errors';
+import { haveSameOwner, isWorkspaceOwner, normalizeEmail } from './domain/identity/identity';
 import { isLoanOccurrenceInRange, loanOccurrenceDate } from './domain/loans/loan-schedule-engine';
 import { scheduleForMonth } from './domain/recurrence/recurrence-engine';
 import { applyEntityMutations, planEntityMutations } from './domain/mutations/mutation-planner';
 import type { BudgetMutationSet } from './domain/mutations/budget-mutations';
 import type { EntityMutations, VersionedRecord } from './domain/mutations/entity-mutations';
-import {
+import type {
   CategoryRetirementDialog,
-  type CategoryRetirementData,
-  type CategoryRetirementResult,
+  CategoryRetirementData,
+  CategoryRetirementResult,
 } from './category-retirement-dialog';
 import type {
   BulkEditorDialog,
@@ -31,20 +33,14 @@ import type {
   MonthlyReviewResult,
   MonthlyReviewRow,
 } from './monthly-review-dialog';
-import { IncomeEditorDialog, type IncomeEditorData } from './income-editor-dialog';
-import {
+import type { IncomeEditorDialog, IncomeEditorData } from './income-editor-dialog';
+import type {
   WorkspaceConfirmDialog,
   WorkspaceFormDialog,
-  type WorkspaceConfirmData,
-  type WorkspaceFormData,
-  type WorkspaceFormResult,
+  WorkspaceConfirmData,
+  WorkspaceFormData,
+  WorkspaceFormResult,
 } from './workspace-form-dialog';
-import {
-  observeBudgetAuth,
-  signInWithEmailPassword,
-  signInWithGoogle,
-  signOutBudgetUser,
-} from './firebase.client';
 import { FinanceStore } from './stores/finance.store';
 import { OnboardingStore } from './stores/onboarding.store';
 import { PaymentStore } from './stores/payment.store';
@@ -123,10 +119,6 @@ function todayDate(): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
     date.getDate(),
   ).padStart(2, '0')}`;
-}
-
-function monthEndDate(month: string): string {
-  return previousDate(monthStartDate(addMonths(month, 1)));
 }
 
 function previousDate(date: string): string {
@@ -418,7 +410,6 @@ export class BudgetStore implements OnDestroy {
   private readonly dialog = inject(MatDialog);
   private readonly storagePrefix = 'budget-battowski';
   private readonly workspaceTabCount = 5;
-  private readonly authUnsubscribe = signal<(() => void) | null>(null);
   private readonly tabSwipeStart = signal<{ x: number; y: number } | null>(null);
   private readonly unsubscribes = signal<Array<() => void>>([]);
   private readonly prefillAttemptedSignatures = signal(new Set<string>());
@@ -450,9 +441,7 @@ export class BudgetStore implements OnDestroy {
       .filter((workspace) => !!workspace.archivedDate)
       .sort((left, right) => left.name.localeCompare(right.name)),
   );
-  readonly activeWorkspace = computed(
-    () => this.workspaces().find((workspace) => workspace.id === this.workspaceId()) ?? null,
-  );
+  readonly activeWorkspace = this.workspaceState.activeWorkspace;
   readonly userName = this.sessionState.userName;
   readonly userUid = this.sessionState.userUid;
   readonly userEmail = this.sessionState.userEmail;
@@ -477,18 +466,9 @@ export class BudgetStore implements OnDestroy {
   readonly processedImportFile = signal<{ blob: Blob; filename: string } | null>(null);
 
   readonly monthNames = MONTH_NAMES;
-  readonly activeMembers = computed(() =>
-    (this.activeWorkspace()?.members ?? [])
-      .filter((member) => !member.archivedDate)
-      .sort((left, right) =>
-        this.memberDisplayName(left).localeCompare(this.memberDisplayName(right)),
-      ),
-  );
-  readonly canManageWorkspace = computed(() => {
-    const email = this.userEmail();
-    const workspace = this.activeWorkspace();
-    return !!email && !!workspace && workspace.ownerEmail === email;
-  });
+  readonly activeMembers = this.workspaceState.activeMembers;
+  readonly canManageWorkspace = this.workspaceState.canManageWorkspace;
+  readonly selectedMemberId = this.workspaceState.selectedMemberId;
   readonly selectedMemberLabel = computed(() => {
     const selected = this.selectedMemberEmail();
     if (selected === 'ALL') {
@@ -681,18 +661,9 @@ export class BudgetStore implements OnDestroy {
   readonly monthLabel = computed(() => monthLabel(this.selectedMonth()));
   readonly activeIncomeSources = computed(() => {
     const selectedMonth = this.selectedMonth();
-    const activeIncomes = this.filteredIncomes().filter((income) => {
-      const incomeMonth = income.month ? dateMonthKey(income.month) : null;
-      const startDate = activeStartDate(
-        income.startDate,
-        incomeMonthStartDate(income.month) || income.createdDate,
-      );
-
-      return (
-        (!incomeMonth || incomeMonth <= selectedMonth) &&
-        isMonthInRange(selectedMonth, startDate, income.endDate)
-      );
-    });
+    const activeIncomes = this.filteredIncomes()
+      .map((income) => this.incomeVersionForMonth(income, selectedMonth))
+      .filter((income): income is IncomeSource => !!income);
     const monthScoped = activeIncomes.filter(
       (income) => dateMonthKey(income.month) === selectedMonth,
     );
@@ -714,10 +685,9 @@ export class BudgetStore implements OnDestroy {
     return activeIncomes.filter((income) => !income.month);
   });
   readonly activeLoans = computed(() =>
-    this.filteredLoans().filter(
-      (loan) =>
-        loan.emi > 0 && isLoanOccurrenceInRange(this.selectedMonth(), loan.startDate, loan.endDate),
-    ),
+    this.filteredLoans()
+      .map((loan) => this.loanVersionForMonth(loan, this.selectedMonth()))
+      .filter((loan): loan is Loan => !!loan && loan.emi > 0),
   );
   readonly investmentPlans = computed(() =>
     this.filteredInvestments().filter(
@@ -1239,74 +1209,22 @@ export class BudgetStore implements OnDestroy {
   }
 
   ngOnDestroy(): void {
-    this.authUnsubscribe()?.();
     this.stopFirestoreListeners();
   }
 
   async loginWithGoogle(): Promise<void> {
-    if (!this.firebase.app) {
-      this.syncStatus.set('Firebase config needed');
-      return;
-    }
-
-    this.loginLoaderActive.set(true);
-    this.isSyncing.set(true);
-    this.syncError.set(null);
-
-    try {
-      this.syncStatus.set('Signing in');
-      const user = await signInWithGoogle(this.firebase.app);
-      await this.handleAuthUser(user);
-    } catch (error) {
-      this.handleSyncError(error instanceof Error ? error.message : 'Google sign-in failed.');
-      this.loginLoaderActive.set(false);
-    } finally {
-      this.isSyncing.set(false);
-    }
+    await this.sessionState.loginWithGoogle((user) => this.handleAuthUser(user));
   }
 
   async loginWithEmailPassword(email: string, password: string): Promise<void> {
-    if (!this.firebase.app) {
-      this.syncStatus.set('Firebase config needed');
-      return;
-    }
-
-    this.loginLoaderActive.set(true);
-    this.isSyncing.set(true);
-    this.syncError.set(null);
-
-    try {
-      this.syncStatus.set('Signing in');
-      const user = await signInWithEmailPassword(this.firebase.app, email, password);
-      await this.handleAuthUser(user);
-    } catch (error) {
-      this.handleSyncError(
-        error instanceof Error ? error.message : 'Email and password sign-in failed.',
-      );
-      this.loginLoaderActive.set(false);
-    } finally {
-      this.isSyncing.set(false);
-    }
+    await this.sessionState.loginWithEmailPassword(email, password, (user) =>
+      this.handleAuthUser(user),
+    );
   }
 
   async logout(): Promise<void> {
-    if (!this.firebase.app) {
-      return;
-    }
-
-    this.loginLoaderActive.set(false);
     this.isWorkspaceDataLoading.set(false);
-    this.isSyncing.set(true);
-    this.syncError.set(null);
-
-    try {
-      await signOutBudgetUser(this.firebase.app);
-      this.syncStatus.set('Signed out');
-    } catch (error) {
-      this.handleSyncError(error instanceof Error ? error.message : 'Logout failed.');
-    } finally {
-      this.isSyncing.set(false);
-    }
+    await this.sessionState.logout();
   }
 
   openMonthPicker(): void {
@@ -1532,8 +1450,13 @@ export class BudgetStore implements OnDestroy {
   }
 
   canManageWorkspaceRecord(workspace: Workspace | null | undefined): boolean {
-    const email = this.userEmail();
-    return !!email && !!workspace && workspace.ownerEmail === email;
+    return (
+      !!workspace &&
+      isWorkspaceOwner(workspace, {
+        uid: this.userUid() ?? undefined,
+        email: this.userEmail() ?? undefined,
+      })
+    );
   }
 
   async retryCategoryRemaps(): Promise<void> {
@@ -1541,8 +1464,9 @@ export class BudgetStore implements OnDestroy {
   }
 
   async openIncomeEditor(income?: IncomeSource): Promise<void> {
+    const { IncomeEditorDialog: incomeEditorComponent } = await import('./income-editor-dialog');
     const dialogRef = this.dialog.open<IncomeEditorDialog, IncomeEditorData, IncomeSource>(
-      IncomeEditorDialog,
+      incomeEditorComponent,
       {
         autoFocus: 'first-tabbable',
         data: {
@@ -1618,12 +1542,19 @@ export class BudgetStore implements OnDestroy {
 
   async archiveWorkspaceMember(memberEmail: string): Promise<void> {
     const workspace = this.activeWorkspace();
-    if (!workspace || !this.canManageWorkspace() || memberEmail === workspace.ownerEmail) {
+    const member = workspace?.members.find(
+      (candidate) => normalizeEmail(candidate.email) === normalizeEmail(memberEmail),
+    );
+    if (
+      !workspace ||
+      !member ||
+      !this.canManageWorkspace() ||
+      isWorkspaceOwner(workspace, { uid: member.uid, email: member.email })
+    ) {
       return;
     }
 
-    const member = workspace.members.find((item) => item.email === memberEmail);
-    if (!member || member.archivedDate) {
+    if (member.archivedDate) {
       return;
     }
 
@@ -1892,7 +1823,7 @@ export class BudgetStore implements OnDestroy {
 
       bottomSheetRef.afterDismissed().subscribe((result) => {
         if (result) {
-          void this.applyMonthlyReview(result);
+          this.applyMonthlyReviewFromDialog(result);
         }
       });
       return;
@@ -1909,7 +1840,7 @@ export class BudgetStore implements OnDestroy {
 
     dialogRef.afterClosed().subscribe((result) => {
       if (result) {
-        void this.applyMonthlyReview(result);
+        this.applyMonthlyReviewFromDialog(result);
       }
     });
   }
@@ -1937,6 +1868,9 @@ export class BudgetStore implements OnDestroy {
           categoryName: this.categoryName(template.categoryId),
           memberName: this.memberName(template.memberEmail),
           amount: schedule?.amount ?? template.amount,
+          originalAmount: schedule?.amount ?? template.amount,
+          amountModified: false,
+          sourceVersion: template.version,
         };
       });
 
@@ -1961,21 +1895,25 @@ export class BudgetStore implements OnDestroy {
           ) &&
           !this.isInvestmentMonthSkipped(investment, month) &&
           (!isOneTimeInvestment(investment) || month > currentMonth()) &&
-          !!investmentScheduleForMonth(investment, month),
+          !!this.investmentVersionForMonth(investment, month),
       )
       .map<MonthlyReviewRow>((investment) => {
-        const schedule = investmentScheduleForMonth(investment, month);
+        const effectiveInvestment = this.investmentVersionForMonth(investment, month)!;
+        const schedule = investmentScheduleForMonth(effectiveInvestment, month);
 
         return {
           id: `investment:${investment.id}`,
           sourceId: investment.id,
           sourceType: 'investment',
-          label: investment.name,
-          categoryName: investment.categoryId
-            ? this.categoryName(investment.categoryId)
+          label: effectiveInvestment.name,
+          categoryName: effectiveInvestment.categoryId
+            ? this.categoryName(effectiveInvestment.categoryId)
             : 'Investments',
-          memberName: this.memberName(investment.memberEmail),
-          amount: schedule?.amount ?? investment.amount,
+          memberName: this.memberName(effectiveInvestment.memberEmail),
+          amount: schedule?.amount ?? effectiveInvestment.amount,
+          originalAmount: schedule?.amount ?? effectiveInvestment.amount,
+          amountModified: false,
+          sourceVersion: investment.version,
         };
       });
 
@@ -2012,8 +1950,17 @@ export class BudgetStore implements OnDestroy {
         const effectiveTemplate = template ? this.templateVersionForMonth(template, month) : null;
         const existing = expensesByTemplateId.get(row.sourceId);
 
-        if (!template || !effectiveTemplate) {
-          continue;
+        const effectiveSchedule = effectiveTemplate
+          ? templateScheduleForMonth(effectiveTemplate, month)
+          : null;
+
+        if (
+          !template ||
+          !effectiveTemplate ||
+          !effectiveSchedule ||
+          this.isTemplateMonthSkipped(template, month)
+        ) {
+          throw new MonthlyReviewSourceConflictError('expense', row.sourceId);
         }
 
         if (row.pendingDelete) {
@@ -2028,15 +1975,22 @@ export class BudgetStore implements OnDestroy {
 
         approvedExpenses.push({
           ...this.expenseFromTemplate(effectiveTemplate, month, existing),
-          amount: row.amount,
+          amount: row.amountModified ? row.amount : effectiveSchedule.amount,
           memberEmail: existing?.memberEmail ?? effectiveTemplate.memberEmail,
         });
         continue;
       }
 
-      const plan = investmentsById.get(row.sourceId);
-      if (!plan) {
-        continue;
+      const sourcePlan = investmentsById.get(row.sourceId);
+      const plan = sourcePlan ? this.investmentVersionForMonth(sourcePlan, month) : null;
+      const effectiveSchedule = plan ? investmentScheduleForMonth(plan, month) : null;
+      if (
+        !sourcePlan ||
+        !plan ||
+        !effectiveSchedule ||
+        this.isInvestmentMonthSkipped(sourcePlan, month)
+      ) {
+        throw new MonthlyReviewSourceConflictError('investment', row.sourceId);
       }
 
       const existing =
@@ -2052,7 +2006,7 @@ export class BudgetStore implements OnDestroy {
 
       if (row.pendingDelete) {
         investments = investments.map((item) =>
-          item.id === plan.id ? this.withSkippedInvestmentMonth(item, month) : item,
+          item.id === sourcePlan.id ? this.withSkippedInvestmentMonth(item, month) : item,
         );
         if (existing) {
           deletedInvestmentIds.add(existing.id);
@@ -2063,17 +2017,17 @@ export class BudgetStore implements OnDestroy {
       approvedInvestments.push({
         id: existing?.id ?? this.reviewedInvestmentId(plan.id, month),
         name: plan.name,
-        amount: row.amount,
+        amount: row.amountModified ? row.amount : effectiveSchedule.amount,
         categoryId: plan.categoryId,
         frequency: 'one-time',
         date:
-          investmentScheduleForMonth(plan, month)?.date ??
+          effectiveSchedule.date ??
           dateInMonth(month, activeStartDate(plan.startDate, plan.date || plan.createdDate)),
         notes: plan.notes || 'Approved from recurring investment plan',
         createdDate: existing?.createdDate || new Date().toISOString(),
-        sourceInvestmentId: plan.id,
+        sourceInvestmentId: sourcePlan.id,
         memberEmail: existing?.memberEmail ?? plan.memberEmail,
-        ownerUid: existing?.ownerUid ?? plan.ownerUid,
+        ownerUid: existing?.ownerUid ?? sourcePlan.ownerUid,
         paymentModeId: plan.paymentModeId,
         auditTrail: existing?.auditTrail ?? [],
       });
@@ -2122,6 +2076,17 @@ export class BudgetStore implements OnDestroy {
     }
   }
 
+  private applyMonthlyReviewFromDialog(result: MonthlyReviewResult): void {
+    void this.applyMonthlyReview(result).catch((error: unknown) => {
+      this.syncError.set(
+        error instanceof Error
+          ? error.message
+          : 'Monthly Review changed while it was open. Refresh and try again.',
+      );
+      this.syncStatus.set('Monthly review needs refresh');
+    });
+  }
+
   private async applyImportRows(rows: BudgetImportRow[]): Promise<boolean> {
     const importerEmail = this.actingMemberEmail();
     const records = {
@@ -2158,7 +2123,7 @@ export class BudgetStore implements OnDestroy {
         return false;
       }
       const account = availableAccounts.find((item) => item.id === mode.paymentAccountId);
-      return !account || account.memberEmail !== mode.memberEmail;
+      return !account || !haveSameOwner(account, mode);
     });
     const importedFinancialRecords = [
       ...records.templates,
@@ -2176,11 +2141,9 @@ export class BudgetStore implements OnDestroy {
         : undefined;
       return (
         !mode ||
-        (!this.isWorkspaceGlobalCashMode(mode) && mode.memberEmail !== record.memberEmail) ||
+        (!this.isWorkspaceGlobalCashMode(mode) && !haveSameOwner(mode, record)) ||
         (!!mode.paymentAccountId &&
-          (!account ||
-            account.memberEmail !== mode.memberEmail ||
-            account.memberEmail !== record.memberEmail))
+          (!account || !haveSameOwner(account, mode) || !haveSameOwner(account, record)))
       );
     });
     if (invalidImportedMode || invalidImportedRecord) {
@@ -2694,9 +2657,7 @@ export class BudgetStore implements OnDestroy {
       : undefined;
     if (
       normalized.paymentAccountId &&
-      (!linkedAccount ||
-        !!linkedAccount.archivedDate ||
-        linkedAccount.memberEmail !== normalized.memberEmail)
+      (!linkedAccount || !!linkedAccount.archivedDate || !haveSameOwner(linkedAccount, normalized))
     ) {
       this.syncStatus.set(
         'A payment mode can only link to an active account owned by the same member',
@@ -2936,13 +2897,17 @@ export class BudgetStore implements OnDestroy {
   }
 
   paymentAccountsForPaymentMode(
-    paymentMode?: Pick<PaymentMode, 'memberEmail' | 'paymentAccountId'>,
+    paymentMode?: Pick<PaymentMode, 'ownerUid' | 'memberEmail' | 'paymentAccountId'>,
   ): PaymentAccount[] {
     const ownerEmail = paymentMode?.memberEmail ?? this.actingMemberEmail();
+    const owner = paymentMode ?? {
+      ownerUid: this.userUid() ?? undefined,
+      memberEmail: ownerEmail,
+    };
     return this.paymentAccounts()
       .filter(
         (account) =>
-          (!account.archivedDate && !!ownerEmail && account.memberEmail === ownerEmail) ||
+          (!account.archivedDate && !!ownerEmail && haveSameOwner(account, owner)) ||
           account.id === paymentMode?.paymentAccountId,
       )
       .sort(comparePaymentAccounts);
@@ -3090,17 +3055,12 @@ export class BudgetStore implements OnDestroy {
     );
   }
 
-  private matchesSelectedMember(record: { memberEmail?: string }): boolean {
-    const selected = this.selectedMemberEmail();
-    if (selected === 'ALL') {
-      return true;
-    }
-
-    return record.memberEmail === selected;
+  private matchesSelectedMember(record: { ownerUid?: string; memberEmail?: string }): boolean {
+    return this.workspaceState.matchesSelectedMember(record);
   }
 
   private normalizeEmail(email: string): string {
-    return email.trim().toLowerCase();
+    return normalizeEmail(email);
   }
 
   formatMoney(value: number): string {
@@ -3143,37 +3103,37 @@ export class BudgetStore implements OnDestroy {
   }
 
   private incomeVersionForMonth(income: IncomeSource, month: string): IncomeSource | null {
-    const monthStart = monthStartDate(month);
-    const monthEnd = monthEndDate(month);
-    const audit = [...(income.auditTrail ?? [])]
-      .filter(
-        (version) =>
-          (!version.effectiveStartDate || version.effectiveStartDate <= monthEnd) &&
-          (!version.effectiveEndDate || version.effectiveEndDate >= monthStart),
-      )
-      .sort((left, right) =>
-        (right.effectiveStartDate || '').localeCompare(left.effectiveStartDate || ''),
-      )[0];
-    if (audit) {
-      return {
-        ...income,
-        source: audit.source,
-        amount: audit.amount,
-        cadence: audit.cadence,
-        categoryId: audit.categoryId,
-        notes: audit.notes ?? '',
-        month: audit.month,
-        startDate: audit.startDate,
-        endDate: audit.endDate,
-        memberEmail: audit.memberEmail,
-      };
-    }
-
-    const startDate = activeStartDate(
-      income.startDate,
-      incomeMonthStartDate(income.month) || income.createdDate,
+    const historical = (income.auditTrail ?? []).map((audit) => ({
+      ...income,
+      source: audit.source,
+      amount: audit.amount,
+      cadence: audit.cadence,
+      categoryId: audit.categoryId,
+      notes: audit.notes ?? '',
+      month: audit.month,
+      startDate: audit.startDate,
+      endDate: audit.endDate,
+      memberEmail: audit.memberEmail ?? income.memberEmail,
+      effectiveStartDate: audit.effectiveStartDate,
+      effectiveEndDate: audit.effectiveEndDate,
+      operation: audit.operation === 'deleted' ? ('updated' as const) : audit.operation,
+    }));
+    return (
+      effectiveValueForOccurrence(income, historical, (value) => {
+        const startDate = activeStartDate(
+          value.startDate,
+          incomeMonthStartDate(value.month) || value.createdDate,
+        );
+        if (!isMonthInRange(month, startDate, value.endDate)) {
+          return null;
+        }
+        if (value.cadence === 'one-time') {
+          const valueMonth = value.month ?? dateMonthKey(startDate);
+          return valueMonth === month ? (startDate ?? monthStartDate(month)) : null;
+        }
+        return dateInMonth(month, startDate);
+      })?.value ?? null
     );
-    return isMonthInRange(month, startDate, income.endDate) ? income : null;
   }
 
   private confirmedInvestmentsForMonth(month: string): InvestmentEntry[] {
@@ -3352,48 +3312,80 @@ export class BudgetStore implements OnDestroy {
       return null;
     }
 
-    const auditVersion = (template.auditTrail ?? []).find((audit) => {
-      if (audit.operation === 'deleted') {
-        return false;
-      }
-      const auditTemplate: ExpenseTemplate = {
-        ...template,
-        name: audit.name,
-        categoryId: audit.categoryId,
-        amount: audit.amount,
-        frequency: audit.frequency ?? 'monthly',
-        startDate: audit.startDate,
-        effectiveStartDate: audit.effectiveStartDate,
-        endDate: audit.endDate,
-      };
-      const occurrence = templateScheduleForMonth(auditTemplate, month);
-      return !!occurrence && isVersionEffectiveOnDate(audit, occurrence.date);
-    });
+    const historical = (template.auditTrail ?? []).map((audit) => ({
+      ...template,
+      name: audit.name,
+      categoryId: audit.categoryId,
+      amount: audit.amount,
+      frequency: audit.frequency ?? 'monthly',
+      startDate: audit.startDate,
+      effectiveStartDate: audit.effectiveStartDate,
+      effectiveEndDate: audit.effectiveEndDate,
+      endDate: audit.endDate,
+      memberEmail: audit.memberEmail ?? template.memberEmail,
+      paymentModeId: audit.paymentModeId ?? template.paymentModeId,
+      operation: audit.operation === 'deleted' ? ('updated' as const) : audit.operation,
+    }));
+    return (
+      effectiveValueForOccurrence(
+        template,
+        historical,
+        (value) => templateScheduleForMonth(value, month)?.date ?? null,
+      )?.value ?? null
+    );
+  }
 
-    if (auditVersion) {
-      return {
-        ...template,
-        name: auditVersion.name,
-        categoryId: auditVersion.categoryId,
-        amount: auditVersion.amount,
-        frequency: auditVersion.frequency ?? template.frequency ?? 'monthly',
-        startDate: auditVersion.startDate,
-        effectiveStartDate: auditVersion.effectiveStartDate,
-        endDate: auditVersion.endDate,
-        memberEmail: auditVersion.memberEmail ?? template.memberEmail,
-        paymentModeId: auditVersion.paymentModeId ?? template.paymentModeId,
-      };
-    }
+  investmentVersionForMonth(investment: InvestmentEntry, month: string): InvestmentEntry | null {
+    const historical = (investment.auditTrail ?? []).map((audit) => ({
+      ...investment,
+      name: audit.name,
+      amount: audit.amount,
+      categoryId: audit.categoryId,
+      frequency: audit.frequency,
+      date: audit.date,
+      startDate: audit.startDate,
+      effectiveStartDate: audit.effectiveStartDate,
+      effectiveEndDate: audit.effectiveEndDate,
+      endDate: audit.endDate,
+      notes: audit.notes ?? '',
+      memberEmail: audit.memberEmail ?? investment.memberEmail,
+      paymentModeId: audit.paymentModeId ?? investment.paymentModeId,
+      operation: audit.operation === 'deleted' ? ('updated' as const) : audit.operation,
+    }));
+    return (
+      effectiveValueForOccurrence(
+        investment,
+        historical,
+        (value) => investmentScheduleForMonth(value, month)?.date ?? null,
+      )?.value ?? null
+    );
+  }
 
-    const currentOccurrence = templateScheduleForMonth(template, month);
-    if (
-      currentOccurrence &&
-      (!template.effectiveStartDate || currentOccurrence.date >= template.effectiveStartDate)
-    ) {
-      return template;
-    }
-
-    return null;
+  private loanVersionForMonth(loan: Loan, month: string): Loan | null {
+    const historical = (loan.auditTrail ?? []).map((audit) => ({
+      ...loan,
+      lender: audit.lender,
+      loanType: audit.loanType,
+      principal: audit.principal,
+      outstanding: audit.outstanding,
+      annualRate: audit.annualRate,
+      emi: audit.emi,
+      startDate: audit.startDate,
+      endDate: audit.endDate,
+      notes: audit.notes ?? '',
+      memberEmail: audit.memberEmail ?? loan.memberEmail,
+      paymentModeId: audit.paymentModeId ?? loan.paymentModeId,
+      effectiveStartDate: audit.effectiveStartDate,
+      effectiveEndDate: audit.effectiveEndDate,
+      operation: audit.operation === 'deleted' ? ('updated' as const) : audit.operation,
+    }));
+    return (
+      effectiveValueForOccurrence(loan, historical, (value) =>
+        isLoanOccurrenceInRange(month, value.startDate, value.endDate)
+          ? loanOccurrenceDate(month, value.startDate)
+          : null,
+      )?.value ?? null
+    );
   }
 
   private isTemplateChanged(previous: ExpenseTemplate | undefined, next: ExpenseTemplate): boolean {
@@ -3965,26 +3957,7 @@ export class BudgetStore implements OnDestroy {
       return;
     }
 
-    this.isSessionChecking.set(true);
-    this.isSyncing.set(true);
-    this.syncError.set(null);
-
-    try {
-      this.authUnsubscribe.set(
-        await observeBudgetAuth(this.firebase.app, (user) => {
-          void this.handleAuthUser(user);
-        }),
-      );
-      this.syncStatus.set('Sign in with Google');
-    } catch (error) {
-      this.handleSyncError(
-        error instanceof Error ? error.message : 'Unable to initialize Firebase login.',
-      );
-      this.isSessionChecking.set(false);
-      this.loginLoaderActive.set(false);
-    } finally {
-      this.isSyncing.set(false);
-    }
+    await this.sessionState.observeAuth((user) => this.handleAuthUser(user));
   }
 
   private async handleAuthUser(user: User | null): Promise<void> {
@@ -4065,7 +4038,7 @@ export class BudgetStore implements OnDestroy {
       );
       const accessibleWorkspaces = await BudgetFirestoreRepository.listAccessibleWorkspaces(
         this.firebase.app,
-        { uid: user.uid, email },
+        { uid: user.uid },
       );
       const workspaceMap = new Map(
         [legacyWorkspace, ...accessibleWorkspaces].map((workspace) => [workspace.id, workspace]),
@@ -4254,12 +4227,13 @@ export class BudgetStore implements OnDestroy {
   private async openWorkspaceForm(
     data: WorkspaceFormData,
   ): Promise<WorkspaceFormResult | undefined> {
+    const { WorkspaceFormDialog: workspaceFormComponent } = await import('./workspace-form-dialog');
     if (this.breakpointObserver.isMatched('(max-width: 780px)')) {
       const bottomSheetRef = this.bottomSheet.open<
         WorkspaceFormDialog,
         WorkspaceFormData,
         WorkspaceFormResult
-      >(WorkspaceFormDialog, {
+      >(workspaceFormComponent, {
         ariaLabel: data.mode === 'create' ? 'Create workspace' : 'Manage workspace members',
         autoFocus: false,
         data,
@@ -4272,7 +4246,7 @@ export class BudgetStore implements OnDestroy {
     }
 
     const dialogRef = this.dialog.open<WorkspaceFormDialog, WorkspaceFormData, WorkspaceFormResult>(
-      WorkspaceFormDialog,
+      workspaceFormComponent,
       {
         ariaLabel: data.mode === 'create' ? 'Create workspace' : 'Manage workspace members',
         autoFocus: false,
@@ -4288,12 +4262,14 @@ export class BudgetStore implements OnDestroy {
   }
 
   private async openWorkspaceConfirm(data: WorkspaceConfirmData): Promise<boolean> {
+    const { WorkspaceConfirmDialog: workspaceConfirmComponent } =
+      await import('./workspace-form-dialog');
     if (this.breakpointObserver.isMatched('(max-width: 780px)')) {
       const bottomSheetRef = this.bottomSheet.open<
         WorkspaceConfirmDialog,
         WorkspaceConfirmData,
         boolean
-      >(WorkspaceConfirmDialog, {
+      >(workspaceConfirmComponent, {
         ariaLabel: data.title,
         autoFocus: false,
         data,
@@ -4305,7 +4281,7 @@ export class BudgetStore implements OnDestroy {
     }
 
     const dialogRef = this.dialog.open<WorkspaceConfirmDialog, WorkspaceConfirmData, boolean>(
-      WorkspaceConfirmDialog,
+      workspaceConfirmComponent,
       {
         ariaLabel: data.title,
         autoFocus: false,
@@ -4472,6 +4448,8 @@ export class BudgetStore implements OnDestroy {
   private async openCategoryRetirement(
     category: BudgetCategory,
   ): Promise<CategoryRetirementResult | undefined> {
+    const { CategoryRetirementDialog: categoryRetirementComponent } =
+      await import('./category-retirement-dialog');
     const data: CategoryRetirementData = {
       category,
       candidates: this.categories().filter(
@@ -4502,7 +4480,7 @@ export class BudgetStore implements OnDestroy {
       CategoryRetirementDialog,
       CategoryRetirementData,
       CategoryRetirementResult
-    >(CategoryRetirementDialog, {
+    >(categoryRetirementComponent, {
       autoFocus: 'first-tabbable',
       data,
       maxWidth: '94vw',
