@@ -1,0 +1,33 @@
+name: Branch Policy
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - master
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  branch-policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Validate promotion path
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [[ "$BASE_REF" == "develop" && "$HEAD_REF" != feature/* ]]; then
+            echo "Pull requests to develop must originate from a feature/* branch."
+            exit 1
+          fi
+
+          if [[ "$BASE_REF" == "master" && "$HEAD_REF" != "develop" ]]; then
+            echo "Pull requests to master must originate from develop."
+            exit 1
+          fi
+
+          echo "Allowed promotion: $HEAD_REF -> $BASE_REF"

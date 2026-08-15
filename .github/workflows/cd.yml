@@ -1,0 +1,106 @@
+name: CD
+
+on:
+  push:
+    branches:
+      - develop
+      - master
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Firebase environment to deploy
+        required: true
+        default: qa
+        type: choice
+        options:
+          - qa
+          - production
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy-qa:
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/develop') ||
+      (github.event_name == 'workflow_dispatch' && inputs.target == 'qa' && github.ref == 'refs/heads/develop')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: qa
+      url: https://budget-battowski-qa.web.app
+    concurrency:
+      group: firebase-deploy-qa
+      cancel-in-progress: false
+    steps:
+      - name: Check out develop
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build QA application
+        run: npm run build:qa
+
+      - name: Deploy QA rules and Hosting
+        run: >-
+          npx firebase-tools deploy
+          --only "firestore:rules,hosting"
+          --project "${{ vars.GCP_PROJECT_ID }}"
+          --non-interactive
+
+  deploy-production:
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
+      (github.event_name == 'workflow_dispatch' && inputs.target == 'production' && github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: https://budget-battowski.web.app
+    concurrency:
+      group: firebase-deploy-production
+      cancel-in-progress: false
+    steps:
+      - name: Check out master
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build production application
+        run: npm run build:prod
+
+      - name: Deploy production rules and Hosting
+        run: >-
+          npx firebase-tools deploy
+          --only "firestore:rules,hosting"
+          --project "${{ vars.GCP_PROJECT_ID }}"
+          --non-interactive
