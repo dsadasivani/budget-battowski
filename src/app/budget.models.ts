@@ -1,20 +1,7 @@
 export type ExpenseType = 'recurring' | 'one-time';
-export type Cadence =
-  | 'daily'
-  | 'weekly'
-  | 'bi-weekly'
-  | 'monthly'
-  | 'quarterly'
-  | 'half-yearly'
-  | 'annual'
-  | 'one-time';
+export type Cadence = 'monthly' | 'one-time';
 export type InvestmentFrequency =
-  | 'weekly'
-  | 'monthly'
-  | 'quarterly'
-  | 'half-yearly'
-  | 'annual'
-  | 'one-time';
+  'weekly' | 'monthly' | 'quarterly' | 'half-yearly' | 'annual' | 'one-time';
 export type CategoryType = 'Income' | 'Investments' | 'Expenses';
 export type WorkspaceRole = 'owner' | 'editor';
 export const PAYMENT_BANK_OPTIONS = [
@@ -41,30 +28,28 @@ export const PAYMENT_BANK_OPTIONS = [
   { name: 'ICICI', iconSrc: '/bank-icons/ICICI Bank Symbol SVG.svg' },
 ] as const;
 export type PaymentBankName = (typeof PAYMENT_BANK_OPTIONS)[number]['name'];
-export type PaymentModeType =
-  | 'cash'
-  | 'upi'
-  | 'wallet'
-  | 'credit-card'
-  | 'debit-card'
-  | 'internet-banking';
+export type PaymentModeType = 'cash' | 'upi' | 'credit-card' | 'debit-card' | 'internet-banking';
 export type PaymentModeProvider =
-  | 'PhonePe'
-  | 'Apple Pay'
-  | 'Samsung Pay'
-  | 'Google Pay'
-  | 'Paytm'
-  | 'BHIM';
+  'PhonePe' | 'Apple Pay' | 'Samsung Pay' | 'Google Pay' | 'Paytm' | 'BHIM';
 export type PaymentCardType =
-  | 'rupay'
-  | 'maestro'
-  | 'diners-club'
-  | 'master-card'
-  | 'american-express'
-  | 'visa';
+  'rupay' | 'maestro' | 'diners-club' | 'master-card' | 'american-express' | 'visa';
 
-export interface PaymentMode {
+export interface UserIdentity {
+  uid: string;
+  email: string;
+}
+
+export interface PersistedRecord {
   id: string;
+  version?: number;
+}
+
+export interface OwnedRecord extends PersistedRecord {
+  ownerUid?: string;
+  memberEmail?: string;
+}
+
+export interface PaymentMode extends OwnedRecord {
   type: PaymentModeType;
   name: string;
   provider?: PaymentModeProvider;
@@ -72,24 +57,23 @@ export interface PaymentMode {
   lastFour?: string;
   bankName?: PaymentBankName;
   paymentAccountId?: string;
-  memberEmail?: string;
+  workspaceGlobal?: boolean;
   createdDate?: string;
   updatedDate?: string;
   archivedDate?: string;
 }
 
-export interface PaymentAccount {
-  id: string;
+export interface PaymentAccount extends OwnedRecord {
   name: string;
   bankName: PaymentBankName;
   lastFour: string;
-  memberEmail?: string;
   createdDate?: string;
   updatedDate?: string;
   archivedDate?: string;
 }
 
 export interface WorkspaceMember {
+  uid?: string;
   email: string;
   displayName: string;
   photoUrl?: string;
@@ -99,9 +83,19 @@ export interface WorkspaceMember {
 }
 
 export interface UserProfile {
+  uid?: string;
   email: string;
   displayName: string;
   photoUrl?: string;
+  updatedDate: string;
+  onboarding?: OnboardingProgress;
+}
+
+export type OnboardingStepStatus = 'pending' | 'completed' | 'skipped';
+
+export interface OnboardingProgress {
+  activeStepId: string;
+  steps: Record<string, OnboardingStepStatus>;
   updatedDate: string;
 }
 
@@ -109,6 +103,8 @@ export interface Workspace {
   id: string;
   name: string;
   ownerEmail: string;
+  ownerUid?: string;
+  memberUids?: string[];
   members: WorkspaceMember[];
   createdDate: string;
   updatedDate: string;
@@ -132,8 +128,7 @@ export interface IncomeAuditVersion {
   memberEmail?: string;
 }
 
-export interface IncomeSource {
-  id: string;
+export interface IncomeSource extends OwnedRecord {
   source: string;
   amount: number;
   cadence: Cadence;
@@ -143,16 +138,39 @@ export interface IncomeSource {
   createdDate?: string;
   startDate?: string;
   endDate?: string;
-  memberEmail?: string;
   auditTrail?: IncomeAuditVersion[];
 }
 
-export interface BudgetCategory {
-  id: string;
+export interface BudgetCategory extends PersistedRecord {
   name: string;
   monthlyBudget: number;
   color: string;
   type?: CategoryType;
+  budgetVersions?: CategoryBudgetVersion[];
+  archivedDate?: string;
+}
+
+export interface CategoryBudgetVersion {
+  effectiveMonth: string;
+  monthlyBudget: number;
+  recordedDate: string;
+}
+
+export type CategoryRemapStep = 'categories' | 'expenses' | 'templates' | 'incomes' | 'investments';
+
+export interface CategoryRemapOperation {
+  id: string;
+  sourceCategoryId: string;
+  replacementCategoryId: string;
+  replacementCategory?: BudgetCategory;
+  sourceArchivedDate: string;
+  createdBy?: string;
+  createdDate: string;
+  updatedDate: string;
+  status: 'pending' | 'running' | 'failed' | 'completed';
+  completedSteps: CategoryRemapStep[];
+  attempts: number;
+  lastError?: string;
 }
 
 export interface ExpenseTemplateAuditVersion {
@@ -171,8 +189,7 @@ export interface ExpenseTemplateAuditVersion {
   paymentModeId?: string;
 }
 
-export interface ExpenseTemplate {
-  id: string;
+export interface ExpenseTemplate extends OwnedRecord {
   name: string;
   categoryId: string;
   amount: number;
@@ -180,16 +197,15 @@ export interface ExpenseTemplate {
   frequency?: InvestmentFrequency;
   createdDate?: string;
   startDate?: string;
+  effectiveStartDate?: string;
   endDate?: string;
   skippedMonths?: string[];
   archivedDate?: string;
-  memberEmail?: string;
   paymentModeId?: string;
   auditTrail?: ExpenseTemplateAuditVersion[];
 }
 
-export interface ExpenseEntry {
-  id: string;
+export interface ExpenseEntry extends OwnedRecord {
   month: string;
   date?: string;
   name: string;
@@ -198,24 +214,23 @@ export interface ExpenseEntry {
   type: ExpenseType;
   note: string;
   templateId?: string;
-  memberEmail?: string;
+  sourceLoanId?: string;
   paymentModeId?: string;
 }
 
-export interface InvestmentEntry {
-  id: string;
+export interface InvestmentEntry extends OwnedRecord {
   name: string;
   amount: number;
   categoryId?: string;
   frequency: InvestmentFrequency;
   date?: string;
   startDate?: string;
+  effectiveStartDate?: string;
   endDate?: string;
   notes: string;
   createdDate?: string;
   skippedMonths?: string[];
   sourceInvestmentId?: string;
-  memberEmail?: string;
   paymentModeId?: string;
   auditTrail?: InvestmentAuditVersion[];
 }
@@ -238,8 +253,7 @@ export interface InvestmentAuditVersion {
   paymentModeId?: string;
 }
 
-export interface Loan {
-  id: string;
+export interface Loan extends OwnedRecord {
   lender: string;
   loanType: string;
   principal: number;
@@ -249,7 +263,6 @@ export interface Loan {
   startDate: string;
   endDate: string;
   notes: string;
-  memberEmail?: string;
   paymentModeId?: string;
   auditTrail?: LoanAuditVersion[];
 }

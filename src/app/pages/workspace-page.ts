@@ -38,6 +38,29 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
           </button>
         </header>
 
+        @if (store.pendingCategoryRemapCount() > 0) {
+          <aside class="remap-recovery" role="status" aria-live="polite">
+            <mat-icon aria-hidden="true">sync_problem</mat-icon>
+            <div>
+              <strong>Category remapping needs attention</strong>
+              <p>
+                {{ store.pendingCategoryRemapCount() }} resumable operation{{
+                  store.pendingCategoryRemapCount() === 1 ? '' : 's'
+                }}
+                remain.
+              </p>
+            </div>
+            <button
+              mat-stroked-button
+              type="button"
+              (click)="store.retryCategoryRemaps()"
+              [disabled]="store.isSyncing()"
+            >
+              Retry now
+            </button>
+          </aside>
+        }
+
         <section class="content-grid even">
           <article class="panel-card">
             <header class="panel-heading mobile-panel-heading-with-action">
@@ -299,6 +322,23 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
       .archived-payments-card {
         display: grid;
         gap: 18px;
+      }
+
+      .remap-recovery {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 18px;
+        padding: 14px 16px;
+        border: 1px solid #f59e0b;
+        border-radius: 10px;
+        background: #fffbeb;
+        color: #78350f;
+      }
+
+      .remap-recovery p {
+        margin: 2px 0 0;
       }
 
       .archived-workspaces-card {

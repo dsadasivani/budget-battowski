@@ -9,6 +9,8 @@
 # Node
 /node_modules
 npm-debug.log
+firebase-debug.log
+firestore-debug.log
 yarn-error.log
 
 # IDEs and editors
@@ -42,3 +44,6 @@ __screenshots__/
 # System files
 .DS_Store
 Thumbs.db
+
+.env
+QA_FIREBASE_REGRESSION_REPORT.md

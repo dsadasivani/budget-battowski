@@ -431,6 +431,8 @@
               <button
                 type="button"
                 [class.active]="index === onboardingIndex()"
+                [class.completed]="onboardingStatuses()[step.id] === 'completed'"
+                [class.skipped]="onboardingStatuses()[step.id] === 'skipped'"
                 [attr.aria-label]="'Show tour step: ' + step.eyebrow"
                 [attr.aria-current]="index === onboardingIndex() ? 'step' : null"
                 (click)="selectOnboardingStep(index)"
@@ -454,8 +456,9 @@
             >
               {{ activeOnboardingStep().actionLabel }}
             </a>
-            <button mat-flat-button type="button" (click)="nextOnboardingStep()">
-              {{ onboardingIndex() === onboardingSteps.length - 1 ? 'Finish tour' : 'Next' }}
+            <button mat-stroked-button type="button" (click)="skipOnboardingStep()">Skip</button>
+            <button mat-flat-button type="button" (click)="completeOnboardingStep()">
+              Mark complete
             </button>
           </footer>
         </article>

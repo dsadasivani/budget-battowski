@@ -201,7 +201,10 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                 <a routerLink="/investments">View all</a>
               </header>
               <div class="soft-list compact">
-                @for (investment of store.portfolioRows().slice(0, 4); track investment.id) {
+                @for (
+                  investment of store.confirmedInvestmentRows().slice(0, 4);
+                  track investment.id
+                ) {
                   <article class="list-row">
                     <span class="icon-chip teal"
                       ><mat-icon aria-hidden="true">show_chart</mat-icon></span
@@ -215,7 +218,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                     }}</b>
                   </article>
                 } @empty {
-                  <div class="empty-state">No investments saved</div>
+                  <div class="empty-state">No approved investments for this month</div>
                 }
               </div>
             </article>

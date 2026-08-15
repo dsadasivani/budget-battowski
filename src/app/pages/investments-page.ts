@@ -70,7 +70,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
             <span class="icon-chip green"><mat-icon aria-hidden="true">functions</mat-icon></span>
             <p>Active Plans</p>
             <strong>{{ store.portfolioRows().length }}</strong>
-            <small>Current plans</small>
+            <small>Active in selected month</small>
           </article>
           <article class="stat-card scheduled-total-card">
             <span class="icon-chip blue"><mat-icon aria-hidden="true">work</mat-icon></span>
@@ -87,7 +87,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
             <header class="panel-heading split">
               <div>
                 <h2>Investment Portfolio</h2>
-                <p>All active SIPs and investments</p>
+                <p>Plans active in {{ store.monthLabel() }}</p>
               </div>
               <div class="table-actions">
                 <button
@@ -156,7 +156,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
               }
             </div>
 
-            <div class="data-table-wrap">
+            <div class="data-table-wrap" tabindex="0" aria-label="Investment portfolio table">
               <table class="data-table">
                 <thead>
                   <tr>

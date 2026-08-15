@@ -3,11 +3,13 @@ import { BreakpointObserver } from '@angular/cdk/layout';
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   ViewContainerRef,
   computed,
   inject,
   signal,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import {
   MAT_BOTTOM_SHEET_DATA,
@@ -22,6 +24,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTabsModule } from '@angular/material/tabs';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { ActivatedRoute, Router } from '@angular/router';
 
 import { BudgetStore } from '../budget.store';
 import {
@@ -34,6 +37,7 @@ import {
   type PaymentModeType,
 } from '../budget.models';
 import { AppPageSkeletonComponent } from '../shared/page-skeleton';
+import { MonthMemberControls } from '../shared/month-member-controls';
 
 type PaymentModeFilter = PaymentModeType | 'all';
 
@@ -72,9 +76,7 @@ type PaymentAccountModesData = {
 };
 
 const MODE_OPTIONS: PaymentModeOption[] = [
-  { value: 'cash', label: 'Cash', icon: 'payments' },
   { value: 'upi', label: 'UPI', icon: 'qr_code_2' },
-  { value: 'wallet', label: 'Wallet', icon: 'account_balance_wallet' },
   { value: 'credit-card', label: 'Credit Card', icon: 'credit_card' },
   { value: 'debit-card', label: 'Debit Card', icon: 'credit_card' },
   { value: 'internet-banking', label: 'Internet Banking', icon: 'account_balance' },
@@ -144,7 +146,7 @@ function paymentBankNameValue(bankName: PaymentBankName | string | undefined): P
 }
 
 function isProviderType(type: PaymentModeType): boolean {
-  return type === 'upi' || type === 'wallet';
+  return type === 'upi';
 }
 
 function isCardType(type: PaymentModeType): boolean {
@@ -171,7 +173,7 @@ function buildPaymentModeFromForm(
   const paymentAccountId = rawPaymentAccountId || undefined;
 
   if (isProviderType(type) && !provider) {
-    return { ok: false, error: 'Choose a provider for UPI and wallet modes.' };
+    return { ok: false, error: 'Choose a provider for UPI modes.' };
   }
 
   if (isCardType(type) && !/^\d{4}$/.test(lastFour)) {
@@ -197,6 +199,7 @@ function buildPaymentModeFromForm(
       bankName: undefined,
       paymentAccountId: isAccountBackedType(type) ? paymentAccountId : undefined,
       memberEmail: existing?.memberEmail,
+      workspaceGlobal: existing?.workspaceGlobal,
       createdDate: existing?.createdDate ?? now,
       updatedDate: now,
       archivedDate: existing?.archivedDate,
@@ -335,7 +338,7 @@ function buildPaymentAccountFromForm(
               @if (formType() !== 'internet-banking') {
                 <mat-option value="">No linked account</mat-option>
               }
-              @for (account of store.activePaymentAccounts(); track account.id) {
+              @for (account of paymentAccountOptions(); track account.id) {
                 <mat-option [value]="account.id">
                   <span class="select-option-with-icon">
                     <img
@@ -476,6 +479,10 @@ export class PaymentModeFormSheet {
   private readonly data = inject<PaymentModeFormData>(MAT_BOTTOM_SHEET_DATA, { optional: true });
   protected readonly store = inject(BudgetStore);
   private readonly formBuilder = inject(FormBuilder);
+
+  protected paymentAccountOptions(): PaymentAccount[] {
+    return this.store.paymentAccountsForPaymentMode(this.data?.paymentMode);
+  }
 
   readonly modeOptions = MODE_OPTIONS;
   readonly providerOptions = PROVIDER_OPTIONS;
@@ -794,10 +801,17 @@ export class PaymentAccountFormSheet {
           @if (store.paymentModeUsage(paymentMode.id); as usage) {
             <article class="mapped-mode-card">
               <span
-                class="category-icon payment-provider-mark {{ store.paymentModeTone(paymentMode.id) }}"
+                class="category-icon payment-provider-mark {{
+                  store.paymentModeTone(paymentMode.id)
+                }}"
                 aria-hidden="true"
               >
-                <img [ngSrc]="store.paymentModeIconSrc(paymentMode)" width="34" height="34" alt="" />
+                <img
+                  [ngSrc]="store.paymentModeIconSrc(paymentMode)"
+                  width="34"
+                  height="34"
+                  alt=""
+                />
               </span>
               <div class="mapped-mode-copy">
                 <strong>{{ store.paymentModeDisplayLabel(paymentMode) }}</strong>
@@ -1014,6 +1028,7 @@ export class PaymentAccountModesSheet {
     MatSelectModule,
     MatTabsModule,
     MatTooltipModule,
+    MonthMemberControls,
     AppPageSkeletonComponent,
   ],
   template: `
@@ -1026,12 +1041,17 @@ export class PaymentAccountModesSheet {
             <h1>Payment Modes</h1>
             <p>Save payment modes, connect bank accounts, and review selected-month usage.</p>
           </div>
+          <div class="header-actions"><app-month-member-controls /></div>
         </header>
+
+        <div class="mobile-page-controls mobile-filter-strip">
+          <app-month-member-controls />
+        </div>
 
         <mat-tab-group
           class="payment-tabs"
           [selectedIndex]="selectedTabIndex()"
-          (selectedIndexChange)="selectedTabIndex.set($event)"
+          (selectedIndexChange)="selectTab($event)"
           animationDuration="160ms"
           mat-stretch-tabs="false"
         >
@@ -1268,7 +1288,7 @@ export class PaymentAccountModesSheet {
                           @if (formType() !== 'internet-banking') {
                             <mat-option value="">No linked account</mat-option>
                           }
-                          @for (account of store.activePaymentAccounts(); track account.id) {
+                          @for (account of paymentAccountOptions(); track account.id) {
                             <mat-option [value]="account.id">
                               <span class="select-option-with-icon">
                                 <img
@@ -1475,8 +1495,7 @@ export class PaymentAccountModesSheet {
                                   {{ usage.count === 1 ? 'record' : 'records' }}
                                 </span>
                                 <strong>{{
-                                  usage.amount
-                                    | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                                  usage.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
                                 }}</strong>
                               </div>
                             </article>
@@ -1843,11 +1862,6 @@ export class PaymentAccountModesSheet {
       .payment-mode-card.upi {
         border-color: #c9dfff;
         background: linear-gradient(135deg, #f4f8ff 0%, #effdfa 100%);
-      }
-
-      .payment-mode-card.wallet {
-        border-color: #ddd6fe;
-        background: linear-gradient(135deg, #fbf7ff 0%, #fff8f1 100%);
       }
 
       .payment-mode-card.internet-banking,
@@ -2276,6 +2290,9 @@ export class PaymentModesPage {
   private readonly bottomSheet = inject(MatBottomSheet);
   private readonly breakpointObserver = inject(BreakpointObserver);
   private readonly viewContainerRef = inject(ViewContainerRef);
+  private readonly route = inject(ActivatedRoute, { optional: true });
+  private readonly router = inject(Router, { optional: true });
+  private readonly destroyRef = inject(DestroyRef);
   readonly store = inject(BudgetStore);
 
   readonly modeOptions = MODE_OPTIONS;
@@ -2287,7 +2304,6 @@ export class PaymentModesPage {
     { value: 'all', label: 'All' },
     { value: 'cash', label: 'Cash' },
     { value: 'upi', label: 'UPI' },
-    { value: 'wallet', label: 'Wallets' },
     { value: 'credit-card', label: 'Credit Cards' },
     { value: 'debit-card', label: 'Debit Cards' },
     { value: 'internet-banking', label: 'Internet Banking' },
@@ -2344,6 +2360,33 @@ export class PaymentModesPage {
           ? 'Link a payment account to identify the bank and account ending.'
           : 'Keep cash transactions available as a saved payment mode.',
   );
+
+  constructor() {
+    this.route?.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
+      this.selectedTabIndex.set(params.get('tab') === 'accounts' ? 1 : 0);
+    });
+  }
+
+  paymentAccountOptions(): PaymentAccount[] {
+    const existing = this.store
+      .paymentModes()
+      .find((paymentMode) => paymentMode.id === this.editingId());
+    return this.store.paymentAccountsForPaymentMode(existing);
+  }
+
+  selectTab(index: number): void {
+    this.selectedTabIndex.set(index);
+    if (!this.router || !this.route) {
+      return;
+    }
+
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { tab: index === 1 ? 'accounts' : 'modes' },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
 
   setFormType(type: PaymentModeType): void {
     this.formType.set(type);

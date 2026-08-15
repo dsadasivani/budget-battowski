@@ -17,6 +17,10 @@ export const routes: Routes = [
       import('./pages/expenses-page').then((component) => component.ExpensesPage),
   },
   {
+    path: 'income',
+    loadComponent: () => import('./pages/income-page').then((component) => component.IncomePage),
+  },
+  {
     path: 'planning',
     loadComponent: () =>
       import('./pages/planning-page').then((component) => component.PlanningPage),
