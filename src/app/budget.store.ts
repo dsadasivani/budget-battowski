@@ -2488,7 +2488,8 @@ export class BudgetStore implements OnDestroy {
 
   paymentModesForAccount(paymentAccountId: string): PaymentMode[] {
     return this.activePaymentModes().filter(
-      (paymentMode) => paymentMode.paymentAccountId === paymentAccountId,
+      (paymentMode) =>
+        paymentMode.type !== 'credit-card' && paymentMode.paymentAccountId === paymentAccountId,
     );
   }
 
@@ -2524,7 +2525,7 @@ export class BudgetStore implements OnDestroy {
   }
 
   private paymentAccountForMode(paymentMode: PaymentMode): PaymentAccount | undefined {
-    if (!paymentMode.paymentAccountId) {
+    if (paymentMode.type === 'credit-card' || !paymentMode.paymentAccountId) {
       return undefined;
     }
 
@@ -4152,7 +4153,6 @@ export class BudgetStore implements OnDestroy {
   private isAccountBackedPaymentMode(paymentMode: Pick<PaymentMode, 'type'>): boolean {
     return (
       paymentMode.type === 'upi' ||
-      paymentMode.type === 'credit-card' ||
       paymentMode.type === 'debit-card' ||
       paymentMode.type === 'internet-banking'
     );

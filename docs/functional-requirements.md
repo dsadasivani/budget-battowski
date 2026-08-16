@@ -200,7 +200,7 @@ Wallet is not a supported payment-mode type. Cash is the default payment mode an
 - Non-Cash payment modes are stored within the workspace and are permanently owned by the member who created them.
 - The creating member must be recorded implicitly on a non-Cash mode.
 - When a specific member filter is active, that member's modes and the workspace-global Cash mode are shown. **All members** shows all member-owned modes plus Cash.
-- A payment mode can link to no more than one payment account.
+- An applicable payment mode can link to no more than one payment account. Credit card modes do not use payment-account mapping.
 - Multiple payment modes can link to the same payment account.
 - A member-owned payment mode can link only to a payment account owned by that same member.
 - When a financial record is created or updated, it can select only a payment mode owned by the record's permanent owner, except that every member may select workspace-global Cash.
@@ -232,7 +232,7 @@ A loan must support:
 - Start date
 - End date
 - Notes
-- The payment mode used for the EMI and its linked payment account
+- The payment mode used for the EMI and its linked payment account, where applicable
 - An implicitly recorded member owner
 
 These fields reflect the current implementation. Start and end dates determine the active loan period and its projected payment schedule. Loan cadence is always monthly; the user is not offered a cadence selector.
@@ -288,7 +288,7 @@ Tracking investment returns and performance is explicitly parked for a future ph
 - A one-time investment applies only to its selected date or month.
 - A one-time investment entered for a future date must participate in monthly review when its applicable month is reviewed.
 - A one-time investment entered for the current date/month or a past date/month does not require monthly review and is reflected immediately.
-- Investment payments must be linked to a payment mode and, through an account-backed mode, its payment account.
+- Investment payments must be linked to a payment mode and, through an account-backed mode, its payment account. Credit card modes do not require an account mapping.
 
 ## 10. Expenses
 

@@ -26,6 +26,7 @@ import {
   PaymentModeFormSheet,
   PaymentModesPage,
 } from './pages/payment-modes-page';
+import { WorkspaceFormDialog, type WorkspaceFormData } from './workspace-form-dialog';
 
 function runAxe(element: Element): Promise<axe.AxeResults> {
   return new Promise((resolve, reject) => {
@@ -2337,6 +2338,43 @@ describe('App', () => {
     );
   });
 
+  it('should ignore legacy credit-card account mappings', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
+      canArchivePaymentAccount: (paymentAccountId: string) => boolean;
+      paymentAccountCards: () => Array<{ id: string; mappedModeCount: number }>;
+      paymentAccounts: { set: (records: PaymentAccount[]) => void };
+      paymentModeCards: () => Array<{ id: string; paymentAccountName: string }>;
+      paymentModes: { set: (records: PaymentMode[]) => void };
+    };
+
+    app.paymentAccounts.set([
+      {
+        id: 'pa-legacy',
+        name: 'Legacy account',
+        bankName: 'HDFC',
+        lastFour: '4321',
+      },
+    ]);
+    app.paymentModes.set([
+      {
+        id: 'pm-credit',
+        type: 'credit-card',
+        name: 'Credit Card',
+        lastFour: '9876',
+        paymentAccountId: 'pa-legacy',
+      },
+    ]);
+
+    expect(app.paymentAccountCards().find((account) => account.id === 'pa-legacy')).toEqual(
+      expect.objectContaining({ mappedModeCount: 0 }),
+    );
+    expect(app.paymentModeCards().find((mode) => mode.id === 'pm-credit')).toEqual(
+      expect.objectContaining({ paymentAccountName: '' }),
+    );
+    expect(app.canArchivePaymentAccount('pa-legacy')).toBe(true);
+  });
+
   it('should block archiving payment accounts that still have active mapped modes', async () => {
     const fixture = TestBed.createComponent(App);
     const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
@@ -2598,6 +2636,38 @@ describe('PaymentModesPage', () => {
         provider: undefined,
         cardType: 'visa',
         lastFour: '9876',
+        paymentAccountId: undefined,
+      }),
+    );
+  });
+
+  it('should not offer or retain account mapping for credit cards', async () => {
+    const existing: PaymentMode = {
+      id: 'pm-credit',
+      type: 'credit-card',
+      name: 'Credit Card',
+      cardType: 'visa',
+      lastFour: '9876',
+      paymentAccountId: 'legacy-account',
+    };
+    store.paymentModes.set([existing]);
+    const fixture = TestBed.createComponent(PaymentModesPage);
+    const page = fixture.componentInstance;
+
+    page.editPaymentMode(existing);
+    fixture.detectChanges();
+
+    expect(page.isAccountBackedType('credit-card')).toBe(false);
+    expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('Payment account');
+
+    page.savePaymentMode();
+    await Promise.resolve();
+
+    expect(store.savePaymentMode).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'pm-credit',
+        type: 'credit-card',
+        paymentAccountId: undefined,
       }),
     );
   });
@@ -2861,6 +2931,56 @@ describe('PaymentModesPage', () => {
 
     expect(page.modeOptions.map((option) => option.value)).not.toContain('wallet');
     expect(page.filterOptions.map((option) => option.value)).not.toContain('wallet');
+  });
+});
+
+describe('WorkspaceFormDialog', () => {
+  const dialogClose = vi.fn();
+  const data: WorkspaceFormData = {
+    mode: 'create',
+    ownerProfile: {
+      email: 'owner@example.com',
+      displayName: 'Owner',
+      updatedDate: '2026-08-16T00:00:00.000Z',
+    },
+    existingMembers: [],
+    lookupUserProfile: vi.fn(async () => null),
+  };
+
+  beforeEach(async () => {
+    dialogClose.mockReset();
+    await TestBed.configureTestingModule({
+      imports: [WorkspaceFormDialog],
+      providers: [
+        { provide: MAT_DIALOG_DATA, useValue: data },
+        { provide: MatDialogRef, useValue: { close: dialogClose } },
+      ],
+    }).compileComponents();
+  });
+
+  it('should create a workspace without requiring an additional member', () => {
+    const fixture = TestBed.createComponent(WorkspaceFormDialog);
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    const nameInput = element.querySelector<HTMLInputElement>('input[formControlName="name"]');
+    const submitButton = Array.from(element.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.type === 'submit',
+    );
+
+    expect(nameInput).not.toBeNull();
+    expect(submitButton?.disabled).toBe(true);
+
+    nameInput!.value = 'Solo workspace';
+    nameInput!.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    expect(submitButton?.disabled).toBe(false);
+    submitButton?.click();
+    expect(dialogClose).toHaveBeenCalledWith({
+      mode: 'create',
+      name: 'Solo workspace',
+      members: [],
+    });
   });
 });
 

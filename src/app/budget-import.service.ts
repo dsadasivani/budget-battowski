@@ -825,7 +825,7 @@ function paymentModeIdField(
     return undefined;
   }
 
-  if (requiredWithAccount && !paymentMode.paymentAccountId) {
+  if (requiredWithAccount && paymentMode.type !== 'credit-card' && !paymentMode.paymentAccountId) {
     row.comments.push(`paymentModeName "${paymentModeName}" is not linked to a payment account.`);
     return undefined;
   }

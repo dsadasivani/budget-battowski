@@ -85,89 +85,89 @@ function normalizeEmail(email: string): string {
 
         @if (showsMemberSearch()) {
           <section class="member-search" aria-labelledby="member-search-title">
-          <div class="member-search-heading">
-            <h3 id="member-search-title">Workspace members</h3>
-            <span>{{ selectedProfiles().length }} selected</span>
-          </div>
-
-          <div class="member-search-row">
-            <mat-form-field appearance="outline">
-              <mat-label>Member email</mat-label>
-              <input
-                matInput
-                type="email"
-                formControlName="memberEmail"
-                autocomplete="email"
-                inputmode="email"
-                (keydown.enter)="searchFromKeyboard($event)"
-              />
-            </mat-form-field>
-            <button
-              mat-stroked-button
-              type="button"
-              (click)="searchMember()"
-              [disabled]="lookupState() === 'loading'"
-            >
-              <mat-icon aria-hidden="true">search</mat-icon>
-              Search
-            </button>
-          </div>
-
-          @if (lookupState() === 'loading') {
-            <p class="lookup-note" aria-live="polite">Searching...</p>
-          } @else if (lookupState() === 'missing') {
-            <p class="form-error" role="alert">That user doesn't exist.</p>
-          } @else if (lookupState() === 'error' || memberError()) {
-            <p class="form-error" role="alert">{{ memberError() }}</p>
-          }
-
-          @if (foundProfile(); as profile) {
-            <article class="profile-result">
-              <span class="avatar" aria-hidden="true">
-                @if (profile.photoUrl) {
-                  <img [src]="profile.photoUrl" alt="" referrerpolicy="no-referrer" />
-                } @else {
-                  {{ memberInitial(profile) }}
-                }
-              </span>
-              <div>
-                <strong>{{ profile.displayName || profile.email }}</strong>
-                <small>{{ profile.email }}</small>
-              </div>
-              <button mat-stroked-button type="button" (click)="addFoundMember()">
-                <mat-icon aria-hidden="true">person_add</mat-icon>
-                Add
-              </button>
-            </article>
-          }
-
-          @if (selectedProfiles().length) {
-            <div class="selected-members" aria-label="Selected workspace members">
-              @for (profile of selectedProfiles(); track profile.email) {
-                <article class="selected-member">
-                  <span class="avatar mini" aria-hidden="true">
-                    @if (profile.photoUrl) {
-                      <img [src]="profile.photoUrl" alt="" referrerpolicy="no-referrer" />
-                    } @else {
-                      {{ memberInitial(profile) }}
-                    }
-                  </span>
-                  <div>
-                    <strong>{{ profile.displayName || profile.email }}</strong>
-                    <small>{{ profile.email }}</small>
-                  </div>
-                  <button
-                    mat-icon-button
-                    type="button"
-                    [attr.aria-label]="'Remove ' + (profile.displayName || profile.email)"
-                    (click)="removeSelectedMember(profile.email)"
-                  >
-                    <mat-icon aria-hidden="true">close</mat-icon>
-                  </button>
-                </article>
-              }
+            <div class="member-search-heading">
+              <h3 id="member-search-title">Workspace members</h3>
+              <span>{{ selectedProfiles().length }} selected</span>
             </div>
-          }
+
+            <div class="member-search-row">
+              <mat-form-field appearance="outline">
+                <mat-label>Member email</mat-label>
+                <input
+                  matInput
+                  type="email"
+                  formControlName="memberEmail"
+                  autocomplete="email"
+                  inputmode="email"
+                  (keydown.enter)="searchFromKeyboard($event)"
+                />
+              </mat-form-field>
+              <button
+                mat-stroked-button
+                type="button"
+                (click)="searchMember()"
+                [disabled]="lookupState() === 'loading'"
+              >
+                <mat-icon aria-hidden="true">search</mat-icon>
+                Search
+              </button>
+            </div>
+
+            @if (lookupState() === 'loading') {
+              <p class="lookup-note" aria-live="polite">Searching...</p>
+            } @else if (lookupState() === 'missing') {
+              <p class="form-error" role="alert">That user doesn't exist.</p>
+            } @else if (lookupState() === 'error' || memberError()) {
+              <p class="form-error" role="alert">{{ memberError() }}</p>
+            }
+
+            @if (foundProfile(); as profile) {
+              <article class="profile-result">
+                <span class="avatar" aria-hidden="true">
+                  @if (profile.photoUrl) {
+                    <img [src]="profile.photoUrl" alt="" referrerpolicy="no-referrer" />
+                  } @else {
+                    {{ memberInitial(profile) }}
+                  }
+                </span>
+                <div>
+                  <strong>{{ profile.displayName || profile.email }}</strong>
+                  <small>{{ profile.email }}</small>
+                </div>
+                <button mat-stroked-button type="button" (click)="addFoundMember()">
+                  <mat-icon aria-hidden="true">person_add</mat-icon>
+                  Add
+                </button>
+              </article>
+            }
+
+            @if (selectedProfiles().length) {
+              <div class="selected-members" aria-label="Selected workspace members">
+                @for (profile of selectedProfiles(); track profile.email) {
+                  <article class="selected-member">
+                    <span class="avatar mini" aria-hidden="true">
+                      @if (profile.photoUrl) {
+                        <img [src]="profile.photoUrl" alt="" referrerpolicy="no-referrer" />
+                      } @else {
+                        {{ memberInitial(profile) }}
+                      }
+                    </span>
+                    <div>
+                      <strong>{{ profile.displayName || profile.email }}</strong>
+                      <small>{{ profile.email }}</small>
+                    </div>
+                    <button
+                      mat-icon-button
+                      type="button"
+                      [attr.aria-label]="'Remove ' + (profile.displayName || profile.email)"
+                      (click)="removeSelectedMember(profile.email)"
+                    >
+                      <mat-icon aria-hidden="true">close</mat-icon>
+                    </button>
+                  </article>
+                }
+              </div>
+            }
           </section>
         }
 
@@ -429,9 +429,8 @@ export class WorkspaceFormDialog {
   protected readonly formError = signal('');
   protected readonly form = this.formBuilder.group({
     name: this.formBuilder.nonNullable.control(this.data.workspaceName ?? '', {
-      validators: this.data.mode === 'create' || this.data.mode === 'rename'
-        ? [Validators.required]
-        : [],
+      validators:
+        this.data.mode === 'create' || this.data.mode === 'rename' ? [Validators.required] : [],
     }),
     memberEmail: this.formBuilder.nonNullable.control('', [Validators.email]),
   });
@@ -447,7 +446,7 @@ export class WorkspaceFormDialog {
       ? 'Name the workspace and add editors.'
       : this.data.mode === 'rename'
         ? 'Update the workspace name.'
-      : 'Search for signed-in users to grant editor access.',
+        : 'Search for signed-in users to grant editor access.',
   );
   protected readonly submitLabel = computed(() =>
     this.data.mode === 'create'
@@ -456,13 +455,13 @@ export class WorkspaceFormDialog {
         ? 'Save Name'
         : 'Add Members',
   );
-  protected readonly canSubmit = computed(() => {
+  protected canSubmit(): boolean {
     if (this.data.mode === 'create' || this.data.mode === 'rename') {
       return !!this.form.controls.name.value.trim();
     }
 
     return this.selectedProfiles().length > 0;
-  });
+  }
 
   protected isCreateMode(): boolean {
     return this.data.mode === 'create';
@@ -549,14 +548,18 @@ export class WorkspaceFormDialog {
   }
 
   protected removeSelectedMember(email: string): void {
-    this.selectedProfiles.update((profiles) => profiles.filter((profile) => profile.email !== email));
+    this.selectedProfiles.update((profiles) =>
+      profiles.filter((profile) => profile.email !== email),
+    );
   }
 
   protected submit(): void {
     this.formError.set('');
     if (!this.canSubmit()) {
       this.formError.set(
-        this.data.mode === 'add-member' ? 'Add at least one member.' : 'Workspace name is required.',
+        this.data.mode === 'add-member'
+          ? 'Add at least one member.'
+          : 'Workspace name is required.',
       );
       return;
     }
@@ -600,7 +603,9 @@ export class WorkspaceFormDialog {
   }
 
   private isActiveExistingMember(email: string): boolean {
-    return this.data.existingMembers.some((member) => member.email === email && !member.archivedDate);
+    return this.data.existingMembers.some(
+      (member) => member.email === email && !member.archivedDate,
+    );
   }
 
   private missingData(): never {
@@ -610,13 +615,7 @@ export class WorkspaceFormDialog {
 
 @Component({
   selector: 'app-workspace-confirm-dialog',
-  imports: [
-    CommonModule,
-    MatBottomSheetModule,
-    MatButtonModule,
-    MatDialogModule,
-    MatIconModule,
-  ],
+  imports: [CommonModule, MatBottomSheetModule, MatButtonModule, MatDialogModule, MatIconModule],
   template: `
     <section class="workspace-confirm" aria-labelledby="workspace-confirm-title">
       <header>

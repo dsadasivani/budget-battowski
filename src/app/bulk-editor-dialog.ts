@@ -2970,7 +2970,7 @@ export class BulkEditorDialog {
       }
 
       if (!mode.paymentAccountId) {
-        return !requireLinkedAccount;
+        return !requireLinkedAccount || mode.type === 'credit-card';
       }
 
       const account = this.paymentAccounts.find((item) => item.id === mode.paymentAccountId);

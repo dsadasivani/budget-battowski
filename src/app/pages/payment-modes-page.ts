@@ -154,9 +154,7 @@ function isCardType(type: PaymentModeType): boolean {
 }
 
 function isAccountBackedType(type: PaymentModeType): boolean {
-  return (
-    type === 'upi' || type === 'credit-card' || type === 'debit-card' || type === 'internet-banking'
-  );
+  return type === 'upi' || type === 'debit-card' || type === 'internet-banking';
 }
 
 function buildPaymentModeFromForm(
