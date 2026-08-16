@@ -22,6 +22,20 @@ Each `qa` and `production` Environment defines:
 
 These values identify cloud resources but are not credentials or secrets. The workflow exchanges GitHub's short-lived OIDC token for short-lived Google credentials.
 
+The `qa` Environment also defines one encrypted Environment secret:
+
+- `QA_FIREBASE_PASSWORD`: the shared password for the dedicated `qa.owner`, `qa.editor`, and `qa.member` regression accounts.
+
+The password is exposed only to the post-deployment seed and regression steps. It is not configured in the production Environment and must never be committed to the repository.
+
+Configure or rotate it from a secure interactive prompt:
+
+```bash
+gh secret set QA_FIREBASE_PASSWORD --env qa
+```
+
+Do not put the password directly on the command line, where it can be retained in shell history.
+
 ## One-time Google Cloud setup
 
 From a repository checkout, run the setup script once for each Firebase project:
@@ -41,8 +55,9 @@ The identity provider accepts tokens only when GitHub's immutable repository ID 
 
 1. Merge a feature pull request into `develop` after both required checks pass.
 2. Confirm the QA deployment updated Firestore rules and Hosting.
-3. Run the QA regression suite against the deployed QA project.
-4. Open a `develop` to `master` pull request and merge it after QA sign-off.
-5. Confirm the production deployment updated Firestore rules and Hosting.
+3. Confirm the deterministic QA seed and authenticated regression steps passed against `https://budget-battowski-qa.web.app`.
+4. Download the `qa-firebase-regression-<run-id>` report artifact when detailed release evidence is required. Reports are retained for 30 days, including failed regression runs when a report was produced.
+5. Open a `develop` to `master` pull request and merge it after QA sign-off.
+6. Confirm the production deployment updated Firestore rules and Hosting.
 
-Do not add `QA_FIREBASE_PASSWORD` to this deployment workflow. QA regression remains separate from CD.
+The QA deployment is not considered successful when seeding or authenticated regression fails, even if Firebase rules and Hosting were released successfully. Fix the cause and redeploy `develop`; do not promote that revision to `master`.

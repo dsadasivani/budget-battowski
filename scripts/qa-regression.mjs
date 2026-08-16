@@ -15,7 +15,11 @@ const rootDir = process.cwd();
 const reportPath = path.join(rootDir, 'QA_FIREBASE_REGRESSION_REPORT.md');
 const port = Number(process.env.QA_APP_PORT ?? 4314);
 const cdpPort = Number(process.env.QA_CDP_PORT ?? 9224);
-const baseUrl = `http://127.0.0.1:${port}`;
+const configuredBaseUrl = process.env.QA_BASE_URL?.trim();
+const baseUrl = configuredBaseUrl
+  ? configuredBaseUrl.replace(/\/+$/, '')
+  : `http://127.0.0.1:${port}`;
+const usesDeployedApp = Boolean(configuredBaseUrl);
 const today = new Date();
 const reviewMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
 const npmCliPath = process.env.npm_execpath;
@@ -91,6 +95,7 @@ function chromePath() {
   const candidates =
     process.platform === 'win32'
       ? [
+          process.env.CHROME_BIN,
           path.join(
             process.env.ProgramFiles ?? '',
             'Google',
@@ -121,12 +126,21 @@ function chromePath() {
           ),
         ]
       : [
+          process.env.CHROME_BIN,
           '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-          'google-chrome',
-          'chromium',
+          '/usr/bin/google-chrome',
+          '/usr/bin/google-chrome-stable',
+          '/usr/bin/chromium',
+          '/usr/bin/chromium-browser',
         ];
 
-  return candidates.find((candidate) => candidate && existsSync(candidate)) ?? candidates.at(-1);
+  const executable = candidates.find((candidate) => candidate && existsSync(candidate));
+  if (!executable) {
+    throw new Error(
+      'Unable to locate Chrome or Chromium. Set CHROME_BIN to the browser executable path.',
+    );
+  }
+  return executable;
 }
 
 async function waitForHttp(url, timeoutMs = 90000) {
@@ -738,6 +752,7 @@ async function writeReport() {
     '# QA Firebase Regression Report',
     '',
     `Generated: ${report.generatedAt}`,
+    `Target: ${baseUrl}`,
     `Workspace: ${QA_WORKSPACE_ID}`,
     `Result: ${
       failed
@@ -811,7 +826,9 @@ async function main() {
   let chrome;
   let page;
   try {
-    server = startServer();
+    if (!usesDeployedApp) {
+      server = startServer();
+    }
     await waitForHttp(baseUrl, 120000);
     chrome = await startChrome();
     page = await cdpNewPage(baseUrl);
