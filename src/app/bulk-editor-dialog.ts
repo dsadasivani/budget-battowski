@@ -2167,7 +2167,7 @@ export class BulkEditorDialog {
         };
       });
     const expenses = this.showMonthlyTables()
-        ? expenseRows.map((expense) => ({
+      ? expenseRows.map((expense) => ({
           id: expense.id,
           version: expense.version,
           month: dateMonthKey(dateValue(expense.date)) || expense.month || this.data.selectedMonth,
@@ -2970,7 +2970,7 @@ export class BulkEditorDialog {
       }
 
       if (!mode.paymentAccountId) {
-        return !requireLinkedAccount;
+        return !requireLinkedAccount || mode.type === 'credit-card';
       }
 
       const account = this.paymentAccounts.find((item) => item.id === mode.paymentAccountId);
@@ -3059,7 +3059,7 @@ export class BulkEditorDialog {
 
   private memberTag(memberEmail: string | undefined): string {
     if (!memberEmail) {
-      return 'Legacy';
+      return 'Unassigned';
     }
 
     return this.shortMemberName(this.memberName(memberEmail));

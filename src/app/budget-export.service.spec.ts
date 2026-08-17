@@ -8,9 +8,11 @@ describe('workspace export helpers', () => {
   const workspace: Workspace = {
     id: 'workspace-family',
     name: 'Family & Home',
-    ownerEmail: 'owner@example.com',
+    ownerUid: 'owner-uid',
+    memberUids: ['owner-uid'],
     members: [
       {
+        uid: 'owner-uid',
         email: 'owner@example.com',
         displayName: 'Owner',
         role: 'owner',

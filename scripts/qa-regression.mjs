@@ -15,7 +15,12 @@ const rootDir = process.cwd();
 const reportPath = path.join(rootDir, 'QA_FIREBASE_REGRESSION_REPORT.md');
 const port = Number(process.env.QA_APP_PORT ?? 4314);
 const cdpPort = Number(process.env.QA_CDP_PORT ?? 9224);
-const baseUrl = `http://127.0.0.1:${port}`;
+const configuredBaseUrl = process.env.QA_BASE_URL?.trim();
+const baseUrl = configuredBaseUrl
+  ? configuredBaseUrl.replace(/\/+$/, '')
+  : `http://127.0.0.1:${port}`;
+const usesDeployedApp = Boolean(configuredBaseUrl);
+const releaseCommit = process.env.RELEASE_COMMIT?.trim();
 const today = new Date();
 const reviewMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
 const npmCliPath = process.env.npm_execpath;
@@ -87,10 +92,47 @@ function runCommand(label, command, args) {
   return entry;
 }
 
+async function checkReleaseCorrelation() {
+  if (!usesDeployedApp || !releaseCommit) {
+    return;
+  }
+
+  const response = await fetch(`${baseUrl}/release.json`, {
+    cache: 'no-store',
+    redirect: 'follow',
+  });
+  const contentType = response.headers.get('content-type') ?? '';
+  const metadata = contentType.includes('application/json') ? await response.json() : null;
+  const matches =
+    response.ok &&
+    metadata?.schemaVersion === 1 &&
+    metadata?.environment === 'qa' &&
+    metadata?.commit === releaseCommit;
+  addCoverage(
+    'Release correlation',
+    'Deployed release metadata matches the workflow commit',
+    matches ? 'Pass' : 'Fail',
+    matches
+      ? `Commit ${releaseCommit} is observable.`
+      : `Expected commit ${releaseCommit}; received ${metadata?.commit ?? 'no JSON metadata'}.`,
+  );
+  if (!matches) {
+    addIssue(
+      'Critical',
+      'Release correlation',
+      'Deployed release metadata matches the workflow commit',
+      'Fetch /release.json from the deployed QA origin.',
+      `The response identifies QA commit ${releaseCommit}.`,
+      `HTTP ${response.status}; commit ${metadata?.commit ?? 'unavailable'}.`,
+    );
+  }
+}
+
 function chromePath() {
   const candidates =
     process.platform === 'win32'
       ? [
+          process.env.CHROME_BIN,
           path.join(
             process.env.ProgramFiles ?? '',
             'Google',
@@ -121,12 +163,21 @@ function chromePath() {
           ),
         ]
       : [
+          process.env.CHROME_BIN,
           '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-          'google-chrome',
-          'chromium',
+          '/usr/bin/google-chrome',
+          '/usr/bin/google-chrome-stable',
+          '/usr/bin/chromium',
+          '/usr/bin/chromium-browser',
         ];
 
-  return candidates.find((candidate) => candidate && existsSync(candidate)) ?? candidates.at(-1);
+  const executable = candidates.find((candidate) => candidate && existsSync(candidate));
+  if (!executable) {
+    throw new Error(
+      'Unable to locate Chrome or Chromium. Set CHROME_BIN to the browser executable path.',
+    );
+  }
+  return executable;
 }
 
 async function waitForHttp(url, timeoutMs = 90000) {
@@ -738,6 +789,7 @@ async function writeReport() {
     '# QA Firebase Regression Report',
     '',
     `Generated: ${report.generatedAt}`,
+    `Target: ${baseUrl}`,
     `Workspace: ${QA_WORKSPACE_ID}`,
     `Result: ${
       failed
@@ -811,8 +863,11 @@ async function main() {
   let chrome;
   let page;
   try {
-    server = startServer();
+    if (!usesDeployedApp) {
+      server = startServer();
+    }
     await waitForHttp(baseUrl, 120000);
+    await checkReleaseCorrelation();
     chrome = await startChrome();
     page = await cdpNewPage(baseUrl);
 

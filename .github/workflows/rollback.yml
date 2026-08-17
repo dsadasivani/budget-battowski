@@ -1,0 +1,235 @@
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Firebase environment to restore
+        required: true
+        type: choice
+        options:
+          - qa
+          - production
+      component:
+        description: Deploy only this component from the target commit
+        required: true
+        type: choice
+        options:
+          - hosting
+          - firestore-rules
+      target_commit:
+        description: Full 40-character SHA of a previously verified commit
+        required: true
+        type: string
+      incident_reference:
+        description: Ticket ID or URL without spaces or query parameters
+        required: true
+        type: string
+      confirmation:
+        description: Type the exact confirmation documented in the runbook
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ inputs.environment == 'qa' && 'https://budget-battowski-qa.web.app' || 'https://budget-battowski.web.app' }}
+    concurrency:
+      group: firebase-deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    steps:
+      - name: Check out rollback controller
+        id: controller_checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install rollback tooling
+        id: controller_install
+        run: npm ci
+
+      - name: Validate rollback request
+        id: plan
+        env:
+          ROLLBACK_ENVIRONMENT: ${{ inputs.environment }}
+          ROLLBACK_COMPONENT: ${{ inputs.component }}
+          ROLLBACK_TARGET_COMMIT: ${{ inputs.target_commit }}
+          ROLLBACK_CONTROL_COMMIT: ${{ github.sha }}
+          ROLLBACK_CURRENT_REF: ${{ github.ref_name }}
+          ROLLBACK_INCIDENT_REFERENCE: ${{ inputs.incident_reference }}
+          ROLLBACK_CONFIRMATION: ${{ inputs.confirmation }}
+        run: npm run rollback:validate
+
+      - name: Check out immutable rollback source
+        id: target_checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.plan.outputs.target_commit }}
+          fetch-depth: 0
+          path: rollback-source
+          persist-credentials: false
+
+      - name: Verify target is a strict protected-branch ancestor
+        id: ancestry
+        shell: bash
+        env:
+          REQUIRED_BRANCH: ${{ steps.plan.outputs.required_branch }}
+          TARGET_COMMIT: ${{ steps.plan.outputs.target_commit }}
+        run: |
+          git -C rollback-source fetch --no-tags origin \
+            "$REQUIRED_BRANCH:refs/remotes/origin/$REQUIRED_BRANCH"
+          branch_tip="$(git -C rollback-source rev-parse "origin/$REQUIRED_BRANCH")"
+          if [[ "$TARGET_COMMIT" == "$branch_tip" ]]; then
+            echo "Rollback target must be older than the protected branch tip." >&2
+            exit 1
+          fi
+          git -C rollback-source merge-base --is-ancestor "$TARGET_COMMIT" "origin/$REQUIRED_BRANCH"
+          actual_target="$(git -C rollback-source rev-parse HEAD)"
+          if [[ "$actual_target" != "$TARGET_COMMIT" ]]; then
+            echo "Checked-out commit does not match the requested rollback target." >&2
+            exit 1
+          fi
+          echo "Validated strict ancestor $TARGET_COMMIT of origin/$REQUIRED_BRANCH."
+
+      - name: Install target dependencies
+        id: target_install
+        working-directory: rollback-source
+        run: npm ci
+
+      - name: Prepare and verify rollback source
+        id: prepare
+        shell: bash
+        env:
+          ROLLBACK_COMPONENT: ${{ inputs.component }}
+          ROLLBACK_ENVIRONMENT: ${{ inputs.environment }}
+          RELEASE_ENVIRONMENT: ${{ inputs.environment }}
+          RELEASE_COMMIT: ${{ steps.plan.outputs.target_commit }}
+          RELEASE_RUN_ID: ${{ github.run_id }}
+          RELEASE_OUTPUT_DIRECTORY: rollback-source/dist/budget-battowski/browser
+        run: |
+          if [[ "$ROLLBACK_COMPONENT" == "firestore-rules" ]]; then
+            npm --prefix rollback-source run test:rules
+          elif [[ "$ROLLBACK_ENVIRONMENT" == "qa" ]]; then
+            npm --prefix rollback-source run build:qa
+            npm run release:metadata
+          else
+            npm --prefix rollback-source run build:prod
+            npm run release:metadata
+          fi
+
+      - name: Authenticate to Google Cloud
+        id: google_auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Deploy rollback component
+        id: deploy
+        shell: bash
+        working-directory: rollback-source
+        env:
+          ROLLBACK_COMPONENT: ${{ inputs.component }}
+          FIREBASE_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+        run: |
+          if [[ "$ROLLBACK_COMPONENT" == "hosting" ]]; then
+            deploy_target="hosting"
+          else
+            deploy_target="firestore:rules"
+          fi
+          npx firebase-tools deploy \
+            --only "$deploy_target" \
+            --project "$FIREBASE_PROJECT_ID" \
+            --non-interactive
+
+      - name: Verify deployed rollback
+        id: verify
+        shell: bash
+        env:
+          ROLLBACK_COMPONENT: ${{ inputs.component }}
+          ROLLBACK_ENVIRONMENT: ${{ inputs.environment }}
+          ROLLBACK_TARGET_COMMIT: ${{ steps.plan.outputs.target_commit }}
+          QA_BASE_URL: https://budget-battowski-qa.web.app
+          QA_FIREBASE_PASSWORD: ${{ secrets.QA_FIREBASE_PASSWORD }}
+          PRODUCTION_BASE_URL: https://budget-battowski.web.app
+        run: |
+          if [[ "$ROLLBACK_ENVIRONMENT" == "qa" ]]; then
+            if [[ "$ROLLBACK_COMPONENT" == "hosting" ]]; then
+              export RELEASE_COMMIT="$ROLLBACK_TARGET_COMMIT"
+            else
+              unset RELEASE_COMMIT
+            fi
+            npm run qa:seed
+            npm run qa:regression
+          else
+            if [[ "$ROLLBACK_COMPONENT" == "hosting" ]]; then
+              export RELEASE_COMMIT="$ROLLBACK_TARGET_COMMIT"
+            else
+              export RELEASE_COMMIT="local"
+            fi
+            npm run production:smoke
+          fi
+
+      - name: Generate rollback evidence
+        if: ${{ always() }}
+        env:
+          ROLLBACK_ENVIRONMENT: ${{ inputs.environment }}
+          ROLLBACK_COMPONENT: ${{ inputs.component }}
+          ROLLBACK_TARGET_COMMIT: ${{ inputs.target_commit }}
+          ROLLBACK_CONTROL_COMMIT: ${{ github.sha }}
+          ROLLBACK_CONTROL_REF: ${{ github.ref_name }}
+          ROLLBACK_INCIDENT_REFERENCE: ${{ inputs.incident_reference }}
+          ROLLBACK_REPOSITORY: ${{ github.repository }}
+          ROLLBACK_ACTOR: ${{ github.actor }}
+          ROLLBACK_RUN_ID: ${{ github.run_id }}
+          ROLLBACK_RUN_ATTEMPT: ${{ github.run_attempt }}
+          ROLLBACK_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ROLLBACK_TARGET_URL: ${{ inputs.environment == 'qa' && 'https://budget-battowski-qa.web.app' || 'https://budget-battowski.web.app' }}
+          ROLLBACK_DETAIL_REPORT: ${{ inputs.environment == 'qa' && 'QA_FIREBASE_REGRESSION_REPORT.md' || 'PRODUCTION_SMOKE_REPORT.md' }}
+          ROLLBACK_CHECKS_JSON: >-
+            [
+              {"name":"Controller checkout","outcome":"${{ steps.controller_checkout.outcome }}"},
+              {"name":"Controller dependencies","outcome":"${{ steps.controller_install.outcome }}"},
+              {"name":"Request validation","outcome":"${{ steps.plan.outcome }}"},
+              {"name":"Target checkout","outcome":"${{ steps.target_checkout.outcome }}"},
+              {"name":"Protected-branch ancestry","outcome":"${{ steps.ancestry.outcome }}"},
+              {"name":"Google authentication","outcome":"${{ steps.google_auth.outcome }}"},
+              {"name":"Target dependencies","outcome":"${{ steps.target_install.outcome }}"},
+              {"name":"Target preparation and tests","outcome":"${{ steps.prepare.outcome }}"},
+              {"name":"Component deployment","outcome":"${{ steps.deploy.outcome }}"},
+              {"name":"Deployed verification","outcome":"${{ steps.verify.outcome }}"}
+            ]
+        run: npm run rollback:evidence
+
+      - name: Retain rollback evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rollback-${{ inputs.environment }}-${{ inputs.component }}-${{ github.run_id }}
+          path: |
+            ROLLBACK_EVIDENCE.md
+            rollback-evidence.json
+            QA_FIREBASE_REGRESSION_REPORT.md
+            PRODUCTION_SMOKE_REPORT.md
+          if-no-files-found: warn
+          retention-days: ${{ inputs.environment == 'production' && 90 || 30 }}

@@ -44,8 +44,6 @@ export function buildQaSeedData() {
   const workspace = {
     id: QA_WORKSPACE_ID,
     name: QA_WORKSPACE_NAME,
-    ownerEmail: owner,
-    memberEmails: [owner, editor, member],
     members: [
       { email: owner, displayName: 'QA Owner', role: 'owner', createdDate: now },
       { email: editor, displayName: 'QA Editor', role: 'editor', createdDate: now },

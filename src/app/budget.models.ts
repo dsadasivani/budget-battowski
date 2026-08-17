@@ -73,7 +73,7 @@ export interface PaymentAccount extends OwnedRecord {
 }
 
 export interface WorkspaceMember {
-  uid?: string;
+  uid: string;
   email: string;
   displayName: string;
   photoUrl?: string;
@@ -83,7 +83,7 @@ export interface WorkspaceMember {
 }
 
 export interface UserProfile {
-  uid?: string;
+  uid: string;
   email: string;
   displayName: string;
   photoUrl?: string;
@@ -102,9 +102,8 @@ export interface OnboardingProgress {
 export interface Workspace {
   id: string;
   name: string;
-  ownerEmail: string;
-  ownerUid?: string;
-  memberUids?: string[];
+  ownerUid: string;
+  memberUids: string[];
   members: WorkspaceMember[];
   createdDate: string;
   updatedDate: string;

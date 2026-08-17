@@ -9,6 +9,11 @@ import type { User } from 'firebase/auth';
 import { firstValueFrom } from 'rxjs';
 
 import { BudgetFirestoreRepository } from './budget.firestore';
+import {
+  classifyOperationalError,
+  OperationalTelemetryService,
+  type OperationalErrorCategory,
+} from './core/operational-telemetry';
 import { effectiveValueForOccurrence } from './domain/effective-dating/effective-dating-engine';
 import { MonthlyReviewSourceConflictError } from './domain/errors';
 import { haveSameOwner, isWorkspaceOwner, normalizeEmail } from './domain/identity/identity';
@@ -408,7 +413,7 @@ export class BudgetStore implements OnDestroy {
   private readonly bottomSheet = inject(MatBottomSheet);
   private readonly breakpointObserver = inject(BreakpointObserver);
   private readonly dialog = inject(MatDialog);
-  private readonly storagePrefix = 'budget-battowski';
+  private readonly telemetry = inject(OperationalTelemetryService);
   private readonly workspaceTabCount = 5;
   private readonly tabSwipeStart = signal<{ x: number; y: number } | null>(null);
   private readonly unsubscribes = signal<Array<() => void>>([]);
@@ -1197,7 +1202,6 @@ export class BudgetStore implements OnDestroy {
   });
 
   constructor() {
-    this.clearLegacyLocalData();
     effect(() => {
       if (!this.canWrite()) {
         return;
@@ -1311,7 +1315,7 @@ export class BudgetStore implements OnDestroy {
       new BudgetFirestoreRepository(
         this.firebase.app,
         workspaceId,
-        uid && email ? { uid, email } : undefined,
+        uid && email && workspace ? { uid, email, members: workspace.members } : undefined,
       ),
     );
     await this.resumeCategoryRemaps();
@@ -1350,7 +1354,7 @@ export class BudgetStore implements OnDestroy {
       await this.selectWorkspace(workspace.id);
       this.syncStatus.set('Workspace created');
     } catch (error) {
-      this.handleSyncError(error instanceof Error ? error.message : 'Unable to create workspace.');
+      this.handleSyncError(error, 'Unable to create workspace.');
     } finally {
       this.isSyncing.set(false);
     }
@@ -1454,7 +1458,6 @@ export class BudgetStore implements OnDestroy {
       !!workspace &&
       isWorkspaceOwner(workspace, {
         uid: this.userUid() ?? undefined,
-        email: this.userEmail() ?? undefined,
       })
     );
   }
@@ -1534,7 +1537,7 @@ export class BudgetStore implements OnDestroy {
       this.workspaces.update((workspaces) => workspaces.filter((item) => item.id !== workspace.id));
       this.syncStatus.set('Archived workspace deleted');
     } catch (error) {
-      this.handleSyncError(error instanceof Error ? error.message : 'Workspace delete failed.');
+      this.handleSyncError(error, 'Workspace delete failed.');
     } finally {
       this.isSyncing.set(false);
     }
@@ -1549,7 +1552,7 @@ export class BudgetStore implements OnDestroy {
       !workspace ||
       !member ||
       !this.canManageWorkspace() ||
-      isWorkspaceOwner(workspace, { uid: member.uid, email: member.email })
+      isWorkspaceOwner(workspace, { uid: member.uid })
     ) {
       return;
     }
@@ -1569,12 +1572,14 @@ export class BudgetStore implements OnDestroy {
     }
 
     const today = new Date().toISOString();
+    const members = workspace.members.map((item) =>
+      item.uid === member.uid ? { ...item, archivedDate: today } : item,
+    );
     const nextWorkspace: Workspace = {
       ...workspace,
       updatedDate: today,
-      members: workspace.members.map((item) =>
-        item.email === memberEmail ? { ...item, archivedDate: today } : item,
-      ),
+      members,
+      memberUids: members.filter((item) => !item.archivedDate).map((item) => item.uid),
     };
 
     await this.saveWorkspace(nextWorkspace, 'Member access removed');
@@ -1726,9 +1731,7 @@ export class BudgetStore implements OnDestroy {
           : `Imported ${summary.success} row${summary.success === 1 ? '' : 's'}`,
       );
     } catch (error) {
-      this.handleSyncError(
-        error instanceof Error ? error.message : 'Unable to import budget file.',
-      );
+      this.handleSyncError(error, 'Unable to import budget file.');
     } finally {
       this.isSyncing.set(false);
     }
@@ -2078,6 +2081,13 @@ export class BudgetStore implements OnDestroy {
 
   private applyMonthlyReviewFromDialog(result: MonthlyReviewResult): void {
     void this.applyMonthlyReview(result).catch((error: unknown) => {
+      this.telemetry.capture(error, {
+        category:
+          error instanceof MonthlyReviewSourceConflictError
+            ? 'monthly-review-source-conflict'
+            : undefined,
+        context: { workspaceId: this.workspaceId() ?? undefined, operation: 'monthly-review' },
+      });
       this.syncError.set(
         error instanceof Error
           ? error.message
@@ -2488,7 +2498,8 @@ export class BudgetStore implements OnDestroy {
 
   paymentModesForAccount(paymentAccountId: string): PaymentMode[] {
     return this.activePaymentModes().filter(
-      (paymentMode) => paymentMode.paymentAccountId === paymentAccountId,
+      (paymentMode) =>
+        paymentMode.type !== 'credit-card' && paymentMode.paymentAccountId === paymentAccountId,
     );
   }
 
@@ -2524,7 +2535,7 @@ export class BudgetStore implements OnDestroy {
   }
 
   private paymentAccountForMode(paymentMode: PaymentMode): PaymentAccount | undefined {
-    if (!paymentMode.paymentAccountId) {
+    if (paymentMode.type === 'credit-card' || !paymentMode.paymentAccountId) {
       return undefined;
     }
 
@@ -2641,7 +2652,12 @@ export class BudgetStore implements OnDestroy {
       photoUrl: this.userPhoto() || undefined,
       updatedDate: new Date().toISOString(),
       onboarding: progress,
-    }).catch(() => {
+    }).catch((error: unknown) => {
+      this.telemetry.capture(error, {
+        category: 'firestore',
+        severity: 'warning',
+        context: { operation: 'onboarding-profile-upsert' },
+      });
       this.syncStatus.set('Onboarding progress will retry on the next update');
     });
   }
@@ -2880,7 +2896,7 @@ export class BudgetStore implements OnDestroy {
   }
 
   memberTag(memberEmail: string | undefined): string {
-    return memberEmail ? this.shortMemberName(this.memberName(memberEmail)) : 'Legacy';
+    return memberEmail ? this.shortMemberName(this.memberName(memberEmail)) : 'Unassigned';
   }
 
   actingMemberEmail(): string | undefined {
@@ -2900,14 +2916,17 @@ export class BudgetStore implements OnDestroy {
     paymentMode?: Pick<PaymentMode, 'ownerUid' | 'memberEmail' | 'paymentAccountId'>,
   ): PaymentAccount[] {
     const ownerEmail = paymentMode?.memberEmail ?? this.actingMemberEmail();
+    const actingMember = this.activeWorkspace()?.members.find(
+      (member) => normalizeEmail(member.email) === normalizeEmail(ownerEmail),
+    );
     const owner = paymentMode ?? {
-      ownerUid: this.userUid() ?? undefined,
+      ownerUid: actingMember?.uid,
       memberEmail: ownerEmail,
     };
     return this.paymentAccounts()
       .filter(
         (account) =>
-          (!account.archivedDate && !!ownerEmail && haveSameOwner(account, owner)) ||
+          (!account.archivedDate && haveSameOwner(account, owner)) ||
           account.id === paymentMode?.paymentAccountId,
       )
       .sort(comparePaymentAccounts);
@@ -3248,11 +3267,7 @@ export class BudgetStore implements OnDestroy {
     this.loanEmiCategoryUpsertInFlight.set(true);
     void repository
       .upsert('categories', DEFAULT_LOAN_EMI_CATEGORY)
-      .catch((error: unknown) =>
-        this.handleSyncError(
-          error instanceof Error ? error.message : 'Unable to create Loan EMI category.',
-        ),
-      )
+      .catch((error: unknown) => this.handleSyncError(error, 'Unable to create Loan EMI category.'))
       .finally(() => {
         this.loanEmiCategoryUpsertInFlight.set(false);
       });
@@ -3271,11 +3286,7 @@ export class BudgetStore implements OnDestroy {
     this.cashPaymentModeUpsertInFlight.set(true);
     void repository
       .upsert('paymentModes', DEFAULT_CASH_PAYMENT_MODE)
-      .catch((error: unknown) =>
-        this.handleSyncError(
-          error instanceof Error ? error.message : 'Unable to create Cash payment mode.',
-        ),
-      )
+      .catch((error: unknown) => this.handleSyncError(error, 'Unable to create Cash payment mode.'))
       .finally(() => {
         this.cashPaymentModeUpsertInFlight.set(false);
       });
@@ -4014,9 +4025,10 @@ export class BudgetStore implements OnDestroy {
     this.syncError.set(null);
 
     try {
-      const existingProfile =
-        (await BudgetFirestoreRepository.findUserProfile(this.firebase.app, user.uid)) ??
-        (await BudgetFirestoreRepository.findLegacyUserProfile(this.firebase.app, email));
+      const existingProfile = await BudgetFirestoreRepository.findUserProfile(
+        this.firebase.app,
+        user.uid,
+      );
       const userProfile: UserProfile = {
         uid: user.uid,
         email,
@@ -4026,10 +4038,17 @@ export class BudgetStore implements OnDestroy {
         onboarding: existingProfile?.onboarding,
       };
       this.onboardingProgress.set(existingProfile?.onboarding ?? null);
-      void BudgetFirestoreRepository.upsertUserProfile(this.firebase.app, userProfile).catch(() => {
-        // Profile sync is helpful for member lookup, but it should never block login.
-      });
-      const legacyWorkspace = await BudgetFirestoreRepository.ensureLegacyWorkspace(
+      void BudgetFirestoreRepository.upsertUserProfile(this.firebase.app, userProfile).catch(
+        (error: unknown) => {
+          this.telemetry.capture(error, {
+            category: 'firestore',
+            severity: 'warning',
+            context: { operation: 'login-profile-upsert' },
+          });
+          // Profile sync is helpful for member lookup, but it should never block login.
+        },
+      );
+      const personalWorkspace = await BudgetFirestoreRepository.ensurePersonalWorkspace(
         this.firebase.app,
         user.uid,
         email,
@@ -4041,7 +4060,7 @@ export class BudgetStore implements OnDestroy {
         { uid: user.uid },
       );
       const workspaceMap = new Map(
-        [legacyWorkspace, ...accessibleWorkspaces].map((workspace) => [workspace.id, workspace]),
+        [personalWorkspace, ...accessibleWorkspaces].map((workspace) => [workspace.id, workspace]),
       );
       const workspaces = [...workspaceMap.values()].sort((left, right) =>
         left.name.localeCompare(right.name),
@@ -4057,9 +4076,7 @@ export class BudgetStore implements OnDestroy {
         this.syncStatus.set('Create a workspace to continue');
       }
     } catch (error) {
-      this.handleSyncError(
-        error instanceof Error ? error.message : 'Unable to connect to Firebase.',
-      );
+      this.handleSyncError(error, 'Unable to connect to Firebase.', 'firestore');
     } finally {
       this.isSyncing.set(false);
       this.isSessionChecking.set(false);
@@ -4083,6 +4100,9 @@ export class BudgetStore implements OnDestroy {
     const memberEmail = workspaceGlobal
       ? undefined
       : (paymentMode.memberEmail ?? this.actingMemberEmail());
+    const ownerUid = workspaceGlobal
+      ? undefined
+      : this.resolveMemberUid(paymentMode.ownerUid, memberEmail);
     const paymentAccountId = this.isAccountBackedPaymentMode(paymentMode)
       ? paymentMode.paymentAccountId
       : undefined;
@@ -4094,6 +4114,7 @@ export class BudgetStore implements OnDestroy {
       type: paymentMode.type,
       name: paymentMode.name?.trim() || this.paymentModeTypeLabel(paymentMode.type),
       paymentAccountId,
+      ownerUid,
       memberEmail,
       workspaceGlobal: workspaceGlobal || undefined,
       createdDate: paymentMode.createdDate || now,
@@ -4132,11 +4153,13 @@ export class BudgetStore implements OnDestroy {
     const now = new Date().toISOString();
     const lastFour = paymentAccount.lastFour.replace(/\D/g, '').slice(-4);
     const memberEmail = paymentAccount.memberEmail ?? this.actingMemberEmail();
+    const ownerUid = this.resolveMemberUid(paymentAccount.ownerUid, memberEmail);
     const normalized = {
       id: paymentAccount.id || id('payment-account'),
       name: paymentAccount.name.trim() || 'Bank account',
       bankName: this.paymentBankNameValue(paymentAccount.bankName),
       lastFour,
+      ownerUid,
       memberEmail,
       createdDate: paymentAccount.createdDate || now,
       updatedDate: paymentAccount.updatedDate || now,
@@ -4149,10 +4172,22 @@ export class BudgetStore implements OnDestroy {
     };
   }
 
+  private resolveMemberUid(
+    ownerUid: string | undefined,
+    memberEmail: string | undefined,
+  ): string | undefined {
+    if (ownerUid) {
+      return ownerUid;
+    }
+
+    return this.activeWorkspace()?.members.find(
+      (member) => normalizeEmail(member.email) === normalizeEmail(memberEmail),
+    )?.uid;
+  }
+
   private isAccountBackedPaymentMode(paymentMode: Pick<PaymentMode, 'type'>): boolean {
     return (
       paymentMode.type === 'upi' ||
-      paymentMode.type === 'credit-card' ||
       paymentMode.type === 'debit-card' ||
       paymentMode.type === 'internet-banking'
     );
@@ -4160,12 +4195,13 @@ export class BudgetStore implements OnDestroy {
 
   private currentUserProfile(): UserProfile | null {
     const email = this.userEmail();
-    if (!email) {
+    const uid = this.userUid();
+    if (!email || !uid) {
       return null;
     }
 
     return {
-      uid: this.userUid() ?? undefined,
+      uid,
       email,
       displayName: this.userName() || email,
       photoUrl: this.userPhoto() ?? undefined,
@@ -4186,17 +4222,17 @@ export class BudgetStore implements OnDestroy {
 
   private workspaceWithEditorProfiles(workspace: Workspace, profiles: UserProfile[]): Workspace {
     const today = new Date().toISOString();
-    const editorProfiles = profiles.filter((profile) => profile.email !== workspace.ownerEmail);
+    const editorProfiles = profiles.filter((profile) => profile.uid !== workspace.ownerUid);
     let members = workspace.members;
 
     for (const profile of editorProfiles) {
-      const existingMember = members.find((member) => member.email === profile.email);
+      const existingMember = members.find((member) => member.uid === profile.uid);
       members = existingMember
         ? members.map((member) =>
-            member.email === profile.email
+            member.uid === profile.uid
               ? {
                   ...member,
-                  uid: profile.uid ?? member.uid,
+                  email: profile.email,
                   displayName: profile.displayName || profile.email,
                   photoUrl: profile.photoUrl,
                   role: 'editor',
@@ -4221,6 +4257,7 @@ export class BudgetStore implements OnDestroy {
       ...workspace,
       updatedDate: today,
       members,
+      memberUids: members.filter((member) => !member.archivedDate).map((member) => member.uid),
     };
   }
 
@@ -4314,7 +4351,7 @@ export class BudgetStore implements OnDestroy {
       );
       this.syncStatus.set(message);
     } catch (error) {
-      this.handleSyncError(error instanceof Error ? error.message : 'Workspace update failed.');
+      this.handleSyncError(error, 'Workspace update failed.');
     } finally {
       this.isSyncing.set(false);
     }
@@ -4336,7 +4373,7 @@ export class BudgetStore implements OnDestroy {
             this.paymentAccounts.set(records);
             this.markWorkspaceCollectionLoaded('paymentAccounts', workspaceId);
           },
-          (message) => this.handleSyncError(message),
+          (error) => this.handleSyncError(error, 'Payment account listener failed.', 'firestore'),
         ),
         repository.listen(
           'paymentModes',
@@ -4345,7 +4382,7 @@ export class BudgetStore implements OnDestroy {
             this.ensureDefaultPaymentModeRecord(records);
             this.markWorkspaceCollectionLoaded('paymentModes', workspaceId);
           },
-          (message) => this.handleSyncError(message),
+          (error) => this.handleSyncError(error, 'Payment mode listener failed.', 'firestore'),
         ),
         repository.listen(
           'categories',
@@ -4354,7 +4391,7 @@ export class BudgetStore implements OnDestroy {
             this.ensureDefaultCategoryRecord(records);
             this.markWorkspaceCollectionLoaded('categories', workspaceId);
           },
-          (message) => this.handleSyncError(message),
+          (error) => this.handleSyncError(error, 'Category listener failed.', 'firestore'),
         ),
         repository.listen(
           'incomes',
@@ -4362,7 +4399,7 @@ export class BudgetStore implements OnDestroy {
             this.incomes.set(records);
             this.markWorkspaceCollectionLoaded('incomes', workspaceId);
           },
-          (message) => this.handleSyncError(message),
+          (error) => this.handleSyncError(error, 'Income listener failed.', 'firestore'),
         ),
         repository.listen(
           'templates',
@@ -4370,7 +4407,7 @@ export class BudgetStore implements OnDestroy {
             this.templates.set(records);
             this.markWorkspaceCollectionLoaded('templates', workspaceId);
           },
-          (message) => this.handleSyncError(message),
+          (error) => this.handleSyncError(error, 'Template listener failed.', 'firestore'),
         ),
         repository.listen(
           'expenses',
@@ -4378,7 +4415,7 @@ export class BudgetStore implements OnDestroy {
             this.expenses.set(records);
             this.markWorkspaceCollectionLoaded('expenses', workspaceId);
           },
-          (message) => this.handleSyncError(message),
+          (error) => this.handleSyncError(error, 'Expense listener failed.', 'firestore'),
         ),
         repository.listen(
           'investments',
@@ -4386,7 +4423,7 @@ export class BudgetStore implements OnDestroy {
             this.investments.set(records);
             this.markWorkspaceCollectionLoaded('investments', workspaceId);
           },
-          (message) => this.handleSyncError(message),
+          (error) => this.handleSyncError(error, 'Investment listener failed.', 'firestore'),
         ),
         repository.listen(
           'loans',
@@ -4394,7 +4431,7 @@ export class BudgetStore implements OnDestroy {
             this.loans.set(records);
             this.markWorkspaceCollectionLoaded('loans', workspaceId);
           },
-          (message) => this.handleSyncError(message),
+          (error) => this.handleSyncError(error, 'Loan listener failed.', 'firestore'),
         ),
       ]);
 
@@ -4423,9 +4460,7 @@ export class BudgetStore implements OnDestroy {
         this.syncStatus.set('Pending category remaps completed');
       }
     } catch (error) {
-      this.handleSyncError(
-        error instanceof Error ? error.message : 'Unable to resume category remapping.',
-      );
+      this.handleSyncError(error, 'Unable to resume category remapping.');
     }
   }
 
@@ -5140,14 +5175,24 @@ export class BudgetStore implements OnDestroy {
       this.syncStatus.set('Saved to Firebase');
       return true;
     } catch (error) {
-      this.handleSyncError(error instanceof Error ? error.message : 'Firebase save failed.');
+      this.handleSyncError(error, 'Firebase save failed.');
       return false;
     } finally {
       this.isSyncing.set(false);
     }
   }
 
-  private handleSyncError(message: string): void {
+  private handleSyncError(
+    error: unknown,
+    fallback = 'Firebase sync failed.',
+    category?: OperationalErrorCategory,
+  ): void {
+    const inferredCategory = classifyOperationalError(error);
+    this.telemetry.capture(error, {
+      category: inferredCategory === 'unhandled' ? category : inferredCategory,
+      context: { workspaceId: this.workspaceId() ?? undefined },
+    });
+    const message = error instanceof Error ? error.message : fallback;
     this.syncError.set(message);
     this.syncStatus.set('Firebase sync failed');
     this.isSyncing.set(false);
@@ -5178,21 +5223,6 @@ export class BudgetStore implements OnDestroy {
     return !!target.closest(
       'button, input, textarea, select, mat-select, .mat-mdc-tab-header, .mat-mdc-dialog-container',
     );
-  }
-
-  private clearLegacyLocalData(): void {
-    for (const key of [
-      'paymentAccounts',
-      'paymentModes',
-      'categories',
-      'incomes',
-      'templates',
-      'expenses',
-      'investments',
-      'loans',
-    ]) {
-      localStorage.removeItem(`${this.storagePrefix}:${key}`);
-    }
   }
 
   private stopFirestoreListeners(): void {
