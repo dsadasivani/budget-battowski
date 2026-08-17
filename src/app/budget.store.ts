@@ -4087,6 +4087,9 @@ export class BudgetStore implements OnDestroy {
     const memberEmail = workspaceGlobal
       ? undefined
       : (paymentMode.memberEmail ?? this.actingMemberEmail());
+    const ownerUid = workspaceGlobal
+      ? undefined
+      : this.resolveMemberUid(paymentMode.ownerUid, memberEmail);
     const paymentAccountId = this.isAccountBackedPaymentMode(paymentMode)
       ? paymentMode.paymentAccountId
       : undefined;
@@ -4098,6 +4101,7 @@ export class BudgetStore implements OnDestroy {
       type: paymentMode.type,
       name: paymentMode.name?.trim() || this.paymentModeTypeLabel(paymentMode.type),
       paymentAccountId,
+      ownerUid,
       memberEmail,
       workspaceGlobal: workspaceGlobal || undefined,
       createdDate: paymentMode.createdDate || now,
@@ -4136,11 +4140,13 @@ export class BudgetStore implements OnDestroy {
     const now = new Date().toISOString();
     const lastFour = paymentAccount.lastFour.replace(/\D/g, '').slice(-4);
     const memberEmail = paymentAccount.memberEmail ?? this.actingMemberEmail();
+    const ownerUid = this.resolveMemberUid(paymentAccount.ownerUid, memberEmail);
     const normalized = {
       id: paymentAccount.id || id('payment-account'),
       name: paymentAccount.name.trim() || 'Bank account',
       bankName: this.paymentBankNameValue(paymentAccount.bankName),
       lastFour,
+      ownerUid,
       memberEmail,
       createdDate: paymentAccount.createdDate || now,
       updatedDate: paymentAccount.updatedDate || now,
@@ -4151,6 +4157,19 @@ export class BudgetStore implements OnDestroy {
       ...normalized,
       name: this.paymentAccountLabel(normalized),
     };
+  }
+
+  private resolveMemberUid(
+    ownerUid: string | undefined,
+    memberEmail: string | undefined,
+  ): string | undefined {
+    if (ownerUid) {
+      return ownerUid;
+    }
+
+    return this.activeWorkspace()?.members.find(
+      (member) => normalizeEmail(member.email) === normalizeEmail(memberEmail),
+    )?.uid;
   }
 
   private isAccountBackedPaymentMode(paymentMode: Pick<PaymentMode, 'type'>): boolean {

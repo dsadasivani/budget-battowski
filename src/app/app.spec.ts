@@ -2466,6 +2466,8 @@ describe('App', () => {
         type: 'upi',
         provider: 'Google Pay',
         name: 'Old UPI',
+        ownerUid: 'owner-uid',
+        memberEmail: 'owner@example.com',
         archivedDate: '2026-06-01T00:00:00.000Z',
       },
     ]);
@@ -2475,6 +2477,8 @@ describe('App', () => {
         name: 'Old account',
         bankName: 'HDFC',
         lastFour: '4321',
+        ownerUid: 'owner-uid',
+        memberEmail: 'owner@example.com',
         archivedDate: '2026-06-01T00:00:00.000Z',
       },
     ]);
@@ -2490,16 +2494,68 @@ describe('App', () => {
     await expect(app.restorePaymentAccount('pa-old')).resolves.toBe(true);
 
     expect(app.activePaymentModes()).toEqual(
-      expect.arrayContaining([expect.objectContaining({ id: 'pm-old-upi' })]),
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'pm-old-upi', ownerUid: 'owner-uid' }),
+      ]),
     );
     expect(app.activePaymentAccounts()).toEqual(
-      expect.arrayContaining([expect.objectContaining({ id: 'pa-old' })]),
+      expect.arrayContaining([expect.objectContaining({ id: 'pa-old', ownerUid: 'owner-uid' })]),
     );
     expect(app.archivedPaymentModes()).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ id: 'pm-old-upi' })]),
     );
     expect(app.archivedPaymentAccounts()).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ id: 'pa-old' })]),
+    );
+  });
+
+  it('should preserve UID ownership while archiving an account-backed payment mode', async () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
+      activePaymentModes: () => PaymentMode[];
+      archivePaymentMode: (paymentModeId: string) => Promise<boolean>;
+      archivedPaymentModes: () => PaymentMode[];
+      firebase: { mode: string };
+      paymentAccounts: { set: (records: PaymentAccount[]) => void };
+      paymentModes: { set: (records: PaymentMode[]) => void };
+      restorePaymentMode: (paymentModeId: string) => Promise<boolean>;
+    };
+
+    app.firebase.mode = 'local';
+    app.paymentAccounts.set([
+      {
+        id: 'pa-owner',
+        name: 'Owner account',
+        bankName: 'HDFC',
+        lastFour: '4321',
+        ownerUid: 'owner-uid',
+        memberEmail: 'owner@example.com',
+      },
+    ]);
+    app.paymentModes.set([
+      {
+        id: 'pm-owner-upi',
+        type: 'upi',
+        provider: 'BHIM',
+        name: 'Owner UPI',
+        paymentAccountId: 'pa-owner',
+        ownerUid: 'owner-uid',
+        memberEmail: 'owner@example.com',
+      },
+    ]);
+
+    await expect(app.archivePaymentMode('pm-owner-upi')).resolves.toBe(true);
+    expect(app.archivedPaymentModes()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'pm-owner-upi', ownerUid: 'owner-uid' }),
+      ]),
+    );
+
+    await expect(app.restorePaymentMode('pm-owner-upi')).resolves.toBe(true);
+    expect(app.activePaymentModes()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'pm-owner-upi', ownerUid: 'owner-uid' }),
+      ]),
     );
   });
 
