@@ -108,16 +108,12 @@ async function main() {
     })),
   };
 
-  console.log('Ensuring workspace document exists for rule access');
+  console.log('Ensuring clean workspace document exists for rule access');
   await withTimeout(
-    setDoc(
-      workspaceRef,
-      {
-        ...workspace,
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
-    ),
+    setDoc(workspaceRef, {
+      ...workspace,
+      updatedAt: serverTimestamp(),
+    }),
     'Ensure workspace document',
   );
 
