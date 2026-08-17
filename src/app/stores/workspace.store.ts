@@ -30,7 +30,7 @@ export class WorkspaceStore {
   });
   readonly selectedMemberId = computed(() => {
     const member = this.selectedMember();
-    return member?.uid ?? member?.email ?? 'ALL';
+    return member?.uid ?? 'ALL';
   });
   readonly canManageWorkspace = computed(() => {
     const workspace = this.activeWorkspace();
@@ -38,7 +38,6 @@ export class WorkspaceStore {
       !!workspace &&
       isWorkspaceOwner(workspace, {
         uid: this.session.userUid() ?? undefined,
-        email: this.session.userEmail() ?? undefined,
       })
     );
   });
@@ -48,8 +47,6 @@ export class WorkspaceStore {
       return true;
     }
     const member = this.selectedMember();
-    return member
-      ? matchesMember(record, member)
-      : normalizeEmail(record.memberEmail) === normalizeEmail(this.selectedMemberEmail());
+    return member ? matchesMember(record, member) : false;
   }
 }

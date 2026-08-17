@@ -3,7 +3,7 @@ import type { Firestore, Unsubscribe } from 'firebase/firestore';
 
 import { getBudgetFirestore } from './firebase.client';
 import { FirestoreWriteCoordinator, MAX_BATCH_WRITES } from './data/firestore-write-coordinator';
-import { adoptOwnerUid, normalizeEmail } from './domain/identity/identity';
+import { normalizeEmail } from './domain/identity/identity';
 import type { BudgetMutationSet } from './domain/mutations/budget-mutations';
 import type {
   BudgetCollectionName,
@@ -15,10 +15,10 @@ import type {
   InvestmentEntry,
   UserProfile,
   Workspace,
+  WorkspaceMember,
 } from './budget.models';
 
 const WORKSPACE_COLLECTION = 'budgetWorkspaces';
-const LEGACY_PROFILE_COLLECTION = 'budgetUserProfiles';
 const USER_DIRECTORY_COLLECTION = 'budgetUserDirectory';
 const USER_DIRECTORY_EMAIL_COLLECTION = 'budgetUserDirectoryByEmail';
 const USER_PRIVATE_COLLECTION = 'budgetUserPrivate';
@@ -41,14 +41,8 @@ function workspaceWithoutId(workspace: Workspace): Omit<Workspace, 'id'> {
   return data;
 }
 
-function activeMemberEmails(workspace: Workspace): string[] {
-  return workspace.members.filter((member) => !member.archivedDate).map((member) => member.email);
-}
-
 function activeMemberUids(workspace: Workspace): string[] {
-  return workspace.members
-    .filter((member) => !member.archivedDate && !!member.uid)
-    .map((member) => member.uid!);
+  return workspace.members.filter((member) => !member.archivedDate).map((member) => member.uid);
 }
 
 function stripUndefined<T>(value: T): T {
@@ -73,7 +67,11 @@ export class BudgetFirestoreRepository {
   constructor(
     private readonly app: FirebaseApp,
     private readonly workspaceId: string,
-    private readonly identity?: { uid: string; email: string },
+    private readonly identity?: {
+      uid: string;
+      email: string;
+      members: readonly WorkspaceMember[];
+    },
   ) {}
 
   async listen<TName extends BudgetCollectionName>(
@@ -111,19 +109,13 @@ export class BudgetFirestoreRepository {
     const { collection, getDocs, getFirestore, query, where } = await import('firebase/firestore');
     const db = getFirestore(app);
     const workspacesRef = collection(db, WORKSPACE_COLLECTION);
-    // UID-authoritative rules cannot safely authorize a collection query filtered only by email:
-    // that query could also return migrated workspaces whose memberUids do not contain this user.
-    // Legacy self-workspaces are loaded and migrated by ensureLegacyWorkspace; shared workspaces
-    // must have memberUids populated by the administrative migration before they are discoverable.
     const uidSnapshot = await getDocs(
       query(workspacesRef, where('memberUids', 'array-contains', identity.uid)),
     );
 
     return uidSnapshot.docs
       .map((docSnapshot) => {
-        const data = docSnapshot.data() as Omit<Workspace, 'id'> & {
-          memberEmails?: string[];
-        };
+        const data = docSnapshot.data() as Omit<Workspace, 'id'>;
         return {
           id: docSnapshot.id,
           ...data,
@@ -174,7 +166,7 @@ export class BudgetFirestoreRepository {
     await deleteDoc(doc(db, WORKSPACE_COLLECTION, workspaceId));
   }
 
-  static async ensureLegacyWorkspace(
+  static async ensurePersonalWorkspace(
     app: FirebaseApp,
     userUid: string,
     userEmail: string,
@@ -184,42 +176,23 @@ export class BudgetFirestoreRepository {
     const { doc, getDoc, getFirestore, serverTimestamp, setDoc } =
       await import('firebase/firestore');
     const db = getFirestore(app);
-    const workspaceRef = doc(db, WORKSPACE_COLLECTION, userEmail);
+    const workspaceRef = doc(db, WORKSPACE_COLLECTION, userUid);
     const snapshot = await getDoc(workspaceRef);
 
     if (snapshot.exists()) {
       const data = snapshot.data() as Omit<Workspace, 'id'>;
-      if (Array.isArray(data.members) && data.ownerEmail) {
-        const members = data.members.map((member) =>
-          member.email === userEmail ? { ...member, uid: member.uid ?? userUid } : member,
-        );
-        const workspace = {
-          id: snapshot.id,
-          ...data,
-          ownerUid: data.ownerUid ?? (data.ownerEmail === userEmail ? userUid : undefined),
-          members,
-          memberUids: [...new Set([...(data.memberUids ?? []), userUid])],
-        } as Workspace;
-        await setDoc(
-          workspaceRef,
-          {
-            ...stripUndefined(workspaceWithoutId(workspace)),
-            memberEmails: activeMemberEmails(workspace),
-            memberUids: activeMemberUids(workspace),
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true },
-        );
-        return workspace;
+      if (data.ownerUid === userUid && Array.isArray(data.members)) {
+        return { id: snapshot.id, ...data };
       }
+      throw new Error('The personal workspace does not satisfy the UID identity schema.');
     }
 
     const today = new Date().toISOString();
     const workspace: Workspace = {
-      id: userEmail,
+      id: userUid,
       name: `${displayName || userEmail}'s workspace`,
-      ownerEmail: userEmail,
       ownerUid: userUid,
+      memberUids: [userUid],
       members: [
         {
           email: userEmail,
@@ -234,16 +207,11 @@ export class BudgetFirestoreRepository {
       updatedDate: today,
     };
 
-    await setDoc(
-      workspaceRef,
-      {
-        ...stripUndefined(workspaceWithoutId(workspace)),
-        memberEmails: [userEmail],
-        memberUids: [userUid],
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
-    );
+    await setDoc(workspaceRef, {
+      ...stripUndefined(workspaceWithoutId(workspace)),
+      memberUids: [userUid],
+      updatedAt: serverTimestamp(),
+    });
 
     return workspace;
   }
@@ -259,17 +227,16 @@ export class BudgetFirestoreRepository {
     const db = getFirestore(app);
     const workspaceRef = doc(collection(db, WORKSPACE_COLLECTION));
     const today = new Date().toISOString();
-    const ownerEmail = ownerProfile.email;
     const workspace: Workspace = {
       id: workspaceRef.id,
       name: name.trim() || 'New workspace',
-      ownerEmail,
       ownerUid: ownerProfile.uid,
+      memberUids: [ownerProfile.uid, ...editorProfiles.map((profile) => profile.uid)],
       members: [
         {
-          email: ownerEmail,
+          email: ownerProfile.email,
           uid: ownerProfile.uid,
-          displayName: ownerProfile.displayName || ownerEmail,
+          displayName: ownerProfile.displayName || ownerProfile.email,
           photoUrl: ownerProfile.photoUrl,
           role: 'owner',
           createdDate: today,
@@ -289,7 +256,6 @@ export class BudgetFirestoreRepository {
 
     await setDoc(workspaceRef, {
       ...stripUndefined(workspaceWithoutId(workspace)),
-      memberEmails: activeMemberEmails(workspace),
       memberUids: activeMemberUids(workspace),
       updatedAt: serverTimestamp(),
     });
@@ -300,15 +266,6 @@ export class BudgetFirestoreRepository {
   static async upsertUserProfile(app: FirebaseApp, profile: UserProfile): Promise<void> {
     const { doc, getFirestore, serverTimestamp, setDoc } = await import('firebase/firestore');
     const db = getFirestore(app);
-
-    if (!profile.uid) {
-      await setDoc(
-        doc(db, LEGACY_PROFILE_COLLECTION, profile.email),
-        { ...stripUndefined(profile), updatedAt: serverTimestamp() },
-        { merge: true },
-      );
-      return;
-    }
 
     await Promise.all([
       setDoc(
@@ -367,44 +324,26 @@ export class BudgetFirestoreRepository {
     app: FirebaseApp,
     email: string,
   ): Promise<UserProfile | null> {
-    const { collection, doc, getDoc, getDocs, getFirestore, limit, query, where } =
-      await import('firebase/firestore');
+    const { doc, getDoc, getFirestore } = await import('firebase/firestore');
     const db = getFirestore(app);
     const normalizedEmail = normalizeEmail(email);
     const indexedDirectory = await getDoc(
       doc(db, USER_DIRECTORY_EMAIL_COLLECTION, normalizedEmail),
     );
-    if (indexedDirectory.exists()) {
-      return indexedDirectory.data() as UserProfile;
-    }
-    const directory = await getDocs(
-      query(
-        collection(db, USER_DIRECTORY_COLLECTION),
-        where('email', '==', normalizedEmail),
-        limit(1),
-      ),
-    );
-    if (!directory.empty) {
-      const snapshot = directory.docs[0];
-      return { uid: snapshot.id, ...snapshot.data() } as UserProfile;
-    }
-    const legacy = await getDoc(doc(db, LEGACY_PROFILE_COLLECTION, normalizedEmail));
-    return legacy.exists() ? (legacy.data() as UserProfile) : null;
-  }
-
-  /* Legacy email-keyed profiles remain readable during the staged migration. */
-  static async findLegacyUserProfile(app: FirebaseApp, email: string): Promise<UserProfile | null> {
-    const { doc, getDoc, getFirestore } = await import('firebase/firestore');
-    const db = getFirestore(app);
-    const snapshot = await getDoc(doc(db, LEGACY_PROFILE_COLLECTION, email));
-    return snapshot.exists() ? (snapshot.data() as UserProfile) : null;
+    return indexedDirectory.exists() ? (indexedDirectory.data() as UserProfile) : null;
   }
 
   private ownedRecord<T extends BudgetRecord>(record: T): T {
-    if (!this.identity || !('memberEmail' in record)) {
+    if (!this.identity || !('memberEmail' in record) || record.ownerUid) {
       return record;
     }
-    return adoptOwnerUid(record as T & { ownerUid?: string; memberEmail?: string }, this.identity);
+    const memberEmail = record.memberEmail;
+    const ownerUid = memberEmail
+      ? this.identity.members.find(
+          (member) => normalizeEmail(member.email) === normalizeEmail(memberEmail),
+        )?.uid
+      : this.identity.uid;
+    return ownerUid ? ({ ...record, ownerUid } as T) : record;
   }
 
   private withOwnedMutations(mutations: BudgetMutationSet): BudgetMutationSet {
@@ -438,7 +377,6 @@ export class BudgetFirestoreRepository {
       doc(db, WORKSPACE_COLLECTION, workspace.id),
       {
         ...stripUndefined(workspaceWithoutId(workspace)),
-        memberEmails: activeMemberEmails(workspace),
         memberUids: activeMemberUids(workspace),
         updatedAt: serverTimestamp(),
       },

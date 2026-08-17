@@ -408,7 +408,6 @@ export class BudgetStore implements OnDestroy {
   private readonly bottomSheet = inject(MatBottomSheet);
   private readonly breakpointObserver = inject(BreakpointObserver);
   private readonly dialog = inject(MatDialog);
-  private readonly storagePrefix = 'budget-battowski';
   private readonly workspaceTabCount = 5;
   private readonly tabSwipeStart = signal<{ x: number; y: number } | null>(null);
   private readonly unsubscribes = signal<Array<() => void>>([]);
@@ -1197,7 +1196,6 @@ export class BudgetStore implements OnDestroy {
   });
 
   constructor() {
-    this.clearLegacyLocalData();
     effect(() => {
       if (!this.canWrite()) {
         return;
@@ -1311,7 +1309,7 @@ export class BudgetStore implements OnDestroy {
       new BudgetFirestoreRepository(
         this.firebase.app,
         workspaceId,
-        uid && email ? { uid, email } : undefined,
+        uid && email && workspace ? { uid, email, members: workspace.members } : undefined,
       ),
     );
     await this.resumeCategoryRemaps();
@@ -1454,7 +1452,6 @@ export class BudgetStore implements OnDestroy {
       !!workspace &&
       isWorkspaceOwner(workspace, {
         uid: this.userUid() ?? undefined,
-        email: this.userEmail() ?? undefined,
       })
     );
   }
@@ -1549,7 +1546,7 @@ export class BudgetStore implements OnDestroy {
       !workspace ||
       !member ||
       !this.canManageWorkspace() ||
-      isWorkspaceOwner(workspace, { uid: member.uid, email: member.email })
+      isWorkspaceOwner(workspace, { uid: member.uid })
     ) {
       return;
     }
@@ -1569,12 +1566,14 @@ export class BudgetStore implements OnDestroy {
     }
 
     const today = new Date().toISOString();
+    const members = workspace.members.map((item) =>
+      item.uid === member.uid ? { ...item, archivedDate: today } : item,
+    );
     const nextWorkspace: Workspace = {
       ...workspace,
       updatedDate: today,
-      members: workspace.members.map((item) =>
-        item.email === memberEmail ? { ...item, archivedDate: today } : item,
-      ),
+      members,
+      memberUids: members.filter((item) => !item.archivedDate).map((item) => item.uid),
     };
 
     await this.saveWorkspace(nextWorkspace, 'Member access removed');
@@ -2881,7 +2880,7 @@ export class BudgetStore implements OnDestroy {
   }
 
   memberTag(memberEmail: string | undefined): string {
-    return memberEmail ? this.shortMemberName(this.memberName(memberEmail)) : 'Legacy';
+    return memberEmail ? this.shortMemberName(this.memberName(memberEmail)) : 'Unassigned';
   }
 
   actingMemberEmail(): string | undefined {
@@ -2901,14 +2900,17 @@ export class BudgetStore implements OnDestroy {
     paymentMode?: Pick<PaymentMode, 'ownerUid' | 'memberEmail' | 'paymentAccountId'>,
   ): PaymentAccount[] {
     const ownerEmail = paymentMode?.memberEmail ?? this.actingMemberEmail();
+    const actingMember = this.activeWorkspace()?.members.find(
+      (member) => normalizeEmail(member.email) === normalizeEmail(ownerEmail),
+    );
     const owner = paymentMode ?? {
-      ownerUid: this.userUid() ?? undefined,
+      ownerUid: actingMember?.uid,
       memberEmail: ownerEmail,
     };
     return this.paymentAccounts()
       .filter(
         (account) =>
-          (!account.archivedDate && !!ownerEmail && haveSameOwner(account, owner)) ||
+          (!account.archivedDate && haveSameOwner(account, owner)) ||
           account.id === paymentMode?.paymentAccountId,
       )
       .sort(comparePaymentAccounts);
@@ -4015,9 +4017,10 @@ export class BudgetStore implements OnDestroy {
     this.syncError.set(null);
 
     try {
-      const existingProfile =
-        (await BudgetFirestoreRepository.findUserProfile(this.firebase.app, user.uid)) ??
-        (await BudgetFirestoreRepository.findLegacyUserProfile(this.firebase.app, email));
+      const existingProfile = await BudgetFirestoreRepository.findUserProfile(
+        this.firebase.app,
+        user.uid,
+      );
       const userProfile: UserProfile = {
         uid: user.uid,
         email,
@@ -4030,7 +4033,7 @@ export class BudgetStore implements OnDestroy {
       void BudgetFirestoreRepository.upsertUserProfile(this.firebase.app, userProfile).catch(() => {
         // Profile sync is helpful for member lookup, but it should never block login.
       });
-      const legacyWorkspace = await BudgetFirestoreRepository.ensureLegacyWorkspace(
+      const personalWorkspace = await BudgetFirestoreRepository.ensurePersonalWorkspace(
         this.firebase.app,
         user.uid,
         email,
@@ -4042,7 +4045,7 @@ export class BudgetStore implements OnDestroy {
         { uid: user.uid },
       );
       const workspaceMap = new Map(
-        [legacyWorkspace, ...accessibleWorkspaces].map((workspace) => [workspace.id, workspace]),
+        [personalWorkspace, ...accessibleWorkspaces].map((workspace) => [workspace.id, workspace]),
       );
       const workspaces = [...workspaceMap.values()].sort((left, right) =>
         left.name.localeCompare(right.name),
@@ -4160,12 +4163,13 @@ export class BudgetStore implements OnDestroy {
 
   private currentUserProfile(): UserProfile | null {
     const email = this.userEmail();
-    if (!email) {
+    const uid = this.userUid();
+    if (!email || !uid) {
       return null;
     }
 
     return {
-      uid: this.userUid() ?? undefined,
+      uid,
       email,
       displayName: this.userName() || email,
       photoUrl: this.userPhoto() ?? undefined,
@@ -4186,17 +4190,17 @@ export class BudgetStore implements OnDestroy {
 
   private workspaceWithEditorProfiles(workspace: Workspace, profiles: UserProfile[]): Workspace {
     const today = new Date().toISOString();
-    const editorProfiles = profiles.filter((profile) => profile.email !== workspace.ownerEmail);
+    const editorProfiles = profiles.filter((profile) => profile.uid !== workspace.ownerUid);
     let members = workspace.members;
 
     for (const profile of editorProfiles) {
-      const existingMember = members.find((member) => member.email === profile.email);
+      const existingMember = members.find((member) => member.uid === profile.uid);
       members = existingMember
         ? members.map((member) =>
-            member.email === profile.email
+            member.uid === profile.uid
               ? {
                   ...member,
-                  uid: profile.uid ?? member.uid,
+                  email: profile.email,
                   displayName: profile.displayName || profile.email,
                   photoUrl: profile.photoUrl,
                   role: 'editor',
@@ -4221,6 +4225,7 @@ export class BudgetStore implements OnDestroy {
       ...workspace,
       updatedDate: today,
       members,
+      memberUids: members.filter((member) => !member.archivedDate).map((member) => member.uid),
     };
   }
 
@@ -5178,21 +5183,6 @@ export class BudgetStore implements OnDestroy {
     return !!target.closest(
       'button, input, textarea, select, mat-select, .mat-mdc-tab-header, .mat-mdc-dialog-container',
     );
-  }
-
-  private clearLegacyLocalData(): void {
-    for (const key of [
-      'paymentAccounts',
-      'paymentModes',
-      'categories',
-      'incomes',
-      'templates',
-      'expenses',
-      'investments',
-      'loans',
-    ]) {
-      localStorage.removeItem(`${this.storagePrefix}:${key}`);
-    }
   }
 
   private stopFirestoreListeners(): void {

@@ -133,7 +133,7 @@ function createPaymentModeStore(
   const activePaymentModes = computed(() =>
     paymentModes().filter((paymentMode) => !paymentMode.archivedDate),
   );
-  const memberTag = (memberEmail: string | undefined) => (memberEmail ? 'Test U' : 'Legacy');
+  const memberTag = (memberEmail: string | undefined) => (memberEmail ? 'Test U' : 'Unassigned');
   const paymentModesForAccount = (paymentAccountId: string) =>
     activePaymentModes().filter((paymentMode) => paymentMode.paymentAccountId === paymentAccountId);
   const paymentAccountLabel = (paymentAccount: Pick<PaymentAccount, 'bankName'>) =>
@@ -827,8 +827,24 @@ describe('App', () => {
       selectedEntries: () => Array<{ id: string }>;
       selectedMemberEmail: { set: (email: string) => void };
       selectedMonth: { set: (month: string) => void };
+      workspaceId: { set: (id: string) => void };
+      workspaces: { set: (records: unknown[]) => void };
     };
 
+    app.workspaceId.set('workspace-members');
+    app.workspaces.set([
+      {
+        id: 'workspace-members',
+        name: 'Members',
+        ownerUid: 'uid-a',
+        memberUids: ['uid-a', 'uid-b', 'uid-c'],
+        members: [
+          { uid: 'uid-a', email: 'a@example.com', displayName: 'A', role: 'owner' },
+          { uid: 'uid-b', email: 'b@example.com', displayName: 'B', role: 'editor' },
+          { uid: 'uid-c', email: 'c@example.com', displayName: 'C', role: 'editor' },
+        ],
+      },
+    ]);
     app.selectedMonth.set('2026-06');
     app.incomes.set([
       {
@@ -837,6 +853,7 @@ describe('App', () => {
         amount: 100000,
         cadence: 'monthly',
         notes: '',
+        ownerUid: 'uid-a',
         memberEmail: 'a@example.com',
       },
       {
@@ -845,14 +862,16 @@ describe('App', () => {
         amount: 80000,
         cadence: 'monthly',
         notes: '',
+        ownerUid: 'uid-b',
         memberEmail: 'b@example.com',
       },
       {
-        id: 'income-legacy',
-        source: 'Legacy',
+        id: 'income-c',
+        source: 'C Salary',
         amount: 20000,
         cadence: 'monthly',
         notes: '',
+        ownerUid: 'uid-c',
       },
     ]);
     app.expenses.set([
@@ -865,17 +884,19 @@ describe('App', () => {
         amount: 30000,
         type: 'one-time',
         note: '',
+        ownerUid: 'uid-a',
         memberEmail: 'a@example.com',
       },
       {
-        id: 'expense-legacy',
+        id: 'expense-c',
         month: '2026-06',
         date: '2026-06-02',
-        name: 'Legacy',
+        name: 'C Expense',
         categoryId: 'category-home',
         amount: 5000,
         type: 'one-time',
         note: '',
+        ownerUid: 'uid-c',
       },
     ]);
 
@@ -889,7 +910,7 @@ describe('App', () => {
     expect(app.outflowTotal()).toBe(30000);
   });
 
-  it('should filter migrated records by member UID after an email change', () => {
+  it('should filter records by member UID after an email change', () => {
     const fixture = TestBed.createComponent(App);
     const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       expenses: { set: (records: unknown[]) => void };
@@ -904,7 +925,8 @@ describe('App', () => {
       {
         id: 'workspace-identity',
         name: 'Identity',
-        ownerEmail: 'owner@example.com',
+        ownerUid: 'owner-uid',
+        memberUids: ['owner-uid', 'member-uid'],
         members: [
           {
             uid: 'member-uid',
@@ -922,8 +944,8 @@ describe('App', () => {
     app.selectedMemberEmail.set('new@example.com');
     app.expenses.set([
       {
-        id: 'migrated-expense',
-        name: 'Migrated',
+        id: 'uid-expense',
+        name: 'UID expense',
         categoryId: 'food',
         amount: 100,
         month: '2026-08',
@@ -934,10 +956,10 @@ describe('App', () => {
       },
     ]);
 
-    expect(app.selectedEntries().map((record) => record.id)).toEqual(['migrated-expense']);
+    expect(app.selectedEntries().map((record) => record.id)).toEqual(['uid-expense']);
   });
 
-  it('should administer a migrated workspace by UID rather than matching legacy email', () => {
+  it('should administer a workspace exclusively by UID', () => {
     const fixture = TestBed.createComponent(App);
     const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       canManageWorkspace: () => boolean;
@@ -952,7 +974,7 @@ describe('App', () => {
         id: 'workspace-owner-identity',
         name: 'Identity',
         ownerUid: 'owner-uid',
-        ownerEmail: 'old@example.com',
+        memberUids: ['owner-uid'],
         members: [],
         createdDate: '2026-01-01',
         updatedDate: '2026-01-01',
@@ -1239,8 +1261,20 @@ describe('App', () => {
       loans: { set: (records: unknown[]) => void };
       selectedMemberEmail: { set: (email: string) => void };
       templates: { set: (records: unknown[]) => void };
+      workspaceId: { set: (id: string) => void };
+      workspaces: { set: (records: unknown[]) => void };
     };
 
+    app.workspaceId.set('workspace-owner');
+    app.workspaces.set([
+      {
+        id: 'workspace-owner',
+        name: 'Owner workspace',
+        ownerUid: 'uid-a',
+        memberUids: ['uid-a'],
+        members: [{ uid: 'uid-a', email: 'a@example.com', displayName: 'A', role: 'owner' }],
+      },
+    ]);
     app.selectedMemberEmail.set('a@example.com');
     app.templates.set([
       {
@@ -1250,6 +1284,7 @@ describe('App', () => {
         amount: 25000,
         type: 'recurring',
         startDate: '2026-05-01',
+        ownerUid: 'uid-a',
         memberEmail: 'a@example.com',
         paymentModeId: 'pm-gpay',
       },
@@ -1266,6 +1301,7 @@ describe('App', () => {
         startDate: '2026-01-01',
         endDate: '2026-12-31',
         notes: '',
+        ownerUid: 'uid-a',
         memberEmail: 'a@example.com',
         paymentModeId: 'pm-card',
       },
@@ -2175,7 +2211,7 @@ describe('App', () => {
     expect(app.paymentModeMeta('pm-old-card')).toEqual(
       expect.objectContaining({
         iconSrc: '/payment-icons/cards_default.svg',
-        label: 'Legacy 1234',
+        label: 'Unassigned 1234',
       }),
     );
     expect(app.paymentModeMeta('payment-mode-cash')).toEqual(
@@ -2525,7 +2561,7 @@ describe('App', () => {
       },
     ]);
 
-    const expected = { iconSrc: '/payment-icons/paytm.svg', label: 'Legacy' };
+    const expected = { iconSrc: '/payment-icons/paytm.svg', label: 'Unassigned' };
     expect(app.expenseRows()[0].paymentModeMeta).toEqual(expect.objectContaining(expected));
     expect(app.portfolioRows()[0].paymentModeMeta).toEqual(expect.objectContaining(expected));
     expect(app.loanRepaymentRows()[0].paymentModeMeta).toEqual(expect.objectContaining(expected));
@@ -2939,6 +2975,7 @@ describe('WorkspaceFormDialog', () => {
   const data: WorkspaceFormData = {
     mode: 'create',
     ownerProfile: {
+      uid: 'owner-uid',
       email: 'owner@example.com',
       displayName: 'Owner',
       updatedDate: '2026-08-16T00:00:00.000Z',
@@ -4021,7 +4058,7 @@ describe('BulkEditorDialog', () => {
       paymentModeName: (paymentModeId?: string) => string;
     };
 
-    expect(dialog.paymentModeName('pm-old-upi')).toBe('Paytm Legacy');
+    expect(dialog.paymentModeName('pm-old-upi')).toBe('Paytm Unassigned');
     expect(dialog.activePaymentModes.some((paymentMode) => paymentMode.id === 'pm-old-upi')).toBe(
       false,
     );
@@ -4708,6 +4745,7 @@ describe('budget import helpers', () => {
       [],
       [
         {
+          uid: 'uid-a',
           email: 'a@example.com',
           displayName: 'A',
           role: 'editor',

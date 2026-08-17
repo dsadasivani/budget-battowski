@@ -4,7 +4,7 @@
 
 This report records the verification status and remaining discrepancies after the August 2026 architecture-stabilization follow-up. `docs/functional-requirements.md` remains the authoritative functional contract.
 
-Last inspected: August 15, 2026.
+Last inspected: August 17, 2026.
 
 ## 2. Stabilization outcome
 
@@ -12,11 +12,11 @@ The release-blocking correctness and security findings are resolved:
 
 - Monthly Review distinguishes inherited source values from reviewer overrides. Approval re-resolves the effective expense or investment source, uses its latest amount when the row was not edited, preserves an explicit occurrence override, and raises a typed conflict when the source is no longer applicable.
 - `FirestoreWriteCoordinator` limits rule-heavy transactions to five mutations, processes independent groups with at most five concurrent transactions, limits non-transactional batches to 100 writes, reports group and operation context, and supports idempotent retries.
-- Firestore authorization treats Firebase UID as authoritative after migration. Matching email cannot bypass a mismatching UID for workspace membership, workspace administration, record ownership, or related-record ownership checks.
-- Workspace discovery queries the authoritative `memberUids` field. Legacy email membership remains available for direct document access during migration, but is not used for collection discovery because Firestore cannot prove that fallback safely for a list query.
-- Legacy owned records can adopt the authenticated user's UID exactly once when their legacy email matches the authenticated email. The UID is immutable afterward.
-- Frontend workspace, member, and related-record identity checks use the same UID-first compatibility policy as the rules.
-- Public invite lookup uses UID and normalized-email directory records containing only public identity fields. Private legacy profiles remain private.
+- Firestore authorization requires Firebase UID for workspace membership, workspace administration, record ownership, and related-record ownership checks. Email is display and invitation metadata only.
+- Workspace discovery queries the required `memberUids` field. Personal workspaces are keyed by Firebase UID, and workspace owners and members must have UID identity from creation.
+- Owned financial records require an immutable `ownerUid`; records without UID ownership cannot be created, updated, or linked.
+- Frontend workspace, member, and related-record identity checks use the same UID-only policy as the rules.
+- Public invite lookup uses UID and normalized-email directory records containing only public identity fields. Private user state is stored by UID.
 - Production temporal resolution for expense templates, income, investments, and loans uses the framework-independent effective-dating engine.
 - `BudgetFacade` uses composition and `App` no longer copies a facade surface through reflection or prototype walking.
 - Authentication behavior now lives in `SessionStore`; active workspace, member selection, and administration behavior now live in `WorkspaceStore`.
@@ -32,32 +32,20 @@ Coordinator limits are deliberately based on the application's security-rule acc
 
 Large independent workflows are not globally atomic. A failure identifies the workspace, collection, record, operation, and group when available. Successfully committed groups remain committed; deterministic IDs plus version-aware create/update/delete behavior make a retry safe. Callers must not present a multi-group workflow as one global transaction.
 
-## 4. UID migration operations
+## 4. UID identity operations
 
-New or returning users populate both public directory indexes during profile upsert. Existing legacy profiles require the administrator migration script before they can be found by another user's invite lookup without signing in again.
+The application assumes a clean UID schema and does not include legacy identity migration tooling. A signed-in user writes their UID-keyed public directory entry, normalized-email invitation index, and UID-keyed private profile. New personal workspaces use the user's UID as the document ID.
 
-Run a dry run first with Application Default Credentials and the intended Firebase project selected:
-
-```bash
-npm run migrate:user-directory -- --project <project-id>
-```
-
-Apply only after reviewing the dry-run summary:
-
-```bash
-npm run migrate:user-directory -- --project <project-id> --apply
-```
-
-The script resolves legacy profile emails through Firebase Authentication and writes only `uid`, normalized `email`, `displayName`, `photoUrl`, and migration timestamp to the two public directory indexes. It does not copy onboarding state, preferences, or financial data.
+Existing email-keyed profiles, email-keyed workspaces, and financial records without `ownerUid` are intentionally unsupported. Deployments adopting this schema must start with clean Firebase data or explicitly remove obsolete data outside the application.
 
 ## 5. Verification baseline
 
 The completed implementation was validated with:
 
 - Angular production build: **passed**
-- Angular/Vitest application and domain tests: **170/170 passed**
-- Firestore emulator rules, concurrency, and production-coordinator tests: **37/37 passed**
-- Credentialed regression against the deployed QA rules and Hosting release: **52/52 passed**, including authenticated workspace discovery and desktop/mobile AXE route checks
+- Angular/Vitest application and domain tests: **172/172 passed**
+- Firestore emulator rules, concurrency, and production-coordinator tests: **36/36 passed**
+- Credentialed QA regression: **not run for this branch** because `QA_FIREBASE_PASSWORD` was unavailable; the UID-only rules were fully exercised locally by the emulator suite
 - Production dependency audit: **0 vulnerabilities**
 - Targeted Prettier validation: **passed**
 - `git diff --check`: **passed**
@@ -69,7 +57,7 @@ Known non-blocking production-build warnings:
 - `src/app/bulk-editor-dialog.scss` exceeds the 30 kB component-style warning budget by approximately 0.28 kB.
 - `src/app/app.scss` exceeds the 30 kB component-style warning budget by approximately 2.44 kB.
 
-The optimized initial bundle is approximately 948.73 kB raw / 211.41 kB transferred. Heavy editors remain in lazy chunks.
+The optimized initial bundle is approximately 947.41 kB raw / 211.11 kB transferred. Heavy editors remain in lazy chunks.
 
 ## 6. Remaining architectural debt
 
@@ -81,7 +69,6 @@ The following follow-up work is meaningful but is not a release-blocking correct
 - Bulk Editor and payment configuration remain oversized UI surfaces and have not yet been meaningfully decomposed into domain-focused presentational components.
 - The root application shell has removed business-surface reflection and reduced eager dialog imports, but navigation, login/onboarding, and account-shell markup remain candidates for focused component extraction.
 - The two component-style budget warnings remain until Bulk Editor and App shell component extraction moves their scoped styles with the new components.
-- The legacy invite directory migration has been applied in QA and production. The production dry run resolved all legacy profiles before the idempotent directory upsert was applied, with no unresolved emails.
-- The credentialed QA fixture was reseeded before the passing regression and is intentionally left in its post-regression state for debugging, as documented by the QA runner.
+- This local identity cleanup has not yet been deployed to QA; credentialed end-to-end regression remains a post-deployment check.
 
 These items mean the full P2 maintainability definition is not yet complete. They should be addressed incrementally after the correctness and identity changes have had production soak time.

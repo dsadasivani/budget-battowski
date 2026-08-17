@@ -25,6 +25,9 @@ const workspaceId = 'workspace-rules-test';
 const ownerEmail = 'owner@example.com';
 const memberEmail = 'member@example.com';
 const otherEmail = 'other@example.com';
+const ownerUid = `uid-${ownerEmail}`;
+const memberUid = `uid-${memberEmail}`;
+const otherUid = `uid-${otherEmail}`;
 
 let testEnvironment;
 
@@ -49,11 +52,11 @@ async function seedWorkspace() {
   await testEnvironment.withSecurityRulesDisabled(async (context) => {
     await setDoc(workspaceDoc(context.firestore()), {
       name: 'Rules workspace',
-      ownerEmail,
-      memberEmails: [ownerEmail, memberEmail],
+      ownerUid,
+      memberUids: [ownerUid, memberUid],
       members: [
-        { email: ownerEmail, role: 'owner' },
-        { email: memberEmail, role: 'editor' },
+        { uid: ownerUid, email: ownerEmail, role: 'owner' },
+        { uid: memberUid, email: memberEmail, role: 'editor' },
       ],
     });
   });
@@ -93,14 +96,18 @@ test('members can collaborate without changing permanent record ownership', asyn
       month: '2026-08',
       type: 'one-time',
       note: '',
+      ownerUid,
       memberEmail: ownerEmail,
     }),
   );
   await assertSucceeds(
     updateDoc(workspaceRecord(memberDb, 'expenses', 'expense-owner'), { amount: 1500 }),
   );
-  await assertFails(
+  await assertSucceeds(
     updateDoc(workspaceRecord(memberDb, 'expenses', 'expense-owner'), { memberEmail }),
+  );
+  await assertFails(
+    updateDoc(workspaceRecord(memberDb, 'expenses', 'expense-owner'), { ownerUid: memberUid }),
   );
   await assertSucceeds(deleteDoc(workspaceRecord(memberDb, 'expenses', 'expense-owner')));
 });
@@ -116,6 +123,7 @@ test('create ownership must match the authenticated member', async () => {
       month: '2026-08',
       type: 'one-time',
       note: '',
+      ownerUid: memberUid,
       memberEmail,
     }),
   );
@@ -127,6 +135,7 @@ test('create ownership must match the authenticated member', async () => {
       month: '2026-08',
       type: 'one-time',
       note: '',
+      ownerUid,
       memberEmail: ownerEmail,
     }),
   );
@@ -139,6 +148,7 @@ test('payment modes can link only to an account with the same owner', async () =
       name: 'Member account',
       bankName: 'HDFC',
       lastFour: '1234',
+      ownerUid: memberUid,
       memberEmail,
     }),
   );
@@ -147,6 +157,7 @@ test('payment modes can link only to an account with the same owner', async () =
       name: 'Owner account',
       bankName: 'HDFC',
       lastFour: '5678',
+      ownerUid,
       memberEmail: ownerEmail,
     });
   });
@@ -157,6 +168,7 @@ test('payment modes can link only to an account with the same owner', async () =
       name: 'Member UPI',
       provider: 'Google Pay',
       paymentAccountId: 'account-member',
+      ownerUid: memberUid,
       memberEmail,
     }),
   );
@@ -166,6 +178,7 @@ test('payment modes can link only to an account with the same owner', async () =
       name: 'Invalid UPI',
       provider: 'Google Pay',
       paymentAccountId: 'account-owner',
+      ownerUid: memberUid,
       memberEmail,
     }),
   );
@@ -187,7 +200,7 @@ test('Cash is the only workspace-global mode and cannot be archived or deleted',
   );
 });
 
-test('legacy Cash can be normalized but remains protected', async () => {
+test('UID-less Cash cannot be normalized into the clean schema', async () => {
   const memberDb = authenticatedDatabase(memberEmail);
   const cashRef = workspaceRecord(memberDb, 'paymentModes', 'payment-mode-cash');
   await testEnvironment.withSecurityRulesDisabled(async (context) => {
@@ -197,7 +210,7 @@ test('legacy Cash can be normalized but remains protected', async () => {
     });
   });
 
-  await assertSucceeds(updateDoc(cashRef, { workspaceGlobal: true }));
+  await assertFails(updateDoc(cashRef, { workspaceGlobal: true }));
   await assertFails(updateDoc(cashRef, { name: 'Petty cash' }));
   await assertFails(updateDoc(cashRef, { archivedDate: '2026-08-15T00:00:00.000Z' }));
   await assertFails(deleteDoc(cashRef));
@@ -210,6 +223,7 @@ test('Wallet and unsupported payment-mode types are rejected', async () => {
     setDoc(workspaceRecord(memberDb, 'paymentModes', 'wallet-mode'), {
       type: 'wallet',
       name: 'Wallet',
+      ownerUid: memberUid,
       memberEmail,
     }),
   );
@@ -217,6 +231,7 @@ test('Wallet and unsupported payment-mode types are rejected', async () => {
     setDoc(workspaceRecord(memberDb, 'paymentModes', 'crypto-mode'), {
       type: 'crypto',
       name: 'Crypto',
+      ownerUid: memberUid,
       memberEmail,
     }),
   );
@@ -229,6 +244,7 @@ test('loan and investment payments require a same-owner account-backed mode', as
       name: 'Member account',
       bankName: 'HDFC',
       lastFour: '1234',
+      ownerUid: memberUid,
       memberEmail,
     }),
   );
@@ -238,6 +254,7 @@ test('loan and investment payments require a same-owner account-backed mode', as
       name: 'Backed UPI',
       provider: 'Google Pay',
       paymentAccountId: 'account-member',
+      ownerUid: memberUid,
       memberEmail,
     }),
   );
@@ -246,6 +263,7 @@ test('loan and investment payments require a same-owner account-backed mode', as
       type: 'upi',
       name: 'Unbacked UPI',
       provider: 'Google Pay',
+      ownerUid: memberUid,
       memberEmail,
     }),
   );
@@ -260,6 +278,7 @@ test('loan and investment payments require a same-owner account-backed mode', as
     startDate: '2026-01-01',
     endDate: '2036-01-01',
     notes: '',
+    ownerUid: memberUid,
     memberEmail,
   };
   const investment = {
@@ -268,6 +287,7 @@ test('loan and investment payments require a same-owner account-backed mode', as
     frequency: 'monthly',
     startDate: '2026-01-01',
     notes: '',
+    ownerUid: memberUid,
     memberEmail,
   };
 
@@ -304,6 +324,7 @@ test('non-members cannot write workspace records', async () => {
       month: '2026-08',
       type: 'one-time',
       note: '',
+      ownerUid: otherUid,
       memberEmail: otherEmail,
     }),
   );
@@ -322,18 +343,16 @@ test('only the workspace owner can administer a workspace', async () => {
   );
 });
 
-test('UID and mixed identity workspaces authorize members', async () => {
+test('UID workspaces authorize members', async () => {
   const uidWorkspace = 'uid-workspace';
   await testEnvironment.withSecurityRulesDisabled(async (context) => {
     await setDoc(doc(context.firestore(), 'budgetWorkspaces', uidWorkspace), {
       name: 'UID workspace',
-      ownerUid: `uid-${ownerEmail}`,
-      ownerEmail,
-      memberUids: [`uid-${ownerEmail}`, `uid-${memberEmail}`],
-      memberEmails: [ownerEmail],
+      ownerUid,
+      memberUids: [ownerUid, memberUid],
       members: [
-        { uid: `uid-${ownerEmail}`, email: ownerEmail, role: 'owner' },
-        { uid: `uid-${memberEmail}`, email: memberEmail, role: 'editor' },
+        { uid: ownerUid, email: ownerEmail, role: 'owner' },
+        { uid: memberUid, email: memberEmail, role: 'editor' },
       ],
     });
   });
@@ -342,18 +361,16 @@ test('UID and mixed identity workspaces authorize members', async () => {
   );
 });
 
-test('migrated workspace membership denies a matching email with the wrong UID', async () => {
+test('workspace membership denies a matching email with the wrong UID', async () => {
   const uidWorkspace = 'uid-authoritative-members';
   await testEnvironment.withSecurityRulesDisabled(async (context) => {
     await setDoc(doc(context.firestore(), 'budgetWorkspaces', uidWorkspace), {
       name: 'UID workspace',
-      ownerUid: `uid-${ownerEmail}`,
-      ownerEmail,
-      memberUids: [`uid-${ownerEmail}`, `uid-${memberEmail}`],
-      memberEmails: [ownerEmail, memberEmail],
+      ownerUid,
+      memberUids: [ownerUid, memberUid],
       members: [
-        { uid: `uid-${ownerEmail}`, email: ownerEmail, role: 'owner' },
-        { uid: `uid-${memberEmail}`, email: memberEmail, role: 'editor' },
+        { uid: ownerUid, email: ownerEmail, role: 'owner' },
+        { uid: memberUid, email: memberEmail, role: 'editor' },
       ],
     });
   });
@@ -368,40 +385,30 @@ test('workspace discovery must query authoritative UID membership instead of ema
   await testEnvironment.withSecurityRulesDisabled(async (context) => {
     await setDoc(doc(context.firestore(), 'budgetWorkspaces', uidWorkspace), {
       name: 'UID workspace',
-      ownerUid: `uid-${ownerEmail}`,
-      ownerEmail,
-      memberUids: [`uid-${ownerEmail}`, `uid-${memberEmail}`],
-      memberEmails: [ownerEmail, memberEmail],
+      ownerUid,
+      memberUids: [ownerUid, memberUid],
       members: [
-        { uid: `uid-${ownerEmail}`, email: ownerEmail, role: 'owner' },
-        { uid: `uid-${memberEmail}`, email: memberEmail, role: 'editor' },
+        { uid: ownerUid, email: ownerEmail, role: 'owner' },
+        { uid: memberUid, email: memberEmail, role: 'editor' },
       ],
     });
   });
 
   const memberDb = authenticatedDatabase(memberEmail);
   const workspaces = collection(memberDb, 'budgetWorkspaces');
-  const uidQuery = query(workspaces, where('memberUids', 'array-contains', `uid-${memberEmail}`));
-  const legacyEmailQuery = query(workspaces, where('memberEmails', 'array-contains', memberEmail));
+  const uidQuery = query(workspaces, where('memberUids', 'array-contains', memberUid));
 
   await assertSucceeds(getDocs(uidQuery));
-  await assertFails(getDocs(legacyEmailQuery));
 });
 
-test('migrated ownership denies owner privileges to a matching email with the wrong UID', async () => {
-  await testEnvironment.withSecurityRulesDisabled(async (context) => {
-    await updateDoc(workspaceDoc(context.firestore()), {
-      ownerUid: `uid-${ownerEmail}`,
-      memberUids: [`uid-${ownerEmail}`, `uid-${memberEmail}`],
-    });
-  });
+test('workspace ownership denies owner privileges to a matching email with the wrong UID', async () => {
   const wrongUidDb = testEnvironment
     .authenticatedContext('wrong-owner-uid', { email: ownerEmail })
     .firestore();
   await assertFails(updateDoc(workspaceDoc(wrongUidDb), { name: 'Email bypass denied' }));
 });
 
-test('matching emails cannot override mismatching owner UIDs in linked records', async () => {
+test('matching email metadata cannot override mismatching owner UIDs in linked records', async () => {
   await testEnvironment.withSecurityRulesDisabled(async (context) => {
     await setDoc(workspaceRecord(context.firestore(), 'templates', 'uid-a-template'), {
       name: 'Rent',
@@ -468,6 +475,7 @@ test('malformed ownership and negative financial values are denied', async () =>
       month: '2026-08',
       type: 'one-time',
       note: '',
+      ownerUid: memberUid,
       memberEmail,
     }),
   );
@@ -536,97 +544,29 @@ test('Loan EMI system category cannot be renamed or deleted', async () => {
 
 test('workspace owner UID cannot be replaced during administration', async () => {
   const ownerDb = authenticatedDatabase(ownerEmail);
+  await assertFails(updateDoc(workspaceDoc(ownerDb), { ownerUid: memberUid }));
+});
+
+test('email-only workspace metadata cannot be used for authorization', async () => {
+  const emailOnlyWorkspaceId = 'email-only-workspace';
+  const ownerDb = authenticatedDatabase(ownerEmail);
   await testEnvironment.withSecurityRulesDisabled(async (context) => {
-    await updateDoc(workspaceDoc(context.firestore()), {
-      ownerUid: `uid-${ownerEmail}`,
-      memberUids: [`uid-${ownerEmail}`, `uid-${memberEmail}`],
+    await setDoc(doc(context.firestore(), 'budgetWorkspaces', emailOnlyWorkspaceId), {
+      name: 'Email-only workspace',
+      members: [{ email: ownerEmail, role: 'owner' }],
     });
   });
-  await assertFails(updateDoc(workspaceDoc(ownerDb), { ownerUid: `uid-${memberEmail}` }));
+
+  const reference = doc(ownerDb, 'budgetWorkspaces', emailOnlyWorkspaceId);
+  await assertFails(getDoc(reference));
+  await assertFails(updateDoc(reference, { ownerUid, memberUids: [ownerUid] }));
 });
 
-test('legacy workspace owner can add their UID exactly once', async () => {
-  const ownerDb = authenticatedDatabase(ownerEmail);
-
-  await assertSucceeds(
-    updateDoc(workspaceDoc(ownerDb), {
-      ownerUid: `uid-${ownerEmail}`,
-      memberUids: [`uid-${ownerEmail}`, `uid-${memberEmail}`],
-    }),
-  );
-  await assertFails(updateDoc(workspaceDoc(ownerDb), { ownerUid: `uid-${memberEmail}` }));
-});
-
-test('legacy owned records can adopt the authenticated email owner UID exactly once', async () => {
+test('UID-less owned records remain readable to members but cannot be adopted', async () => {
+  const recordId = 'uid-less-expense';
   await testEnvironment.withSecurityRulesDisabled(async (context) => {
-    const db = context.firestore();
-    await setDoc(workspaceRecord(db, 'paymentAccounts', 'legacy-account'), {
-      name: 'Legacy account',
-      bankName: 'Bank',
-      lastFour: '1234',
-      memberEmail: ownerEmail,
-      version: 1,
-    });
-    await setDoc(workspaceRecord(db, 'paymentModes', 'legacy-mode'), {
-      type: 'upi',
-      name: 'Legacy UPI',
-      paymentAccountId: 'legacy-account',
-      memberEmail: ownerEmail,
-      version: 1,
-    });
-    await setDoc(workspaceRecord(db, 'templates', 'legacy-template'), {
-      name: 'Legacy rent',
-      categoryId: 'housing',
-      amount: 1000,
-      type: 'recurring',
-      frequency: 'monthly',
-      startDate: '2026-01-01',
-      memberEmail: ownerEmail,
-      version: 1,
-    });
-    await setDoc(workspaceRecord(db, 'expenses', 'legacy-expense'), {
-      name: 'Legacy expense',
-      categoryId: 'housing',
-      amount: 1000,
-      month: '2026-08',
-      type: 'one-time',
-      note: '',
-      memberEmail: ownerEmail,
-      version: 1,
-    });
-    await setDoc(workspaceRecord(db, 'loans', 'legacy-loan'), {
-      lender: 'Bank',
-      loanType: 'Home',
-      principal: 100000,
-      outstanding: 90000,
-      annualRate: 8,
-      emi: 1000,
-      startDate: '2026-01-01',
-      endDate: '2027-01-01',
-      notes: '',
-      paymentModeId: 'legacy-mode',
-      memberEmail: ownerEmail,
-      version: 1,
-    });
-  });
-  const ownerDb = authenticatedDatabase(ownerEmail);
-  const ownerUid = `uid-${ownerEmail}`;
-  for (const [collectionName, recordId] of [
-    ['paymentAccounts', 'legacy-account'],
-    ['templates', 'legacy-template'],
-    ['expenses', 'legacy-expense'],
-    ['loans', 'legacy-loan'],
-  ]) {
-    const reference = workspaceRecord(ownerDb, collectionName, recordId);
-    await assertSucceeds(updateDoc(reference, { ownerUid }));
-    await assertFails(updateDoc(reference, { ownerUid: 'replacement-uid' }));
-  }
-});
-
-test('a different authenticated user cannot claim a legacy record', async () => {
-  await testEnvironment.withSecurityRulesDisabled(async (context) => {
-    await setDoc(workspaceRecord(context.firestore(), 'expenses', 'legacy-owner-expense'), {
-      name: 'Legacy expense',
+    await setDoc(workspaceRecord(context.firestore(), 'expenses', recordId), {
+      name: 'UID-less expense',
       categoryId: 'housing',
       amount: 1000,
       month: '2026-08',
@@ -636,14 +576,10 @@ test('a different authenticated user cannot claim a legacy record', async () => 
       version: 1,
     });
   });
-  await assertFails(
-    updateDoc(
-      workspaceRecord(authenticatedDatabase(memberEmail), 'expenses', 'legacy-owner-expense'),
-      {
-        ownerUid: `uid-${memberEmail}`,
-      },
-    ),
-  );
+
+  const reference = workspaceRecord(authenticatedDatabase(ownerEmail), 'expenses', recordId);
+  await assertSucceeds(getDoc(reference));
+  await assertFails(updateDoc(reference, { ownerUid }));
 });
 
 test('a member can materialize another member owned recurring source without changing ownership', async () => {

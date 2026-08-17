@@ -56,8 +56,8 @@ beforeEach(async () => {
   await environment.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
     await setDoc(doc(db, 'budgetWorkspaces', workspaceId), {
-      name: 'Shared', ownerUid: owner.uid, ownerEmail: owner.email,
-      memberUids: [owner.uid, member.uid], memberEmails: [owner.email, member.email],
+      name: 'Shared', ownerUid: owner.uid,
+      memberUids: [owner.uid, member.uid],
       members: [{ ...owner, role: 'owner' }, { ...member, role: 'editor' }],
     });
     await setDoc(record(db, 'expenses', 'unrelated'), {

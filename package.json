@@ -19,8 +19,7 @@
     "firebase:rules:qa": "npx firebase-tools deploy --only firestore:rules --project budget-battowski-qa",
     "firebase:rules": "npx firebase-tools deploy --only firestore:rules --project budget-battowski",
     "qa:seed": "node scripts/qa-seed.mjs",
-    "qa:regression": "node scripts/qa-regression.mjs",
-    "migrate:user-directory": "node scripts/migrate-user-directory.mjs"
+    "qa:regression": "node scripts/qa-regression.mjs"
   },
   "private": true,
   "packageManager": "npm@11.12.1",

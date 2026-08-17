@@ -74,9 +74,7 @@ beforeEach(async () => {
     await setDoc(doc(db, 'budgetWorkspaces', workspaceId), {
       name: 'Coordinator',
       ownerUid: owner.uid,
-      ownerEmail: owner.email,
       memberUids: [owner.uid],
-      memberEmails: [owner.email],
       members: [{ ...owner, role: 'owner' }],
     });
   });
