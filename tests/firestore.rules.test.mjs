@@ -334,6 +334,13 @@ test('unauthenticated workspace access is denied', async () => {
   await assertFails(getDoc(workspaceDoc(testEnvironment.unauthenticatedContext().firestore())));
 });
 
+test('users can inspect only their own UID workspace path before bootstrap', async () => {
+  const personalWorkspace = doc(authenticatedDatabase(otherEmail), 'budgetWorkspaces', otherUid);
+
+  await assertSucceeds(getDoc(personalWorkspace));
+  await assertFails(getDoc(doc(authenticatedDatabase(memberEmail), 'budgetWorkspaces', otherUid)));
+});
+
 test('only the workspace owner can administer a workspace', async () => {
   await assertFails(
     updateDoc(workspaceDoc(authenticatedDatabase(memberEmail)), { name: 'Blocked' }),

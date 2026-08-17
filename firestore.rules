@@ -113,7 +113,8 @@ service cloud.firestore {
         request.resource.data.members is list &&
         request.resource.data.ownerUid == request.auth.uid &&
         request.auth.uid in request.resource.data.memberUids;
-      allow get: if uidMemberData(resource.data);
+      allow get: if signedIn() &&
+        (workspaceId == request.auth.uid || uidMemberData(resource.data));
       allow list: if uidMemberData(resource.data);
       allow update: if owner(workspaceId) && workspaceSchema(request.resource.data) &&
         request.resource.data.ownerUid == resource.data.ownerUid &&
