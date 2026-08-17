@@ -21,6 +21,8 @@ The release-blocking correctness and security findings are resolved:
 - `BudgetFacade` uses composition and `App` no longer copies a facade surface through reflection or prototype walking.
 - Authentication behavior now lives in `SessionStore`; active workspace, member selection, and administration behavior now live in `WorkspaceStore`.
 - Income, category-retirement, workspace-form, and workspace-confirm dialogs are loaded dynamically in addition to the existing lazy Monthly Review and Bulk Editor dialogs.
+- Frontend failure boundaries now emit one privacy-safe structured operational event contract. Events correlate environment, deployed Git commit, workflow run, browser session, and individual failures without serializing financial or identity data.
+- QA and production Hosting releases publish allowlisted `/release.json` metadata, and deployed regression/smoke verification rejects a stale release that does not identify the workflow commit.
 
 ## 3. Persistence semantics
 
@@ -43,12 +45,22 @@ Existing email-keyed profiles, email-keyed workspaces, and financial records wit
 The completed implementation was validated with:
 
 - Angular production build: **passed**
-- Angular/Vitest application and domain tests: **172/172 passed**
-- Firestore emulator rules, concurrency, and production-coordinator tests: **36/36 passed**
-- Credentialed QA regression: **not run for this branch** because `QA_FIREBASE_PASSWORD` was unavailable; the UID-only rules were fully exercised locally by the emulator suite
+- Angular/Vitest application and domain tests: **176/176 passed**
+- Firestore emulator rules, concurrency, and production-coordinator tests: **37/37 passed**
+- QA build, Firestore rules deployment, Hosting deployment, and deterministic seed: **passed**
+- Credentialed regression against the deployed QA environment: **52/52 passed**
+- Non-destructive production smoke runner: **8/8 passed** against the deployed production site
+- Release-correlated production smoke: **9/9 passed** against a local Firebase Hosting emulator
+- Release-evidence and release-metadata generators: **4/4 orchestration tests passed**
 - Production dependency audit: **0 vulnerabilities**
 - Targeted Prettier validation: **passed**
 - `git diff --check`: **passed**
+
+The deployed QA evidence is retained by GitHub Actions run
+[`31989052876`](https://github.com/dsadasivani/budget-battowski/actions/runs/31989052876).
+It covers desktop and mobile route smoke tests, AXE checks, payment configuration, Monthly
+Review, core financial CRUD, and owner/editor/member authorization. No browser console errors
+were captured.
 
 The coordinator emulator coverage executes the production TypeScript coordinator and covers create conflicts, versioned updates and deletes, stale writes, idempotent retry, group failure context, and rule-heavy linked expenses.
 
@@ -57,7 +69,7 @@ Known non-blocking production-build warnings:
 - `src/app/bulk-editor-dialog.scss` exceeds the 30 kB component-style warning budget by approximately 0.28 kB.
 - `src/app/app.scss` exceeds the 30 kB component-style warning budget by approximately 2.44 kB.
 
-The optimized initial bundle is approximately 947.41 kB raw / 211.11 kB transferred. Heavy editors remain in lazy chunks.
+The optimized initial bundle is approximately 952.66 kB raw / 212.45 kB transferred. Heavy editors remain in lazy chunks.
 
 ## 6. Remaining architectural debt
 
@@ -69,6 +81,6 @@ The following follow-up work is meaningful but is not a release-blocking correct
 - Bulk Editor and payment configuration remain oversized UI surfaces and have not yet been meaningfully decomposed into domain-focused presentational components.
 - The root application shell has removed business-surface reflection and reduced eager dialog imports, but navigation, login/onboarding, and account-shell markup remain candidates for focused component extraction.
 - The two component-style budget warnings remain until Bulk Editor and App shell component extraction moves their scoped styles with the new components.
-- This local identity cleanup has not yet been deployed to QA; credentialed end-to-end regression remains a post-deployment check.
+- Operational events currently use the browser console sink and are enforced by automated QA/production browser checks. Centralized real-user retention and alert routing remain intentionally unconfigured until an approved telemetry provider, retention policy, and access model are selected.
 
 These items mean the full P2 maintainability definition is not yet complete. They should be addressed incrementally after the correctness and identity changes have had production soak time.

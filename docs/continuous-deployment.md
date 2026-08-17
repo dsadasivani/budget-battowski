@@ -9,6 +9,8 @@ The `CD` GitHub Actions workflow deploys Firestore rules and Firebase Hosting wi
 - A merge to `develop` automatically deploys Firestore rules and Hosting to QA.
 - A pull request promotes the already-validated `develop` revision to `master` without repeating CI; the `branch-policy` check only verifies the source branch.
 - A merge to `master` automatically deploys Firestore rules and Hosting to production.
+- Every production deployment runs a non-destructive smoke against the deployed Hosting release and retains its report for 90 days.
+- Every Hosting deployment publishes `/release.json` so client errors and smoke evidence can be correlated to the exact Git commit and workflow run.
 - QA and production can be redeployed manually only from `develop` and `master`, respectively.
 - QA and production use separate Google Cloud service accounts and identity providers.
 
@@ -56,8 +58,39 @@ The identity provider accepts tokens only when GitHub's immutable repository ID 
 1. Merge a feature pull request into `develop` after both required checks pass.
 2. Confirm the QA deployment updated Firestore rules and Hosting.
 3. Confirm the deterministic QA seed and authenticated regression steps passed against `https://budget-battowski-qa.web.app`.
-4. Download the `qa-firebase-regression-<run-id>` report artifact when detailed release evidence is required. Reports are retained for 30 days, including failed regression runs when a report was produced.
+4. Download the `qa-release-evidence-<run-id>` artifact when detailed release evidence is required. QA evidence is retained for 30 days, including failed deployment runs when a report was produced.
 5. Open a `develop` to `master` pull request and merge it after QA sign-off.
 6. Confirm the production deployment updated Firestore rules and Hosting.
+7. Confirm the production smoke passed and download the `production-release-evidence-<run-id>` artifact. Production evidence is retained for 90 days.
 
 The QA deployment is not considered successful when seeding or authenticated regression fails, even if Firebase rules and Hosting were released successfully. Fix the cause and redeploy `develop`; do not promote that revision to `master`.
+
+## Production smoke scope
+
+The production smoke is anonymous and read-only. It verifies the Hosting document and hashed assets, deployed release metadata, Firebase authentication initialization to the signed-out state, Google sign-in availability, SPA rewrites for core route entry points, and the absence of runtime or browser-console errors. When run by CD, the release metadata must identify the workflow commit. It does not create, update, or delete production financial data.
+
+Run it locally against the default production URL with:
+
+```bash
+npm run production:smoke
+```
+
+Override `PRODUCTION_BASE_URL` only when validating another explicitly selected production-compatible Hosting target. Authenticated workspace discovery and financial CRUD remain in the credentialed QA regression unless production later gains a dedicated disposable synthetic workspace.
+
+## Release evidence
+
+Both deployment jobs generate the same evidence contract after their verification step, including when an earlier deployment gate fails:
+
+- `RELEASE_EVIDENCE.md`: human-readable release identity, required gate outcomes, migration disposition, and detailed-report checksum.
+- `release-evidence.json`: versioned machine-readable form of the same manifest.
+- The environment-specific detailed report: `QA_FIREBASE_REGRESSION_REPORT.md` or `PRODUCTION_SMOKE_REPORT.md`.
+
+The manifest records only allowlisted operational metadata. It does not dump environment variables, credentials, authentication tokens, or financial report contents. The SHA-256 checksum binds the manifest to the detailed report retained in the same artifact. The Markdown manifest is also appended to the GitHub Actions job summary for quick review.
+
+The current clean UID-only deployment has migration status `not-required`; legacy migration is intentionally unsupported. If migrations are introduced for a future schema, this field must reflect their reviewed release disposition rather than being inferred from deployment success.
+
+## Error correlation
+
+The application emits privacy-safe structured operational events with environment, release commit, workflow run, browser-session, and per-error correlation IDs. Authentication, Firestore, routing, write-coordinator, version-conflict, Monthly Review conflict, and unhandled failures use the same event contract.
+
+See [Operational observability](./observability.md) for the event privacy boundary, covered failure surfaces, and the current sink limitation.

@@ -7,7 +7,7 @@
     "build": "ng build",
     "build:dev": "ng build --configuration development",
     "build:prod": "ng build --configuration production",
-    "format:check": "prettier --check --end-of-line auto \"src/app/{core,data,domain,stores}/**/*.ts\" \".github/**/*.yml\" \"docs/{branch-protection,continuous-deployment}.md\"",
+    "format:check": "prettier --check --end-of-line auto \"src/app/{core,data,domain,stores}/**/*.ts\" \"scripts/*.mjs\" \".github/**/*.yml\" \"docs/{branch-protection,continuous-deployment,observability}.md\" \"firebase.json\"",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "test:rules": "firebase emulators:exec --only firestore \"node --test --test-concurrency=1 tests/*.test.mjs\"",
@@ -19,7 +19,11 @@
     "firebase:rules:qa": "npx firebase-tools deploy --only firestore:rules --project budget-battowski-qa",
     "firebase:rules": "npx firebase-tools deploy --only firestore:rules --project budget-battowski",
     "qa:seed": "node scripts/qa-seed.mjs",
-    "qa:regression": "node scripts/qa-regression.mjs"
+    "qa:regression": "node scripts/qa-regression.mjs",
+    "production:smoke": "node scripts/production-smoke.mjs",
+    "release:metadata": "node scripts/write-release-metadata.mjs",
+    "release:evidence": "node scripts/release-evidence.mjs",
+    "test:orchestration": "node --test scripts/*.test.mjs"
   },
   "private": true,
   "packageManager": "npm@11.12.1",

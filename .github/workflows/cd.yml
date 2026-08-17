@@ -54,9 +54,19 @@ jobs:
         run: npm ci
 
       - name: Build QA application
+        id: qa_build
         run: npm run build:qa
 
+      - name: Stamp QA release metadata
+        id: qa_release_metadata
+        env:
+          RELEASE_ENVIRONMENT: qa
+          RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_RUN_ID: ${{ github.run_id }}
+        run: npm run release:metadata
+
       - name: Deploy QA rules and Hosting
+        id: qa_deploy
         run: >-
           npx firebase-tools deploy
           --only "firestore:rules,hosting"
@@ -64,22 +74,54 @@ jobs:
           --non-interactive
 
       - name: Seed deterministic QA workspace
+        id: qa_seed
         env:
           QA_FIREBASE_PASSWORD: ${{ secrets.QA_FIREBASE_PASSWORD }}
         run: npm run qa:seed
 
       - name: Run authenticated regression against deployed QA
+        id: qa_regression
         env:
           QA_BASE_URL: https://budget-battowski-qa.web.app
           QA_FIREBASE_PASSWORD: ${{ secrets.QA_FIREBASE_PASSWORD }}
+          RELEASE_COMMIT: ${{ github.sha }}
         run: npm run qa:regression
 
-      - name: Retain QA regression report
+      - name: Generate QA release evidence
+        if: ${{ always() }}
+        env:
+          RELEASE_ENVIRONMENT: qa
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_REF: ${{ github.ref_name }}
+          RELEASE_EVENT: ${{ github.event_name }}
+          RELEASE_ACTOR: ${{ github.actor }}
+          RELEASE_RUN_ID: ${{ github.run_id }}
+          RELEASE_RUN_ATTEMPT: ${{ github.run_attempt }}
+          RELEASE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RELEASE_TARGET_URL: https://budget-battowski-qa.web.app
+          RELEASE_MIGRATION_STATUS: not-required
+          RELEASE_MIGRATION_NOTE: Clean UID-only schema; legacy migration is intentionally unsupported.
+          RELEASE_DETAIL_REPORT: QA_FIREBASE_REGRESSION_REPORT.md
+          RELEASE_CHECKS_JSON: >-
+            [
+              {"name":"Build QA application","outcome":"${{ steps.qa_build.outcome }}"},
+              {"name":"Stamp QA release metadata","outcome":"${{ steps.qa_release_metadata.outcome }}"},
+              {"name":"Deploy QA rules and Hosting","outcome":"${{ steps.qa_deploy.outcome }}"},
+              {"name":"Seed deterministic QA workspace","outcome":"${{ steps.qa_seed.outcome }}"},
+              {"name":"Authenticated QA regression","outcome":"${{ steps.qa_regression.outcome }}"}
+            ]
+        run: npm run release:evidence
+
+      - name: Retain QA release evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: qa-firebase-regression-${{ github.run_id }}
-          path: QA_FIREBASE_REGRESSION_REPORT.md
+          name: qa-release-evidence-${{ github.run_id }}
+          path: |
+            RELEASE_EVIDENCE.md
+            release-evidence.json
+            QA_FIREBASE_REGRESSION_REPORT.md
           if-no-files-found: warn
           retention-days: 30
 
@@ -116,11 +158,65 @@ jobs:
         run: npm ci
 
       - name: Build production application
+        id: production_build
         run: npm run build:prod
 
+      - name: Stamp production release metadata
+        id: production_release_metadata
+        env:
+          RELEASE_ENVIRONMENT: production
+          RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_RUN_ID: ${{ github.run_id }}
+        run: npm run release:metadata
+
       - name: Deploy production rules and Hosting
+        id: production_deploy
         run: >-
           npx firebase-tools deploy
           --only "firestore:rules,hosting"
           --project "${{ vars.GCP_PROJECT_ID }}"
           --non-interactive
+
+      - name: Run non-destructive production smoke
+        id: production_smoke
+        env:
+          PRODUCTION_BASE_URL: https://budget-battowski.web.app
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: npm run production:smoke
+
+      - name: Generate production release evidence
+        if: ${{ always() }}
+        env:
+          RELEASE_ENVIRONMENT: production
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_REF: ${{ github.ref_name }}
+          RELEASE_EVENT: ${{ github.event_name }}
+          RELEASE_ACTOR: ${{ github.actor }}
+          RELEASE_RUN_ID: ${{ github.run_id }}
+          RELEASE_RUN_ATTEMPT: ${{ github.run_attempt }}
+          RELEASE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RELEASE_TARGET_URL: https://budget-battowski.web.app
+          RELEASE_MIGRATION_STATUS: not-required
+          RELEASE_MIGRATION_NOTE: Clean UID-only schema; legacy migration is intentionally unsupported.
+          RELEASE_DETAIL_REPORT: PRODUCTION_SMOKE_REPORT.md
+          RELEASE_CHECKS_JSON: >-
+            [
+              {"name":"Build production application","outcome":"${{ steps.production_build.outcome }}"},
+              {"name":"Stamp production release metadata","outcome":"${{ steps.production_release_metadata.outcome }}"},
+              {"name":"Deploy production rules and Hosting","outcome":"${{ steps.production_deploy.outcome }}"},
+              {"name":"Non-destructive production smoke","outcome":"${{ steps.production_smoke.outcome }}"}
+            ]
+        run: npm run release:evidence
+
+      - name: Retain production release evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-release-evidence-${{ github.run_id }}
+          path: |
+            RELEASE_EVIDENCE.md
+            release-evidence.json
+            PRODUCTION_SMOKE_REPORT.md
+          if-no-files-found: warn
+          retention-days: 90

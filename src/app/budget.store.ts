@@ -9,6 +9,11 @@ import type { User } from 'firebase/auth';
 import { firstValueFrom } from 'rxjs';
 
 import { BudgetFirestoreRepository } from './budget.firestore';
+import {
+  classifyOperationalError,
+  OperationalTelemetryService,
+  type OperationalErrorCategory,
+} from './core/operational-telemetry';
 import { effectiveValueForOccurrence } from './domain/effective-dating/effective-dating-engine';
 import { MonthlyReviewSourceConflictError } from './domain/errors';
 import { haveSameOwner, isWorkspaceOwner, normalizeEmail } from './domain/identity/identity';
@@ -408,6 +413,7 @@ export class BudgetStore implements OnDestroy {
   private readonly bottomSheet = inject(MatBottomSheet);
   private readonly breakpointObserver = inject(BreakpointObserver);
   private readonly dialog = inject(MatDialog);
+  private readonly telemetry = inject(OperationalTelemetryService);
   private readonly workspaceTabCount = 5;
   private readonly tabSwipeStart = signal<{ x: number; y: number } | null>(null);
   private readonly unsubscribes = signal<Array<() => void>>([]);
@@ -1348,7 +1354,7 @@ export class BudgetStore implements OnDestroy {
       await this.selectWorkspace(workspace.id);
       this.syncStatus.set('Workspace created');
     } catch (error) {
-      this.handleSyncError(error instanceof Error ? error.message : 'Unable to create workspace.');
+      this.handleSyncError(error, 'Unable to create workspace.');
     } finally {
       this.isSyncing.set(false);
     }
@@ -1531,7 +1537,7 @@ export class BudgetStore implements OnDestroy {
       this.workspaces.update((workspaces) => workspaces.filter((item) => item.id !== workspace.id));
       this.syncStatus.set('Archived workspace deleted');
     } catch (error) {
-      this.handleSyncError(error instanceof Error ? error.message : 'Workspace delete failed.');
+      this.handleSyncError(error, 'Workspace delete failed.');
     } finally {
       this.isSyncing.set(false);
     }
@@ -1725,9 +1731,7 @@ export class BudgetStore implements OnDestroy {
           : `Imported ${summary.success} row${summary.success === 1 ? '' : 's'}`,
       );
     } catch (error) {
-      this.handleSyncError(
-        error instanceof Error ? error.message : 'Unable to import budget file.',
-      );
+      this.handleSyncError(error, 'Unable to import budget file.');
     } finally {
       this.isSyncing.set(false);
     }
@@ -2077,6 +2081,13 @@ export class BudgetStore implements OnDestroy {
 
   private applyMonthlyReviewFromDialog(result: MonthlyReviewResult): void {
     void this.applyMonthlyReview(result).catch((error: unknown) => {
+      this.telemetry.capture(error, {
+        category:
+          error instanceof MonthlyReviewSourceConflictError
+            ? 'monthly-review-source-conflict'
+            : undefined,
+        context: { workspaceId: this.workspaceId() ?? undefined, operation: 'monthly-review' },
+      });
       this.syncError.set(
         error instanceof Error
           ? error.message
@@ -2641,7 +2652,12 @@ export class BudgetStore implements OnDestroy {
       photoUrl: this.userPhoto() || undefined,
       updatedDate: new Date().toISOString(),
       onboarding: progress,
-    }).catch(() => {
+    }).catch((error: unknown) => {
+      this.telemetry.capture(error, {
+        category: 'firestore',
+        severity: 'warning',
+        context: { operation: 'onboarding-profile-upsert' },
+      });
       this.syncStatus.set('Onboarding progress will retry on the next update');
     });
   }
@@ -3251,11 +3267,7 @@ export class BudgetStore implements OnDestroy {
     this.loanEmiCategoryUpsertInFlight.set(true);
     void repository
       .upsert('categories', DEFAULT_LOAN_EMI_CATEGORY)
-      .catch((error: unknown) =>
-        this.handleSyncError(
-          error instanceof Error ? error.message : 'Unable to create Loan EMI category.',
-        ),
-      )
+      .catch((error: unknown) => this.handleSyncError(error, 'Unable to create Loan EMI category.'))
       .finally(() => {
         this.loanEmiCategoryUpsertInFlight.set(false);
       });
@@ -3274,11 +3286,7 @@ export class BudgetStore implements OnDestroy {
     this.cashPaymentModeUpsertInFlight.set(true);
     void repository
       .upsert('paymentModes', DEFAULT_CASH_PAYMENT_MODE)
-      .catch((error: unknown) =>
-        this.handleSyncError(
-          error instanceof Error ? error.message : 'Unable to create Cash payment mode.',
-        ),
-      )
+      .catch((error: unknown) => this.handleSyncError(error, 'Unable to create Cash payment mode.'))
       .finally(() => {
         this.cashPaymentModeUpsertInFlight.set(false);
       });
@@ -4030,9 +4038,16 @@ export class BudgetStore implements OnDestroy {
         onboarding: existingProfile?.onboarding,
       };
       this.onboardingProgress.set(existingProfile?.onboarding ?? null);
-      void BudgetFirestoreRepository.upsertUserProfile(this.firebase.app, userProfile).catch(() => {
-        // Profile sync is helpful for member lookup, but it should never block login.
-      });
+      void BudgetFirestoreRepository.upsertUserProfile(this.firebase.app, userProfile).catch(
+        (error: unknown) => {
+          this.telemetry.capture(error, {
+            category: 'firestore',
+            severity: 'warning',
+            context: { operation: 'login-profile-upsert' },
+          });
+          // Profile sync is helpful for member lookup, but it should never block login.
+        },
+      );
       const personalWorkspace = await BudgetFirestoreRepository.ensurePersonalWorkspace(
         this.firebase.app,
         user.uid,
@@ -4061,9 +4076,7 @@ export class BudgetStore implements OnDestroy {
         this.syncStatus.set('Create a workspace to continue');
       }
     } catch (error) {
-      this.handleSyncError(
-        error instanceof Error ? error.message : 'Unable to connect to Firebase.',
-      );
+      this.handleSyncError(error, 'Unable to connect to Firebase.', 'firestore');
     } finally {
       this.isSyncing.set(false);
       this.isSessionChecking.set(false);
@@ -4338,7 +4351,7 @@ export class BudgetStore implements OnDestroy {
       );
       this.syncStatus.set(message);
     } catch (error) {
-      this.handleSyncError(error instanceof Error ? error.message : 'Workspace update failed.');
+      this.handleSyncError(error, 'Workspace update failed.');
     } finally {
       this.isSyncing.set(false);
     }
@@ -4360,7 +4373,7 @@ export class BudgetStore implements OnDestroy {
             this.paymentAccounts.set(records);
             this.markWorkspaceCollectionLoaded('paymentAccounts', workspaceId);
           },
-          (message) => this.handleSyncError(message),
+          (error) => this.handleSyncError(error, 'Payment account listener failed.', 'firestore'),
         ),
         repository.listen(
           'paymentModes',
@@ -4369,7 +4382,7 @@ export class BudgetStore implements OnDestroy {
             this.ensureDefaultPaymentModeRecord(records);
             this.markWorkspaceCollectionLoaded('paymentModes', workspaceId);
           },
-          (message) => this.handleSyncError(message),
+          (error) => this.handleSyncError(error, 'Payment mode listener failed.', 'firestore'),
         ),
         repository.listen(
           'categories',
@@ -4378,7 +4391,7 @@ export class BudgetStore implements OnDestroy {
             this.ensureDefaultCategoryRecord(records);
             this.markWorkspaceCollectionLoaded('categories', workspaceId);
           },
-          (message) => this.handleSyncError(message),
+          (error) => this.handleSyncError(error, 'Category listener failed.', 'firestore'),
         ),
         repository.listen(
           'incomes',
@@ -4386,7 +4399,7 @@ export class BudgetStore implements OnDestroy {
             this.incomes.set(records);
             this.markWorkspaceCollectionLoaded('incomes', workspaceId);
           },
-          (message) => this.handleSyncError(message),
+          (error) => this.handleSyncError(error, 'Income listener failed.', 'firestore'),
         ),
         repository.listen(
           'templates',
@@ -4394,7 +4407,7 @@ export class BudgetStore implements OnDestroy {
             this.templates.set(records);
             this.markWorkspaceCollectionLoaded('templates', workspaceId);
           },
-          (message) => this.handleSyncError(message),
+          (error) => this.handleSyncError(error, 'Template listener failed.', 'firestore'),
         ),
         repository.listen(
           'expenses',
@@ -4402,7 +4415,7 @@ export class BudgetStore implements OnDestroy {
             this.expenses.set(records);
             this.markWorkspaceCollectionLoaded('expenses', workspaceId);
           },
-          (message) => this.handleSyncError(message),
+          (error) => this.handleSyncError(error, 'Expense listener failed.', 'firestore'),
         ),
         repository.listen(
           'investments',
@@ -4410,7 +4423,7 @@ export class BudgetStore implements OnDestroy {
             this.investments.set(records);
             this.markWorkspaceCollectionLoaded('investments', workspaceId);
           },
-          (message) => this.handleSyncError(message),
+          (error) => this.handleSyncError(error, 'Investment listener failed.', 'firestore'),
         ),
         repository.listen(
           'loans',
@@ -4418,7 +4431,7 @@ export class BudgetStore implements OnDestroy {
             this.loans.set(records);
             this.markWorkspaceCollectionLoaded('loans', workspaceId);
           },
-          (message) => this.handleSyncError(message),
+          (error) => this.handleSyncError(error, 'Loan listener failed.', 'firestore'),
         ),
       ]);
 
@@ -4447,9 +4460,7 @@ export class BudgetStore implements OnDestroy {
         this.syncStatus.set('Pending category remaps completed');
       }
     } catch (error) {
-      this.handleSyncError(
-        error instanceof Error ? error.message : 'Unable to resume category remapping.',
-      );
+      this.handleSyncError(error, 'Unable to resume category remapping.');
     }
   }
 
@@ -5164,14 +5175,24 @@ export class BudgetStore implements OnDestroy {
       this.syncStatus.set('Saved to Firebase');
       return true;
     } catch (error) {
-      this.handleSyncError(error instanceof Error ? error.message : 'Firebase save failed.');
+      this.handleSyncError(error, 'Firebase save failed.');
       return false;
     } finally {
       this.isSyncing.set(false);
     }
   }
 
-  private handleSyncError(message: string): void {
+  private handleSyncError(
+    error: unknown,
+    fallback = 'Firebase sync failed.',
+    category?: OperationalErrorCategory,
+  ): void {
+    const inferredCategory = classifyOperationalError(error);
+    this.telemetry.capture(error, {
+      category: inferredCategory === 'unhandled' ? category : inferredCategory,
+      context: { workspaceId: this.workspaceId() ?? undefined },
+    });
+    const message = error instanceof Error ? error.message : fallback;
     this.syncError.set(message);
     this.syncStatus.set('Firebase sync failed');
     this.isSyncing.set(false);

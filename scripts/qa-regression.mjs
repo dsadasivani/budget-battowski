@@ -20,6 +20,7 @@ const baseUrl = configuredBaseUrl
   ? configuredBaseUrl.replace(/\/+$/, '')
   : `http://127.0.0.1:${port}`;
 const usesDeployedApp = Boolean(configuredBaseUrl);
+const releaseCommit = process.env.RELEASE_COMMIT?.trim();
 const today = new Date();
 const reviewMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
 const npmCliPath = process.env.npm_execpath;
@@ -89,6 +90,42 @@ function runCommand(label, command, args) {
     );
   }
   return entry;
+}
+
+async function checkReleaseCorrelation() {
+  if (!usesDeployedApp || !releaseCommit) {
+    return;
+  }
+
+  const response = await fetch(`${baseUrl}/release.json`, {
+    cache: 'no-store',
+    redirect: 'follow',
+  });
+  const contentType = response.headers.get('content-type') ?? '';
+  const metadata = contentType.includes('application/json') ? await response.json() : null;
+  const matches =
+    response.ok &&
+    metadata?.schemaVersion === 1 &&
+    metadata?.environment === 'qa' &&
+    metadata?.commit === releaseCommit;
+  addCoverage(
+    'Release correlation',
+    'Deployed release metadata matches the workflow commit',
+    matches ? 'Pass' : 'Fail',
+    matches
+      ? `Commit ${releaseCommit} is observable.`
+      : `Expected commit ${releaseCommit}; received ${metadata?.commit ?? 'no JSON metadata'}.`,
+  );
+  if (!matches) {
+    addIssue(
+      'Critical',
+      'Release correlation',
+      'Deployed release metadata matches the workflow commit',
+      'Fetch /release.json from the deployed QA origin.',
+      `The response identifies QA commit ${releaseCommit}.`,
+      `HTTP ${response.status}; commit ${metadata?.commit ?? 'unavailable'}.`,
+    );
+  }
 }
 
 function chromePath() {
@@ -830,6 +867,7 @@ async function main() {
       server = startServer();
     }
     await waitForHttp(baseUrl, 120000);
+    await checkReleaseCorrelation();
     chrome = await startChrome();
     page = await cdpNewPage(baseUrl);
 

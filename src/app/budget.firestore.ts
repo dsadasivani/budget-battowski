@@ -77,7 +77,7 @@ export class BudgetFirestoreRepository {
   async listen<TName extends BudgetCollectionName>(
     collectionName: TName,
     next: (records: BudgetDataMap[TName][]) => void,
-    error: (message: string) => void,
+    error: (error: unknown) => void,
   ): Promise<Unsubscribe> {
     const { collection, onSnapshot } = await import('firebase/firestore');
     const db = await this.database();
@@ -98,7 +98,7 @@ export class BudgetFirestoreRepository {
 
         next(this.sortRecords(collectionName, records));
       },
-      (snapshotError) => error(snapshotError.message),
+      (snapshotError) => error(snapshotError),
     );
   }
 
