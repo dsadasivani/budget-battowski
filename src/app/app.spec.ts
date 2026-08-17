@@ -10,7 +10,12 @@ import { vi } from 'vitest';
 import { App } from './app';
 import { routes } from './app.routes';
 import { BulkEditorDialog, type BulkEditorData } from './bulk-editor-dialog';
-import type { PaymentAccount, PaymentMode } from './budget.models';
+import {
+  DEFAULT_EXPENSE_CATEGORIES,
+  type BudgetCategory,
+  type PaymentAccount,
+  type PaymentMode,
+} from './budget.models';
 import { BudgetStore } from './budget.store';
 import { MonthlyReviewSourceConflictError } from './domain/errors';
 import {
@@ -2104,6 +2109,32 @@ describe('App', () => {
     expect(app.categoryName(loanExpense?.categoryId ?? '')).toBe('Loan EMI');
   });
 
+  it('should provide editable zero-budget defaults without recreating archived categories', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
+      withDefaultCategories: (categories: BudgetCategory[]) => BudgetCategory[];
+    };
+
+    const defaults = app.withDefaultCategories([]);
+    expect(
+      DEFAULT_EXPENSE_CATEGORIES.every((defaultCategory) =>
+        defaults.some(
+          (category) =>
+            category.id === defaultCategory.id &&
+            category.monthlyBudget === 0 &&
+            category.type === 'Expenses',
+        ),
+      ),
+    ).toBe(true);
+
+    const archived = {
+      ...DEFAULT_EXPENSE_CATEGORIES[0],
+      archivedDate: '2026-08-17T00:00:00.000Z',
+    };
+    const afterArchive = app.withDefaultCategories([archived]);
+    expect(afterArchive.filter((category) => category.id === archived.id)).toEqual([archived]);
+  });
+
   it('should clamp loan EMIs to the last valid day and restore the nominal day', () => {
     const fixture = TestBed.createComponent(App);
     const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
@@ -2226,6 +2257,30 @@ describe('App', () => {
         expect.objectContaining({ id: 'payment-mode-cash' }),
         expect.objectContaining({ id: 'pm-gpay' }),
       ]),
+    );
+  });
+
+  it('should preserve the selected bank while normalizing credit cards', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
+      normalizePaymentMode: (paymentMode: PaymentMode) => PaymentMode;
+    };
+
+    expect(
+      app.normalizePaymentMode({
+        id: 'pm-hdfc-card',
+        type: 'credit-card',
+        name: 'Credit Card',
+        bankName: 'HDFC',
+        cardType: 'visa',
+        lastFour: '9876',
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        bankName: 'HDFC',
+        name: 'HDFC Credit Card',
+        type: 'credit-card',
+      }),
     );
   });
 
@@ -2717,7 +2772,7 @@ describe('PaymentModesPage', () => {
 
     expect(page.validationError()).toBe('Card modes need exactly 4 digits.');
 
-    page.form.patchValue({ cardType: 'visa', lastFour: '9876' });
+    page.form.patchValue({ bankName: 'HDFC', cardType: 'visa', lastFour: '9876' });
     page.savePaymentMode();
     await Promise.resolve();
 
@@ -2726,6 +2781,7 @@ describe('PaymentModesPage', () => {
         type: 'credit-card',
         name: 'Credit Card',
         provider: undefined,
+        bankName: 'HDFC',
         cardType: 'visa',
         lastFour: '9876',
         paymentAccountId: undefined,

@@ -161,6 +161,7 @@ function buildPaymentModeFromForm(
   type: PaymentModeType,
   provider: PaymentModeProvider,
   cardType: PaymentCardType | '',
+  bankName: PaymentBankName,
   rawLastFour: string,
   rawPaymentAccountId: string,
   existing: PaymentMode | undefined,
@@ -194,7 +195,7 @@ function buildPaymentModeFromForm(
       provider: isProviderType(type) ? provider : undefined,
       cardType: isCardType(type) ? selectedCardType : undefined,
       lastFour: isCardType(type) ? lastFour : undefined,
-      bankName: undefined,
+      bankName: type === 'credit-card' ? paymentBankNameValue(bankName) : undefined,
       paymentAccountId: isAccountBackedType(type) ? paymentAccountId : undefined,
       memberEmail: existing?.memberEmail,
       workspaceGlobal: existing?.workspaceGlobal,
@@ -296,6 +297,22 @@ function buildPaymentAccountFromForm(
             </mat-select>
           </mat-form-field>
         } @else if (isCardType(formType())) {
+          @if (formType() === 'credit-card') {
+            <mat-form-field appearance="outline">
+              <mat-label>Bank</mat-label>
+              <mat-select formControlName="bankName">
+                @for (bank of bankOptions; track bank.name) {
+                  <mat-option [value]="bank.name">
+                    <span class="select-option-with-icon">
+                      <img [ngSrc]="bank.iconSrc" width="28" height="28" alt="" />
+                      <span>{{ bank.name }}</span>
+                    </span>
+                  </mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+          }
+
           <mat-form-field appearance="outline">
             <mat-label>Card type</mat-label>
             <mat-select formControlName="cardType">
@@ -485,6 +502,7 @@ export class PaymentModeFormSheet {
   readonly modeOptions = MODE_OPTIONS;
   readonly providerOptions = PROVIDER_OPTIONS;
   readonly cardTypeOptions = CARD_TYPE_OPTIONS;
+  readonly bankOptions = BANK_OPTIONS;
   readonly defaultCardIcon = DEFAULT_CARD_ICON;
   readonly editingId = signal<string | null>(this.data?.paymentMode?.id ?? null);
   readonly formType = signal<PaymentModeType>(this.data?.paymentMode?.type ?? 'upi');
@@ -499,6 +517,9 @@ export class PaymentModeFormSheet {
     cardType: this.formBuilder.nonNullable.control<PaymentCardType | ''>(
       paymentCardTypeValue(this.data?.paymentMode?.cardType),
     ),
+    bankName: this.formBuilder.nonNullable.control<PaymentBankName>(
+      paymentBankNameValue(this.data?.paymentMode?.bankName),
+    ),
     paymentAccountId: this.formBuilder.nonNullable.control(
       this.data?.paymentMode?.paymentAccountId ?? '',
     ),
@@ -508,7 +529,7 @@ export class PaymentModeFormSheet {
     this.isProviderType(this.formType())
       ? 'Choose the provider; the owner tag is added automatically.'
       : this.isCardType(this.formType())
-        ? 'Save the card type and last four digits for quick identification.'
+        ? 'Save the bank, card type, and last four digits for quick identification.'
         : this.formType() === 'internet-banking'
           ? 'Link a payment account to identify the bank and account ending.'
           : 'Keep cash transactions available as a saved payment mode.',
@@ -537,6 +558,7 @@ export class PaymentModeFormSheet {
       this.form.controls.type.value,
       this.form.controls.provider.value,
       this.form.controls.cardType.value,
+      this.form.controls.bankName.value,
       this.form.controls.lastFour.value,
       this.form.controls.paymentAccountId.value,
       this.data?.paymentMode,
@@ -1149,6 +1171,20 @@ export class PaymentAccountModesSheet {
                                 {{ paymentMode.paymentAccountName }} ·
                                 {{ paymentMode.paymentAccountDetail }}
                               </span>
+                            } @else if (
+                              paymentMode.type === 'credit-card' && paymentMode.bankName
+                            ) {
+                              <span class="payment-account-chip">
+                                @if (paymentMode.bankIconSrc) {
+                                  <img
+                                    [ngSrc]="paymentMode.bankIconSrc"
+                                    width="18"
+                                    height="18"
+                                    alt=""
+                                  />
+                                }
+                                {{ paymentMode.bankName }}
+                              </span>
                             }
                           </div>
                           <div class="payment-card-actions">
@@ -1246,6 +1282,22 @@ export class PaymentAccountModesSheet {
                         </mat-select>
                       </mat-form-field>
                     } @else if (isCardType(formType())) {
+                      @if (formType() === 'credit-card') {
+                        <mat-form-field appearance="outline">
+                          <mat-label>Bank</mat-label>
+                          <mat-select formControlName="bankName">
+                            @for (bank of bankOptions; track bank.name) {
+                              <mat-option [value]="bank.name">
+                                <span class="select-option-with-icon">
+                                  <img [ngSrc]="bank.iconSrc" width="28" height="28" alt="" />
+                                  <span>{{ bank.name }}</span>
+                                </span>
+                              </mat-option>
+                            }
+                          </mat-select>
+                        </mat-form-field>
+                      }
+
                       <mat-form-field appearance="outline">
                         <mat-label>Card type</mat-label>
                         <mat-select formControlName="cardType">
@@ -2318,6 +2370,7 @@ export class PaymentModesPage {
     type: this.formBuilder.nonNullable.control<PaymentModeType>('upi'),
     provider: this.formBuilder.nonNullable.control<PaymentModeProvider>(DEFAULT_PROVIDER),
     cardType: this.formBuilder.nonNullable.control<PaymentCardType | ''>(''),
+    bankName: this.formBuilder.nonNullable.control<PaymentBankName>(DEFAULT_BANK_NAME),
     paymentAccountId: this.formBuilder.nonNullable.control(''),
     lastFour: this.formBuilder.nonNullable.control(''),
   });
@@ -2353,7 +2406,7 @@ export class PaymentModesPage {
     this.isProviderType(this.formType())
       ? 'Choose the provider; the owner tag is added automatically.'
       : this.isCardType(this.formType())
-        ? 'Save the card type and last four digits for quick identification.'
+        ? 'Save the bank, card type, and last four digits for quick identification.'
         : this.formType() === 'internet-banking'
           ? 'Link a payment account to identify the bank and account ending.'
           : 'Keep cash transactions available as a saved payment mode.',
@@ -2470,6 +2523,7 @@ export class PaymentModesPage {
       type: paymentMode.type,
       provider: paymentProviderValue(paymentMode.provider),
       cardType: paymentCardTypeValue(paymentMode.cardType),
+      bankName: paymentBankNameValue(paymentMode.bankName),
       paymentAccountId: paymentMode.paymentAccountId ?? '',
       lastFour: paymentMode.lastFour ?? '',
     });
@@ -2534,6 +2588,7 @@ export class PaymentModesPage {
       this.form.controls.type.value,
       this.form.controls.provider.value,
       this.form.controls.cardType.value,
+      this.form.controls.bankName.value,
       this.form.controls.lastFour.value,
       this.form.controls.paymentAccountId.value,
       existing,
@@ -2600,6 +2655,7 @@ export class PaymentModesPage {
       type,
       provider: DEFAULT_PROVIDER,
       cardType: '',
+      bankName: DEFAULT_BANK_NAME,
       paymentAccountId: '',
       lastFour: '',
     });

@@ -61,7 +61,7 @@ import {
   type BudgetImportSummary,
 } from './budget-import.service';
 import { buildWorkspaceExport, workspaceExportFilename } from './budget-export.service';
-import { PAYMENT_BANK_OPTIONS } from './budget.models';
+import { DEFAULT_EXPENSE_CATEGORIES, PAYMENT_BANK_OPTIONS } from './budget.models';
 import type {
   BudgetCategory,
   BudgetCollectionName,
@@ -419,7 +419,7 @@ export class BudgetStore implements OnDestroy {
   private readonly unsubscribes = signal<Array<() => void>>([]);
   private readonly prefillAttemptedSignatures = signal(new Set<string>());
   private readonly prefillInFlightSignatures = signal(new Set<string>());
-  private readonly loanEmiCategoryUpsertInFlight = signal(false);
+  private readonly defaultCategoryUpsertInFlight = signal(false);
   private readonly cashPaymentModeUpsertInFlight = signal(false);
   private authHydrationKey: string | null = null;
   private authHydrationInFlight: Promise<void> | null = null;
@@ -2428,7 +2428,13 @@ export class BudgetStore implements OnDestroy {
       );
     }
 
-    if (paymentMode.type === 'credit-card' || paymentMode.type === 'debit-card') {
+    if (paymentMode.type === 'credit-card') {
+      return paymentMode.bankName && paymentMode.bankName !== DEFAULT_BANK_NAME
+        ? `${paymentMode.bankName} Credit Card`
+        : this.paymentModeTypeLabel(paymentMode.type);
+    }
+
+    if (paymentMode.type === 'debit-card') {
       return this.paymentModeTypeLabel(paymentMode.type);
     }
 
@@ -3241,12 +3247,23 @@ export class BudgetStore implements OnDestroy {
       type: this.categoryType(category),
     }));
 
-    if (this.findLoanEmiCategory(normalized)) {
-      return normalized;
-    }
+    const missingDefaults = [DEFAULT_LOAN_EMI_CATEGORY, ...DEFAULT_EXPENSE_CATEGORIES].filter(
+      (defaultCategory) => !this.findDefaultCategory(normalized, defaultCategory),
+    );
 
-    return [...normalized, DEFAULT_LOAN_EMI_CATEGORY].sort((left, right) =>
+    return [...normalized, ...missingDefaults].sort((left, right) =>
       left.name.localeCompare(right.name),
+    );
+  }
+
+  private findDefaultCategory(
+    categories: BudgetCategory[],
+    defaultCategory: BudgetCategory,
+  ): BudgetCategory | undefined {
+    const defaultName = defaultCategory.name.trim().toLowerCase();
+    return categories.find(
+      (category) =>
+        category.id === defaultCategory.id || category.name.trim().toLowerCase() === defaultName,
     );
   }
 
@@ -3256,20 +3273,21 @@ export class BudgetStore implements OnDestroy {
 
   private ensureDefaultCategoryRecord(categories: BudgetCategory[]): void {
     const repository = this.repository();
-    if (
-      !repository ||
-      this.findLoanEmiCategory(categories) ||
-      this.loanEmiCategoryUpsertInFlight()
-    ) {
+    const missingDefaults = [DEFAULT_LOAN_EMI_CATEGORY, ...DEFAULT_EXPENSE_CATEGORIES].filter(
+      (defaultCategory) => !this.findDefaultCategory(categories, defaultCategory),
+    );
+    if (!repository || !missingDefaults.length || this.defaultCategoryUpsertInFlight()) {
       return;
     }
 
-    this.loanEmiCategoryUpsertInFlight.set(true);
+    this.defaultCategoryUpsertInFlight.set(true);
     void repository
-      .upsert('categories', DEFAULT_LOAN_EMI_CATEGORY)
-      .catch((error: unknown) => this.handleSyncError(error, 'Unable to create Loan EMI category.'))
+      .upsertMany('categories', missingDefaults)
+      .catch((error: unknown) =>
+        this.handleSyncError(error, 'Unable to create default categories.'),
+      )
       .finally(() => {
-        this.loanEmiCategoryUpsertInFlight.set(false);
+        this.defaultCategoryUpsertInFlight.set(false);
       });
   }
 
@@ -4146,6 +4164,10 @@ export class BudgetStore implements OnDestroy {
       ...base,
       cardType: paymentMode.cardType,
       lastFour: paymentMode.lastFour?.replace(/\D/g, '').slice(-4),
+      bankName:
+        paymentMode.type === 'credit-card'
+          ? this.paymentBankNameValue(paymentMode.bankName)
+          : undefined,
     });
   }
 

@@ -149,6 +149,100 @@ export interface BudgetCategory extends PersistedRecord {
   archivedDate?: string;
 }
 
+export const DEFAULT_EXPENSE_CATEGORIES: readonly BudgetCategory[] = [
+  {
+    id: 'category-food-dining',
+    name: 'Food & Dining',
+    monthlyBudget: 0,
+    color: '#f97316',
+    type: 'Expenses',
+  },
+  {
+    id: 'category-groceries',
+    name: 'Groceries',
+    monthlyBudget: 0,
+    color: '#16a34a',
+    type: 'Expenses',
+  },
+  {
+    id: 'category-housing',
+    name: 'Housing',
+    monthlyBudget: 0,
+    color: '#2563eb',
+    type: 'Expenses',
+  },
+  {
+    id: 'category-transport',
+    name: 'Transport',
+    monthlyBudget: 0,
+    color: '#0891b2',
+    type: 'Expenses',
+  },
+  {
+    id: 'category-shopping',
+    name: 'Shopping',
+    monthlyBudget: 0,
+    color: '#db2777',
+    type: 'Expenses',
+  },
+  {
+    id: 'category-bills-utilities',
+    name: 'Bills & Utilities',
+    monthlyBudget: 0,
+    color: '#ca8a04',
+    type: 'Expenses',
+  },
+  {
+    id: 'category-health',
+    name: 'Health',
+    monthlyBudget: 0,
+    color: '#dc2626',
+    type: 'Expenses',
+  },
+  {
+    id: 'category-entertainment',
+    name: 'Entertainment',
+    monthlyBudget: 0,
+    color: '#7c3aed',
+    type: 'Expenses',
+  },
+  {
+    id: 'category-family-kids',
+    name: 'Family & Kids',
+    monthlyBudget: 0,
+    color: '#ea580c',
+    type: 'Expenses',
+  },
+  {
+    id: 'category-education',
+    name: 'Education',
+    monthlyBudget: 0,
+    color: '#4f46e5',
+    type: 'Expenses',
+  },
+  {
+    id: 'category-travel',
+    name: 'Travel',
+    monthlyBudget: 0,
+    color: '#0d9488',
+    type: 'Expenses',
+  },
+  {
+    id: 'category-insurance',
+    name: 'Insurance',
+    monthlyBudget: 0,
+    color: '#475569',
+    type: 'Expenses',
+  },
+  {
+    id: 'category-personal-care',
+    name: 'Personal Care',
+    monthlyBudget: 0,
+    color: '#be185d',
+    type: 'Expenses',
+  },
+];
+
 export interface CategoryBudgetVersion {
   effectiveMonth: string;
   monthlyBudget: number;
