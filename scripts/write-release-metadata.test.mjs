@@ -12,11 +12,11 @@ test('writes only allowlisted release correlation fields', async () => {
     const { metadata, outputPath } = await writeReleaseMetadata({
       cwd: tempDir,
       generatedAt: '2026-08-17T00:00:00.000Z',
-      outputDirectory: 'output',
       environment: {
         RELEASE_ENVIRONMENT: 'qa',
         RELEASE_COMMIT: 'abcdef1234567890',
         RELEASE_RUN_ID: '42',
+        RELEASE_OUTPUT_DIRECTORY: 'output',
         QA_FIREBASE_PASSWORD: 'must-not-appear',
       },
     });

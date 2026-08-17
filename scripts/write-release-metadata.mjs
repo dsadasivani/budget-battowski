@@ -11,7 +11,7 @@ export async function writeReleaseMetadata({
   environment = process.env,
   cwd = process.cwd(),
   generatedAt = new Date().toISOString(),
-  outputDirectory = DEFAULT_OUTPUT_DIRECTORY,
+  outputDirectory = environment.RELEASE_OUTPUT_DIRECTORY?.trim() || DEFAULT_OUTPUT_DIRECTORY,
 } = {}) {
   const releaseEnvironment = environment.RELEASE_ENVIRONMENT?.trim().toLowerCase();
   const commit = environment.RELEASE_COMMIT?.trim();

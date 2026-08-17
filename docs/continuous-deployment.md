@@ -12,6 +12,7 @@ The `CD` GitHub Actions workflow deploys Firestore rules and Firebase Hosting wi
 - Every production deployment runs a non-destructive smoke against the deployed Hosting release and retains its report for 90 days.
 - Every Hosting deployment publishes `/release.json` so client errors and smoke evidence can be correlated to the exact Git commit and workflow run.
 - QA and production can be redeployed manually only from `develop` and `master`, respectively.
+- Component rollback is manual-only, accepts only a strict protected-branch ancestor, and shares the normal deployment concurrency lock.
 - QA and production use separate Google Cloud service accounts and identity providers.
 
 ## GitHub Environment variables
@@ -94,3 +95,9 @@ The current clean UID-only deployment has migration status `not-required`; legac
 The application emits privacy-safe structured operational events with environment, release commit, workflow run, browser-session, and per-error correlation IDs. Authentication, Firestore, routing, write-coordinator, version-conflict, Monthly Review conflict, and unhandled failures use the same event contract.
 
 See [Operational observability](./observability.md) for the event privacy boundary, covered failure surfaces, and the current sink limitation.
+
+## Rollback
+
+The separate `Rollback` workflow can restore Hosting or Firestore rules from a full, previously verified commit SHA. It rebuilds or tests the target source, deploys only the selected component, runs environment-appropriate verification, and retains a rollback evidence artifact. It never restores Firestore data or moves a protected branch.
+
+Follow [Firebase rollback runbook](./rollback-runbook.md) for target selection, exact confirmations, component-specific behavior, emergency fallback, and the required roll-forward PR.

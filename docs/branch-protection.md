@@ -29,3 +29,5 @@ Keep QA regression outside the mandatory pull-request check because it uses exte
 The `dependency-security` check runs `npm audit --audit-level=high` against production and development dependencies. High or critical findings block feature pull requests from merging into `develop`.
 
 The `branch-policy` check enforces the only supported paths: `feature/*` to `develop`, followed by `develop` to `master`.
+
+The `production` GitHub Environment currently restricts deployments to protected branches. Because the repository currently has one collaborator, independent required-reviewer approval is unavailable. If a second trusted collaborator is added, configure that person as a required production reviewer and prevent self-review for both normal production deployment and rollback. Rollback input validation requires production runs from `master` and QA runs from `develop`; Workload Identity Federation independently enforces the same branch/environment pairing.

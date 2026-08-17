@@ -23,6 +23,7 @@ The release-blocking correctness and security findings are resolved:
 - Income, category-retirement, workspace-form, and workspace-confirm dialogs are loaded dynamically in addition to the existing lazy Monthly Review and Bulk Editor dialogs.
 - Frontend failure boundaries now emit one privacy-safe structured operational event contract. Events correlate environment, deployed Git commit, workflow run, browser session, and individual failures without serializing financial or identity data.
 - QA and production Hosting releases publish allowlisted `/release.json` metadata, and deployed regression/smoke verification rejects a stale release that does not identify the workflow commit.
+- Manual Hosting and Firestore-rules rollback is guarded by immutable strict-ancestor targets, exact operator confirmation, environment protection, component isolation, post-deployment verification, and retained rollback evidence.
 
 ## 3. Persistence semantics
 
@@ -48,16 +49,16 @@ The completed implementation was validated with:
 - Angular/Vitest application and domain tests: **176/176 passed**
 - Firestore emulator rules, concurrency, and production-coordinator tests: **37/37 passed**
 - QA build, Firestore rules deployment, Hosting deployment, and deterministic seed: **passed**
-- Credentialed regression against the deployed QA environment: **52/52 passed**
+- Credentialed regression against the deployed QA environment: **53/53 passed**
 - Non-destructive production smoke runner: **8/8 passed** against the deployed production site
 - Release-correlated production smoke: **9/9 passed** against a local Firebase Hosting emulator
-- Release-evidence and release-metadata generators: **4/4 orchestration tests passed**
+- Release, release-metadata, and rollback orchestration: **9/9 orchestration tests passed**
 - Production dependency audit: **0 vulnerabilities**
 - Targeted Prettier validation: **passed**
 - `git diff --check`: **passed**
 
 The deployed QA evidence is retained by GitHub Actions run
-[`31989052876`](https://github.com/dsadasivani/budget-battowski/actions/runs/31989052876).
+[`31999567330`](https://github.com/dsadasivani/budget-battowski/actions/runs/31999567330).
 It covers desktop and mobile route smoke tests, AXE checks, payment configuration, Monthly
 Review, core financial CRUD, and owner/editor/member authorization. No browser console errors
 were captured.
