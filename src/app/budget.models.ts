@@ -388,7 +388,17 @@ export interface BudgetDataMap {
   expenses: ExpenseEntry;
   investments: InvestmentEntry;
   loans: Loan;
+  loanAccounts: LoanAccount;
+  loanEvents: LoanEvent;
+  loanReconciliations: LoanReconciliation;
+  loanDocuments: LoanDocumentMetadata;
 }
 
 export type BudgetCollectionName = keyof BudgetDataMap;
 export type BudgetRecord = BudgetDataMap[BudgetCollectionName];
+import type {
+  LoanAccount,
+  LoanDocumentMetadata,
+  LoanEvent,
+  LoanReconciliation,
+} from './domain/loans/loan.models';

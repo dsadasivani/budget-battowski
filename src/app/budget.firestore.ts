@@ -1,5 +1,5 @@
 import type { FirebaseApp } from 'firebase/app';
-import type { Firestore, Unsubscribe } from 'firebase/firestore';
+import type { DocumentReference, Firestore, Unsubscribe } from 'firebase/firestore';
 
 import { getBudgetFirestore } from './firebase.client';
 import { FirestoreWriteCoordinator, MAX_BATCH_WRITES } from './data/firestore-write-coordinator';
@@ -137,6 +137,10 @@ export class BudgetFirestoreRepository {
       'expenses',
       'investments',
       'loans',
+      'loanAccounts',
+      'loanEvents',
+      'loanReconciliations',
+      'loanDocuments',
       CATEGORY_REMAP_COLLECTION,
     ];
 
@@ -436,6 +440,61 @@ export class BudgetFirestoreRepository {
     await deleteDoc(doc(db, WORKSPACE_COLLECTION, this.workspaceId, collectionName, recordId));
   }
 
+  async deleteFutureLoanExpenses(loanId: string, cutoffDate: string): Promise<string[]> {
+    const { collection, getDocs, query, where } = await import('firebase/firestore');
+    const db = await this.database();
+    const snapshot = await getDocs(
+      query(
+        collection(db, WORKSPACE_COLLECTION, this.workspaceId, 'expenses'),
+        where('sourceLoanId', '==', loanId),
+      ),
+    );
+    const cutoffMonth = cutoffDate.slice(0, 7);
+    const futureDocuments = snapshot.docs.filter((snapshotDocument) => {
+      const expense = snapshotDocument.data() as Pick<ExpenseEntry, 'date' | 'month'>;
+      return expense.date ? expense.date >= cutoffDate : expense.month >= cutoffMonth;
+    });
+    await this.deleteDocumentReferences(futureDocuments.map((document) => document.ref));
+    return futureDocuments.map((document) => document.id);
+  }
+
+  async deleteLoanAccountCascade(
+    loanId: string,
+    cutoffDate: string,
+  ): Promise<{ futureExpenseIds: string[] }> {
+    const { collection, doc, getDocs, query, where } = await import('firebase/firestore');
+    const db = await this.database();
+    const childCollections = ['loanEvents', 'loanReconciliations', 'loanDocuments'] as const;
+    const childSnapshots = await Promise.all(
+      childCollections.map((collectionName) =>
+        getDocs(
+          query(
+            collection(db, WORKSPACE_COLLECTION, this.workspaceId, collectionName),
+            where('loanId', '==', loanId),
+          ),
+        ),
+      ),
+    );
+    const futureExpenseIds = await this.deleteFutureLoanExpenses(loanId, cutoffDate);
+    const childReferences = childSnapshots.flatMap((snapshot) =>
+      snapshot.docs.map((document) => document.ref),
+    );
+    await this.deleteDocumentReferences([
+      ...childReferences,
+      doc(db, WORKSPACE_COLLECTION, this.workspaceId, 'loanAccounts', loanId),
+      // A migrated account can retain a same-id legacy document during rolling migration.
+      doc(db, WORKSPACE_COLLECTION, this.workspaceId, 'loans', loanId),
+    ]);
+    return { futureExpenseIds };
+  }
+
+  async deleteLegacyLoanCascade(loanId: string, cutoffDate: string): Promise<void> {
+    const { deleteDoc, doc } = await import('firebase/firestore');
+    const db = await this.database();
+    await this.deleteFutureLoanExpenses(loanId, cutoffDate);
+    await deleteDoc(doc(db, WORKSPACE_COLLECTION, this.workspaceId, 'loans', loanId));
+  }
+
   async saveCategoryRemapOperation(operation: CategoryRemapOperation): Promise<void> {
     const { doc, serverTimestamp, setDoc } = await import('firebase/firestore');
     const db = await this.database();
@@ -557,6 +616,21 @@ export class BudgetFirestoreRepository {
     return this.db;
   }
 
+  private async deleteDocumentReferences(references: readonly DocumentReference[]): Promise<void> {
+    if (!references.length) {
+      return;
+    }
+    const { writeBatch } = await import('firebase/firestore');
+    const db = await this.database();
+    for (let offset = 0; offset < references.length; offset += MAX_BATCH_WRITES) {
+      const batch = writeBatch(db);
+      for (const reference of references.slice(offset, offset + MAX_BATCH_WRITES)) {
+        batch.delete(reference);
+      }
+      await batch.commit();
+    }
+  }
+
   private sortRecords<TName extends BudgetCollectionName>(
     collectionName: TName,
     records: BudgetDataMap[TName][],
@@ -609,6 +683,26 @@ export class BudgetFirestoreRepository {
       if (collectionName === 'loans') {
         return (left as { loanType: string }).loanType.localeCompare(
           (right as { loanType: string }).loanType,
+        );
+      }
+
+      if (collectionName === 'loanAccounts') {
+        return (left as { lender: string }).lender.localeCompare(
+          (right as { lender: string }).lender,
+        );
+      }
+
+      if (collectionName === 'loanEvents') {
+        const leftEvent = left as { effectiveDate: string; id: string };
+        const rightEvent = right as { effectiveDate: string; id: string };
+        return `${rightEvent.effectiveDate}-${rightEvent.id}`.localeCompare(
+          `${leftEvent.effectiveDate}-${leftEvent.id}`,
+        );
+      }
+
+      if (collectionName === 'loanReconciliations') {
+        return (right as { asOfDate: string }).asOfDate.localeCompare(
+          (left as { asOfDate: string }).asOfDate,
         );
       }
 

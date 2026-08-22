@@ -1,23 +1,34 @@
-import { CommonModule, NgOptimizedImage } from '@angular/common';
+import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
+import { MatDialog } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
-import { MatTooltipModule } from '@angular/material/tooltip';
+import { RouterLink } from '@angular/router';
+import { firstValueFrom } from 'rxjs';
 
 import { BudgetStore } from '../budget.store';
+import type {
+  LoanAccountDialog,
+  LoanAccountDialogData,
+  LoanAccountDialogResult,
+} from '../loan-account-dialog';
 import { MonthMemberControls } from '../shared/month-member-controls';
 import { AppPageSkeletonComponent } from '../shared/page-skeleton';
+
+function today(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
 
 @Component({
   selector: 'app-loans-page',
   imports: [
     CommonModule,
-    NgOptimizedImage,
+    RouterLink,
     MatButtonModule,
     MatIconModule,
     MatProgressBarModule,
-    MatTooltipModule,
     MonthMemberControls,
     AppPageSkeletonComponent,
   ],
@@ -25,219 +36,406 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
     @if (store.showPageSkeleton()) {
       <app-page-skeleton variant="loans" />
     } @else {
-      <section class="page mobile-loans-page">
+      <section class="page loans-v2-page">
         <header class="page-header desktop-page-header">
           <div>
             <h1>Loans</h1>
-            <p>Manage EMIs, outstanding balances, and repayment progress.</p>
+            <p>Track repayments, outstanding balances, and payoff progress.</p>
           </div>
           <div class="header-actions">
             <app-month-member-controls />
             <button
               mat-flat-button
               type="button"
-              (click)="store.openBulkEditor('loans')"
+              (click)="openAccountEditor()"
               [disabled]="!store.canWrite()"
             >
-              <mat-icon aria-hidden="true">add</mat-icon>
-              Add Loan
+              <mat-icon aria-hidden="true">add</mat-icon> Add loan
             </button>
           </div>
         </header>
+        <div class="mobile-page-controls mobile-filter-strip"><app-month-member-controls /></div>
 
-        <div class="mobile-page-controls mobile-filter-strip">
-          <app-month-member-controls />
-        </div>
-
-        <section class="stat-grid four" tabindex="0" aria-label="Loan summary">
-          <article class="stat-card emi-total-card">
-            <span class="icon-chip orange"
-              ><mat-icon aria-hidden="true">account_balance</mat-icon></span
-            >
-            <p>Total EMI/Month</p>
+        <section class="stat-grid four" aria-label="Loan portfolio summary">
+          <article class="stat-card">
+            <span class="icon-chip orange"><mat-icon aria-hidden="true">payments</mat-icon></span>
+            <p>Current EMI / month</p>
             <strong>{{
               store.debtEmiTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
             }}</strong>
           </article>
-          <article class="stat-card outstanding-total-card">
-            <span class="icon-chip red"><mat-icon aria-hidden="true">error_outline</mat-icon></span>
-            <p>Total Outstanding</p>
+          <article class="stat-card">
+            <span class="icon-chip red"
+              ><mat-icon aria-hidden="true">account_balance_wallet</mat-icon></span
+            >
+            <p>Calculated outstanding</p>
             <strong>{{
               store.totalDebt() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
             }}</strong>
-            <small>Loans active in selected month</small>
+            <small>As of {{ store.monthLabel() }}</small>
           </article>
-          <article class="stat-card active-loans-card">
-            <span class="icon-chip blue"><mat-icon aria-hidden="true">article</mat-icon></span>
-            <p>Loans Active</p>
-            <strong>{{ store.activeLoans().length }}</strong>
+          <article class="stat-card">
+            <span class="icon-chip blue"><mat-icon aria-hidden="true">receipt_long</mat-icon></span>
+            <p>Open accounts</p>
+            <strong>{{ store.loanAccountRows().length }}</strong>
           </article>
-          <article class="stat-card projected-closure-card">
+          <article class="stat-card">
             <span class="icon-chip teal"
               ><mat-icon aria-hidden="true">event_available</mat-icon></span
             >
-            <p>Projected Closure</p>
+            <p>Portfolio closure</p>
             <strong>{{
               store.projectedLoanClosure()
                 ? (store.projectedLoanClosure() | date: 'MMM y')
-                : 'Not set'
+                : 'Needs data'
             }}</strong>
+            <small>Projected, not lender-certified</small>
           </article>
         </section>
 
-        <section class="content-grid two-one">
-          <article class="panel-card">
-            <header class="panel-heading mobile-panel-heading-with-action">
-              <div>
-                <h2>Loan Accounts</h2>
-                <p>Loans active in {{ store.monthLabel() }}</p>
-              </div>
-              <button
-                class="mobile-panel-add-button"
-                mat-icon-button
-                type="button"
-                aria-label="Add loan"
-                matTooltip="Add loan"
-                (click)="store.openBulkEditor('loans')"
-                [disabled]="!store.canWrite()"
-              >
-                <mat-icon aria-hidden="true">add</mat-icon>
-              </button>
-            </header>
-            <div class="loan-list">
-              @for (loan of store.loanRepaymentRows(); track loan.id) {
-                <article class="loan-account">
-                  <div>
-                    <strong>{{ loan.lender }}</strong>
-                    <span class="badge neutral">{{ loan.loanType }}</span>
-                  </div>
-                  <div>
-                    <small>Principal</small>
-                    <b>{{ loan.principal | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</b>
-                  </div>
-                  <div>
-                    <small>Outstanding</small>
-                    <b>{{ loan.outstanding | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</b>
-                  </div>
-                  <div>
-                    <small>EMI</small>
-                    <b>{{ loan.emi | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}/mo</b>
-                    @if (loan.paymentModeMeta; as paymentMode) {
-                      <span class="payment-mode-badge {{ paymentMode.tone }}">
-                        <img [ngSrc]="paymentMode.iconSrc" width="18" height="18" alt="" />
-                        {{ paymentMode.label }}
-                      </span>
-                    }
-                  </div>
-                  <div>
-                    <small>{{ loan.monthsLeft }} months left</small>
-                    <mat-progress-bar
-                      mode="determinate"
-                      [value]="store.clampPercent(loan.paidRatio)"
-                      [attr.aria-label]="loan.lender + ' paid percentage'"
-                    ></mat-progress-bar>
-                  </div>
-                  <button
-                    mat-icon-button
-                    type="button"
-                    [attr.aria-label]="'Edit loan ' + loan.lender"
-                    matTooltip="Edit loan"
-                    (click)="store.openBulkEditor('loans', 0, loan.id)"
-                    [disabled]="!store.canWrite()"
-                  >
-                    <mat-icon aria-hidden="true">edit</mat-icon>
-                  </button>
-                </article>
-              } @empty {
-                <div class="empty-state">No loans saved</div>
-              }
+        <section class="panel-card accounts-panel" aria-labelledby="loan-accounts-title">
+          <header class="panel-heading">
+            <div>
+              <h2 id="loan-accounts-title">Loan accounts</h2>
+              <p>Review balances, repayment progress, and upcoming installments.</p>
             </div>
-          </article>
-
-          <div class="panel-stack">
-            <article class="panel-card loan-calendar-panel">
-              <header class="panel-heading">
-                <h2>EMI Calendar</h2>
-                <p>{{ store.monthLabel() }} due dates and payment reminders</p>
-              </header>
-              <div class="calendar-grid" aria-label="Loan EMI calendar">
-                @for (dayName of ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']; track dayName) {
-                  <strong>{{ dayName }}</strong>
-                }
-                @for (day of store.loanCalendarDays(); track day.date) {
-                  <div class="calendar-day" [class.has-items]="day.items.length">
-                    <span>{{ day.day }}</span>
-                    @for (item of day.items; track item.id) {
-                      <i [style.background]="item.color" aria-hidden="true"></i>
-                      <span class="sr-only">{{ item.label }}</span>
-                    }
-                  </div>
-                }
-              </div>
-              <div class="calendar-legend">
-                @for (loan of store.loanRepaymentRows(); track loan.id) {
-                  <span
-                    ><i [style.background]="loan.color" aria-hidden="true"></i> {{ loan.lender }}
-                    {{ loan.emi | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</span
-                  >
-                }
-              </div>
-            </article>
-
-            <article class="panel-card">
-              <header class="panel-heading">
-                <h2>Repayment Summary</h2>
-                <p>Monthly EMI distribution by loan</p>
-              </header>
-              <div class="donut-layout single">
-                <div
-                  class="donut-chart"
-                  [style.background]="loanDonutStyle()"
-                  role="img"
-                  [attr.aria-label]="'Monthly EMI total ' + store.formatMoney(store.debtEmiTotal())"
-                >
-                  <span
-                    >Total<br /><b
-                      >{{
-                        store.debtEmiTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
-                      }}/mo</b
-                    ></span
-                  >
-                </div>
-              </div>
-              <div class="summary-list">
-                @for (loan of store.loanRepaymentRows(); track loan.id) {
+          </header>
+          <div class="account-grid">
+            @for (loan of store.loanAccountRows(); track loan.id) {
+              <article
+                class="account-card"
+                [class.needs-attention]="loan.status === 'needs-attention'"
+              >
+                <header>
                   <div>
-                    <span><i [style.background]="loan.color"></i>{{ loan.lender }}</span>
-                    <b>{{ loan.emi | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</b>
+                    <span class="version">{{
+                      loan.schemaVersion === 2 ? 'Loan V2' : 'Legacy loan'
+                    }}</span>
+                    <h3>{{ loan.lender }}</h3>
+                    <p>{{ loan.loanType }}</p>
                   </div>
+                  <span class="accuracy" [class.verified]="loan.accuracy.label === 'Verified'">
+                    {{ loan.accuracy.label }}
+                    @if (loan.accuracy.throughDate) {
+                      through {{ loan.accuracy.throughDate | date: 'mediumDate' }}
+                    }
+                  </span>
+                </header>
+                <dl>
+                  <div>
+                    <dt>Outstanding</dt>
+                    <dd>{{ loan.outstanding | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</dd>
+                    <small>{{
+                      loan.schemaVersion === 2 ? 'Calculated' : 'Recorded legacy value'
+                    }}</small>
+                  </div>
+                  <div>
+                    <dt>Current EMI</dt>
+                    <dd>{{ loan.emi | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</dd>
+                    <small>{{ loan.annualRate | number: '1.0-2' }}% p.a.</small>
+                  </div>
+                  <div>
+                    <dt>Remaining</dt>
+                    <dd>{{ loan.monthsLeft }} installments</dd>
+                    <small>{{
+                      loan.payoffDate
+                        ? 'Projected ' + (loan.payoffDate | date: 'MMM y')
+                        : 'Needs attention'
+                    }}</small>
+                  </div>
+                </dl>
+                <mat-progress-bar
+                  mode="determinate"
+                  [value]="store.clampPercent(loan.paidRatio)"
+                  [attr.aria-label]="loan.lender + ' calculated principal repayment progress'"
+                />
+
+                @if (loan.schemaVersion === 1) {
+                  <aside class="migration-note">
+                    <mat-icon aria-hidden="true">info</mat-icon>
+                    <div>
+                      <strong>Choose the date for the recorded outstanding</strong>
+                      <p>
+                        Upgrade creates a balance anchor. Earlier principal and interest breakup
+                        remains unknown.
+                      </p>
+                      <label [for]="'anchor-' + loan.id">Balance as-of date</label>
+                      <div class="upgrade-row">
+                        <input
+                          #anchorDate
+                          [id]="'anchor-' + loan.id"
+                          type="date"
+                          [value]="todayDate"
+                        />
+                        <button
+                          mat-stroked-button
+                          type="button"
+                          (click)="upgradeLegacy(loan.id, anchorDate.value)"
+                        >
+                          Upgrade safely
+                        </button>
+                      </div>
+                    </div>
+                  </aside>
                 }
+                <footer>
+                  @if (loan.schemaVersion === 2) {
+                    <a mat-flat-button [routerLink]="['/loans', loan.id]">Open account</a>
+                    <button
+                      mat-button
+                      type="button"
+                      (click)="openAccountEditor(loan.id)"
+                      [disabled]="!store.canWrite()"
+                    >
+                      Edit account
+                    </button>
+                  } @else {
+                    <button
+                      mat-button
+                      type="button"
+                      class="danger-button"
+                      (click)="deleteLegacyLoan(loan.id)"
+                      [disabled]="!store.canWrite()"
+                    >
+                      Delete legacy loan
+                    </button>
+                  }
+                  <span>{{
+                    loan.historyCoverage === 'partial' ? 'Partial history' : 'Complete history'
+                  }}</span>
+                </footer>
+              </article>
+            } @empty {
+              <div class="empty-state rich-empty">
+                <mat-icon aria-hidden="true">account_balance</mat-icon>
+                <h2>No loans yet</h2>
+                <p>
+                  Add contract terms and an optional lender balance checkpoint to build your first
+                  projection.
+                </p>
+                <button mat-flat-button type="button" (click)="openAccountEditor()">
+                  Add a loan
+                </button>
               </div>
-            </article>
+            }
           </div>
         </section>
+
+        @if (store.closedLoanAccounts().length) {
+          <details class="panel-card closed-accounts">
+            <summary>
+              Closed and archived accounts ({{ store.closedLoanAccounts().length }})
+            </summary>
+            @for (account of store.closedLoanAccounts(); track account.id) {
+              <a [routerLink]="['/loans', account.id]"
+                >{{ account.lender }} · {{ account.loanType }}</a
+              >
+            }
+          </details>
+        }
       </section>
+    }
+  `,
+  styles: `
+    .accounts-panel {
+      margin-top: 20px;
+    }
+    .account-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .account-card {
+      border: 1px solid #dbe3ec;
+      border-radius: 16px;
+      padding: 20px;
+      background: #fff;
+    }
+    .account-card.needs-attention {
+      border-color: #f59e0b;
+    }
+    .account-card > header,
+    .account-card footer {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .account-card h3 {
+      margin: 4px 0 0;
+      font-size: 1.2rem;
+    }
+    .account-card header p {
+      margin: 2px 0;
+      color: #64748b;
+    }
+    .version {
+      color: #64748b;
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .accuracy {
+      border-radius: 999px;
+      padding: 5px 9px;
+      color: #854d0e;
+      background: #fef3c7;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-align: right;
+    }
+    .accuracy.verified {
+      color: #166534;
+      background: #dcfce7;
+    }
+    dl {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin: 22px 0;
+    }
+    dt,
+    small {
+      color: #64748b;
+      font-size: 0.75rem;
+    }
+    dd {
+      margin: 4px 0;
+      color: #0f172a;
+      font-weight: 800;
+    }
+    .migration-note {
+      display: flex;
+      gap: 12px;
+      margin: 16px 0;
+      padding: 14px;
+      border-radius: 12px;
+      color: #713f12;
+      background: #fffbeb;
+    }
+    .migration-note p {
+      margin: 4px 0 10px;
+    }
+    .migration-note label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+    .upgrade-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .upgrade-row input {
+      min-height: 38px;
+      border: 1px solid #a8a29e;
+      border-radius: 7px;
+      padding: 0 8px;
+    }
+    .account-card footer {
+      align-items: center;
+      margin-top: 18px;
+    }
+    .account-card footer span {
+      color: #64748b;
+      font-size: 0.78rem;
+    }
+    .danger-button {
+      color: #b91c1c;
+    }
+    .rich-empty {
+      grid-column: 1 / -1;
+      padding: 56px 20px;
+      text-align: center;
+    }
+    .rich-empty mat-icon {
+      width: 42px;
+      height: 42px;
+      font-size: 42px;
+      color: #64748b;
+    }
+    .closed-accounts {
+      margin-top: 16px;
+    }
+    .closed-accounts summary {
+      cursor: pointer;
+      font-weight: 700;
+    }
+    .closed-accounts a {
+      display: block;
+      margin-top: 12px;
+    }
+    @media (max-width: 900px) {
+      .account-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    @media (max-width: 560px) {
+      dl {
+        grid-template-columns: 1fr 1fr;
+      }
+      .account-card > header {
+        flex-direction: column;
+      }
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class LoansPage {
   readonly store = inject(BudgetStore);
+  readonly todayDate = today();
+  private readonly dialog = inject(MatDialog);
 
-  loanDonutStyle(): string {
-    const loans = this.store.loanRepaymentRows();
-    const total = this.store.debtEmiTotal();
-    if (!total) {
-      return 'conic-gradient(#d7dee8 0 100%)';
+  async openAccountEditor(accountId?: string): Promise<void> {
+    const { LoanAccountDialog: dialogComponent } = await import('../loan-account-dialog');
+    const data: LoanAccountDialogData = {
+      account: accountId ? this.store.loanAccount(accountId) : undefined,
+      events: accountId
+        ? this.store.loanEvents().filter((event) => event.loanId === accountId)
+        : [],
+      memberEmail: this.store.actingMemberEmail(),
+      paymentModes: this.store.activePaymentModes(),
+    };
+    const result = await firstValueFrom(
+      this.dialog
+        .open<LoanAccountDialog, LoanAccountDialogData, LoanAccountDialogResult>(dialogComponent, {
+          autoFocus: 'first-tabbable',
+          data,
+          maxHeight: '94dvh',
+          maxWidth: '96vw',
+          width: 'min(900px, 96vw)',
+        })
+        .afterClosed(),
+    );
+    if (result) {
+      const saved = await this.store.saveLoanAccount(
+        result.account,
+        result.openingAnchor,
+        result.assumeHistoricalEmisPaid,
+      );
+      let ledgerReady = saved;
+      if (saved && result.matchingPartPayment) {
+        ledgerReady = await this.store.recordLoanEvent(result.matchingPartPayment);
+      }
+      if (ledgerReady) {
+        for (const reconciliation of result.lenderReconciliations ?? []) {
+          await this.store.reconcileLoan({
+            loanId: result.account.id,
+            ...reconciliation,
+            sourceKind: 'repayment-schedule',
+          });
+        }
+      }
     }
+  }
 
-    let cursor = 0;
-    const stops = loans.map((loan) => {
-      const start = cursor;
-      cursor += loan.share * 100;
-      return `${loan.color} ${start}% ${cursor}%`;
-    });
+  async upgradeLegacy(loanId: string, balanceAsOfDate: string): Promise<void> {
+    if (balanceAsOfDate) await this.store.upgradeLegacyLoan(loanId, balanceAsOfDate);
+  }
 
-    return `conic-gradient(${stops.join(', ')})`;
+  async deleteLegacyLoan(loanId: string): Promise<void> {
+    await this.store.deleteLegacyLoan(loanId);
   }
 }

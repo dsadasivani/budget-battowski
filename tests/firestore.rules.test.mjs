@@ -653,3 +653,115 @@ test('the complete QA seed fixture satisfies hardened ownership rules', async ()
     }
   }
 });
+
+test('loan V2 account events and reconciliations require a same-owner parent account', async () => {
+  const ownerDb = authenticatedDatabase(ownerEmail);
+  const memberDb = authenticatedDatabase(memberEmail);
+  const otherDb = authenticatedDatabase(otherEmail);
+  const contract = {
+    disbursedAmount: 2500000,
+    disbursementDate: '2024-01-05',
+    firstEmiDate: '2024-02-05',
+    initialEmi: 42152,
+    initialAnnualRate: 10.75,
+    interestType: 'floating',
+    interestCalculationMethod: 'daily-reducing',
+    dayCountConvention: 'actual-365',
+    compoundingFrequency: 'monthly',
+    postPrepaymentStrategy: 'keep-emi-reduce-tenure',
+    roundingPolicy: {
+      monetaryScale: 2,
+      interestRounding: 'half-up',
+      installmentRounding: 'half-up',
+      finalInstallmentAdjustment: true,
+    },
+  };
+  await assertSucceeds(
+    setDoc(workspaceRecord(ownerDb, 'loanAccounts', 'loan-v2'), {
+      schemaVersion: 2,
+      lender: 'Axis Bank',
+      loanType: 'Personal loan',
+      contract,
+      notes: '',
+      ownerUid,
+      memberEmail: ownerEmail,
+    }),
+  );
+  await assertSucceeds(
+    updateDoc(workspaceRecord(ownerDb, 'loanAccounts', 'loan-v2'), {
+      contract: {
+        ...contract,
+        firstPeriodInterestAmount: 13125,
+        dayCountConvention: '30-360',
+        roundingPolicy: {
+          monetaryScale: 0,
+          interestRounding: 'half-up',
+          installmentRounding: 'half-up',
+          finalInstallmentAdjustment: true,
+        },
+      },
+    }),
+  );
+  const eventRecord = {
+    loanId: 'loan-v2',
+    type: 'part-prepayment',
+    effectiveDate: '2026-09-11',
+    amount: 240000,
+    source: 'manual',
+    createdDate: '2026-08-17T00:00:00.000Z',
+    ownerUid,
+    memberEmail: ownerEmail,
+  };
+  await assertSucceeds(
+    setDoc(workspaceRecord(memberDb, 'loanEvents', 'event-valid'), eventRecord),
+  );
+  await assertFails(
+    setDoc(workspaceRecord(memberDb, 'loanEvents', 'event-wrong-owner'), {
+      ...eventRecord,
+      ownerUid: memberUid,
+      memberEmail,
+    }),
+  );
+  await assertFails(
+    setDoc(workspaceRecord(otherDb, 'loanEvents', 'event-outsider'), eventRecord),
+  );
+  await assertSucceeds(
+    setDoc(workspaceRecord(memberDb, 'loanReconciliations', 'reconciliation-valid'), {
+      loanId: 'loan-v2',
+      asOfDate: '2026-07-31',
+      lenderReportedOutstanding: 1822753,
+      calculatedOutstanding: 1822754,
+      difference: 1,
+      tolerance: 1,
+      sourceKind: 'manual',
+      status: 'matched',
+      createdDate: '2026-08-17T00:00:00.000Z',
+      ownerUid,
+      memberEmail: ownerEmail,
+    }),
+  );
+  await assertSucceeds(
+    setDoc(workspaceRecord(memberDb, 'expenses', 'loan-v2-future-expense'), {
+      name: 'Axis Bank - Personal loan',
+      categoryId: 'category-loan-emi',
+      amount: 42152,
+      month: '2026-09',
+      date: '2026-09-05',
+      type: 'recurring',
+      note: 'Generated from loan schedule',
+      sourceLoanId: 'loan-v2',
+      ownerUid,
+      memberEmail: ownerEmail,
+    }),
+  );
+
+  // A workspace editor can execute the confirmed cascade without taking ownership.
+  await assertSucceeds(
+    deleteDoc(workspaceRecord(memberDb, 'expenses', 'loan-v2-future-expense')),
+  );
+  await assertSucceeds(
+    deleteDoc(workspaceRecord(memberDb, 'loanReconciliations', 'reconciliation-valid')),
+  );
+  await assertSucceeds(deleteDoc(workspaceRecord(memberDb, 'loanEvents', 'event-valid')));
+  await assertSucceeds(deleteDoc(workspaceRecord(memberDb, 'loanAccounts', 'loan-v2')));
+});

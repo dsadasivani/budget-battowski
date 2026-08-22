@@ -6,6 +6,12 @@ import type {
   InvestmentEntry,
   Loan,
 } from '../budget.models';
+import type {
+  LoanAccount,
+  LoanDocumentMetadata,
+  LoanEvent,
+  LoanReconciliation,
+} from '../domain/loans/loan.models';
 
 function currentMonth(): string {
   const date = new Date();
@@ -20,4 +26,8 @@ export class FinanceStore {
   readonly expenses = signal<ExpenseEntry[]>([]);
   readonly investments = signal<InvestmentEntry[]>([]);
   readonly loans = signal<Loan[]>([]);
+  readonly loanAccounts = signal<LoanAccount[]>([]);
+  readonly loanEvents = signal<LoanEvent[]>([]);
+  readonly loanReconciliations = signal<LoanReconciliation[]>([]);
+  readonly loanDocuments = signal<LoanDocumentMetadata[]>([]);
 }

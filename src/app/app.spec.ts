@@ -2109,6 +2109,320 @@ describe('App', () => {
     expect(app.categoryName(loanExpense?.categoryId ?? '')).toBe('Loan EMI');
   });
 
+  it('should generate Loan V2 expenses from the engine schedule without snapshot fields', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
+      buildDefaultMonthEntries: (month: string) => Array<{
+        amount: number;
+        date?: string;
+        sourceLoanId?: string;
+      }>;
+      loanAccounts: { set: (records: unknown[]) => void };
+      loanEvents: { set: (records: unknown[]) => void };
+      selectedMonth: { set: (month: string) => void };
+    };
+    app.selectedMonth.set('2026-06');
+    app.loanAccounts.set([
+      {
+        id: 'loan-v2-home',
+        schemaVersion: 2,
+        lender: 'Bank',
+        loanType: 'Home loan',
+        contract: {
+          disbursedAmount: 100000,
+          disbursementDate: '2026-01-01',
+          firstEmiDate: '2026-02-28',
+          initialEmi: 8792,
+          initialAnnualRate: 10,
+          interestType: 'fixed',
+          interestCalculationMethod: 'monthly-reducing',
+          dayCountConvention: 'actual-365',
+          compoundingFrequency: 'monthly',
+          postPrepaymentStrategy: 'keep-emi-reduce-tenure',
+          roundingPolicy: {
+            monetaryScale: 2,
+            interestRounding: 'half-up',
+            installmentRounding: 'half-up',
+            finalInstallmentAdjustment: true,
+          },
+        },
+        notes: '',
+      },
+    ]);
+    app.loanEvents.set([]);
+
+    const expense = app
+      .buildDefaultMonthEntries('2026-06')
+      .find((entry) => entry.sourceLoanId === 'loan-v2-home');
+
+    expect(expense).toMatchObject({ amount: 8792, date: '2026-06-28' });
+  });
+
+  it('should backfill paid EMI events and expenses when adding an existing loan', async () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
+      firebase: { mode: string };
+      saveLoanAccount: (
+        account: unknown,
+        openingAnchor: undefined,
+        assumeHistoricalEmisPaid: boolean,
+      ) => Promise<boolean>;
+      loanCalculation: (
+        loanId: string,
+        asOfDate: string,
+      ) => { position: { outstandingPrincipal: number }; schedule: Array<{ status: string }> };
+      loanEvents: () => Array<{ loanId: string; type: string; effectiveDate: string }>;
+      expenses: () => Array<{ sourceLoanId?: string; date?: string; amount: number }>;
+    };
+    app.firebase.mode = 'demo';
+
+    await expect(
+      app.saveLoanAccount(
+        {
+          id: 'loan-existing-history',
+          schemaVersion: 2,
+          lender: 'Bank',
+          loanType: 'Personal loan',
+          contract: {
+            disbursedAmount: 100000,
+            disbursementDate: '2020-01-01',
+            firstEmiDate: '2020-02-01',
+            originalTenureMonths: 3,
+            initialEmi: 34000,
+            initialAnnualRate: 10,
+            interestType: 'fixed',
+            interestCalculationMethod: 'monthly-reducing',
+            dayCountConvention: 'actual-365',
+            compoundingFrequency: 'monthly',
+            postPrepaymentStrategy: 'keep-emi-reduce-tenure',
+            roundingPolicy: {
+              monetaryScale: 2,
+              interestRounding: 'half-up',
+              installmentRounding: 'half-up',
+              finalInstallmentAdjustment: true,
+            },
+          },
+          notes: '',
+        },
+        undefined,
+        true,
+      ),
+    ).resolves.toBe(true);
+
+    const events = app.loanEvents().filter((event) => event.loanId === 'loan-existing-history');
+    const expenses = app
+      .expenses()
+      .filter((expense) => expense.sourceLoanId === 'loan-existing-history');
+    const calculation = app.loanCalculation('loan-existing-history', '2020-04-01');
+
+    expect(events.map((event) => [event.type, event.effectiveDate])).toEqual([
+      ['emi-payment', '2020-02-01'],
+      ['emi-payment', '2020-03-01'],
+      ['emi-payment', '2020-04-01'],
+    ]);
+    expect(expenses.map((expense) => expense.date)).toEqual([
+      '2020-02-01',
+      '2020-03-01',
+      '2020-04-01',
+    ]);
+    expect(expenses.at(-1)?.amount).toBeLessThan(34000);
+    expect(calculation.position.outstandingPrincipal).toBe(0);
+    expect(calculation.schedule.every((row) => row.status === 'paid')).toBe(true);
+  });
+
+  it('should archive and permanently delete Loan V2 dependencies while retaining historical expenses', async () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
+      archiveLoanAccount: (loanId: string) => Promise<boolean>;
+      permanentlyDeleteLoanAccount: (loanId: string) => Promise<boolean>;
+      openWorkspaceConfirm: () => Promise<boolean>;
+      firebase: { mode: string };
+      expenses: { set: (records: unknown[]) => void; (): Array<{ id: string }> };
+      loanAccounts: {
+        set: (records: unknown[]) => void;
+        (): Array<{ id: string; archivedDate?: string }>;
+      };
+      loanDocuments: { set: (records: unknown[]) => void; (): unknown[] };
+      loanEvents: { set: (records: unknown[]) => void; (): unknown[] };
+      loanReconciliations: { set: (records: unknown[]) => void; (): unknown[] };
+    };
+    app.openWorkspaceConfirm = vi.fn(async () => true);
+    app.firebase.mode = 'demo';
+    app.loanAccounts.set([
+      {
+        id: 'loan-delete',
+        schemaVersion: 2,
+        lender: 'Bank',
+        loanType: 'Personal loan',
+        contract: {
+          disbursedAmount: 100000,
+          disbursementDate: '2020-01-01',
+          firstEmiDate: '2020-02-01',
+          initialEmi: 8792,
+          initialAnnualRate: 10,
+          interestType: 'fixed',
+          interestCalculationMethod: 'monthly-reducing',
+          dayCountConvention: 'actual-365',
+          compoundingFrequency: 'monthly',
+          postPrepaymentStrategy: 'keep-emi-reduce-tenure',
+          roundingPolicy: {
+            monetaryScale: 2,
+            interestRounding: 'half-up',
+            installmentRounding: 'half-up',
+            finalInstallmentAdjustment: true,
+          },
+        },
+        notes: '',
+      },
+    ]);
+    app.loanEvents.set([
+      {
+        id: 'event-delete',
+        loanId: 'loan-delete',
+        type: 'emi-payment',
+        effectiveDate: '2020-02-01',
+        amount: 8792,
+        source: 'manual',
+        createdDate: '2020-02-01T00:00:00.000Z',
+      },
+    ]);
+    app.loanReconciliations.set([{ id: 'reconciliation-delete', loanId: 'loan-delete' }]);
+    app.loanDocuments.set([{ id: 'document-delete', loanId: 'loan-delete' }]);
+    app.expenses.set([
+      {
+        id: 'expense-historical',
+        sourceLoanId: 'loan-delete',
+        month: '2020-02',
+        date: '2020-02-01',
+      },
+      {
+        id: 'expense-future',
+        sourceLoanId: 'loan-delete',
+        month: '2099-02',
+        date: '2099-02-01',
+      },
+    ]);
+
+    await expect(app.archiveLoanAccount('loan-delete')).resolves.toBe(true);
+    expect(app.loanAccounts()[0].archivedDate).toBeTruthy();
+    expect(app.expenses().map((expense) => expense.id)).toEqual(['expense-historical']);
+
+    await expect(app.permanentlyDeleteLoanAccount('loan-delete')).resolves.toBe(true);
+    expect(app.loanAccounts()).toEqual([]);
+    expect(app.loanEvents()).toEqual([]);
+    expect(app.loanReconciliations()).toEqual([]);
+    expect(app.loanDocuments()).toEqual([]);
+    expect(app.expenses().map((expense) => expense.id)).toEqual(['expense-historical']);
+  });
+
+  it('should omit archived and deleted loan expenses from the dashboard', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
+      activeExpenseEntries: () => Array<{ id: string }>;
+      activeOutflowTotal: () => number;
+      activeRecurringEntries: () => Array<{ id: string }>;
+      expenses: { set: (records: unknown[]) => void };
+      firebase: { mode: string };
+      loanAccounts: { set: (records: unknown[]) => void };
+      loans: { set: (records: unknown[]) => void };
+      selectedMonth: { set: (month: string) => void };
+    };
+
+    app.firebase.mode = 'local';
+    app.selectedMonth.set('2026-08');
+    app.loans.set([
+      {
+        id: 'loan-legacy-closed',
+        lender: 'Closed Bank',
+        loanType: 'Home loan',
+        principal: 500000,
+        outstanding: 0,
+        annualRate: 8,
+        emi: 12000,
+        startDate: '2020-01-01',
+        endDate: '2026-07-31',
+        notes: '',
+      },
+    ]);
+    app.loanAccounts.set([
+      {
+        id: 'loan-archived',
+        schemaVersion: 2,
+        lender: 'Archived Bank',
+        loanType: 'Personal loan',
+        archivedDate: '2026-08-10T00:00:00.000Z',
+        contract: {
+          disbursedAmount: 100000,
+          disbursementDate: '2026-01-01',
+          firstEmiDate: '2026-02-01',
+          initialEmi: 8792,
+          initialAnnualRate: 10,
+          interestType: 'fixed',
+          interestCalculationMethod: 'monthly-reducing',
+          dayCountConvention: 'actual-365',
+          compoundingFrequency: 'monthly',
+          postPrepaymentStrategy: 'keep-emi-reduce-tenure',
+          roundingPolicy: {
+            monetaryScale: 2,
+            interestRounding: 'half-up',
+            installmentRounding: 'half-up',
+            finalInstallmentAdjustment: true,
+          },
+        },
+        notes: '',
+      },
+    ]);
+    app.expenses.set([
+      {
+        id: 'expense-rent',
+        month: '2026-08',
+        date: '2026-08-01',
+        name: 'Rent',
+        categoryId: 'category-home',
+        amount: 25000,
+        type: 'recurring',
+        note: '',
+      },
+      {
+        id: 'expense-archived-loan',
+        month: '2026-08',
+        date: '2026-08-04',
+        name: 'Archived Bank - Personal loan',
+        categoryId: 'category-loan-emi',
+        amount: 8792,
+        type: 'recurring',
+        note: '',
+        sourceLoanId: 'loan-archived',
+      },
+      {
+        id: 'expense-closed-legacy-loan',
+        month: '2026-08',
+        date: '2026-08-01',
+        name: 'Closed Bank - Home loan',
+        categoryId: 'category-loan-emi',
+        amount: 12000,
+        type: 'recurring',
+        note: '',
+        templateId: 'loan:loan-legacy-closed',
+      },
+      {
+        id: 'expense-deleted-loan',
+        month: '2026-08',
+        date: '2026-08-01',
+        name: 'Deleted Bank - Personal loan',
+        categoryId: 'category-loan-emi',
+        amount: 10000,
+        type: 'recurring',
+        note: '',
+        sourceLoanId: 'loan-permanently-deleted',
+      },
+    ]);
+
+    expect(app.activeExpenseEntries().map((expense) => expense.id)).toEqual(['expense-rent']);
+    expect(app.activeRecurringEntries().map((expense) => expense.id)).toEqual(['expense-rent']);
+    expect(app.activeOutflowTotal()).toBe(25000);
+  });
+
   it('should provide editable zero-budget defaults without recreating archived categories', () => {
     const fixture = TestBed.createComponent(App);
     const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
@@ -4749,6 +5063,58 @@ describe('App accessibility', () => {
     },
     12000,
   );
+
+  it('should pass axe checks on a loan detail screen', async () => {
+    const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
+      firebase: { mode: string };
+      isSessionChecking: { set: (checking: boolean) => void };
+      loanAccounts: { set: (records: unknown[]) => void };
+      loanEvents: { set: (records: unknown[]) => void };
+    };
+
+    app.firebase.mode = 'local';
+    app.isSessionChecking.set(false);
+    app.loanAccounts.set([
+      {
+        id: 'loan-a11y',
+        schemaVersion: 2,
+        lender: 'Example Bank',
+        loanType: 'Personal loan',
+        accountReferenceLastFour: '1234',
+        contract: {
+          disbursedAmount: 100000,
+          disbursementDate: '2026-08-01',
+          firstEmiDate: '2026-09-01',
+          originalTenureMonths: 12,
+          initialEmi: 8792,
+          initialAnnualRate: 10,
+          interestType: 'fixed',
+          interestCalculationMethod: 'monthly-reducing',
+          dayCountConvention: 'actual-365',
+          compoundingFrequency: 'monthly',
+          postPrepaymentStrategy: 'keep-emi-reduce-tenure',
+          roundingPolicy: {
+            monetaryScale: 2,
+            interestRounding: 'half-up',
+            installmentRounding: 'half-up',
+            finalInstallmentAdjustment: true,
+          },
+        },
+        notes: '',
+      },
+    ]);
+    app.loanEvents.set([]);
+
+    await router.navigateByUrl('/loans/loan-a11y');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const results = await runAxe(fixture.nativeElement);
+
+    expect(results.violations).toEqual([]);
+  }, 12000);
 });
 
 describe('budget import helpers', () => {

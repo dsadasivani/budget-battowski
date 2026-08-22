@@ -39,6 +39,7 @@
     "@angular/material": "^22.0.0",
     "@angular/platform-browser": "^22.0.0",
     "@angular/router": "^22.0.0",
+    "decimal.js": "^10.6.0",
     "firebase": "^12.14.0",
     "read-excel-file": "^9.2.0",
     "rxjs": "~7.8.0",

@@ -18,6 +18,9 @@ import { effectiveValueForOccurrence } from './domain/effective-dating/effective
 import { MonthlyReviewSourceConflictError } from './domain/errors';
 import { haveSameOwner, isWorkspaceOwner, normalizeEmail } from './domain/identity/identity';
 import { isLoanOccurrenceInRange, loanOccurrenceDate } from './domain/loans/loan-schedule-engine';
+import { calculateLoan } from './domain/loans/loan-engine';
+import { migrateLegacyLoan } from './domain/loans/loan-migration';
+import { loanAccuracyStatus, reconcileLoanBalance } from './domain/loans/loan-reconciliation';
 import { scheduleForMonth } from './domain/recurrence/recurrence-engine';
 import { applyEntityMutations, planEntityMutations } from './domain/mutations/mutation-planner';
 import type { BudgetMutationSet } from './domain/mutations/budget-mutations';
@@ -60,7 +63,11 @@ import {
   type BudgetImportRow,
   type BudgetImportSummary,
 } from './budget-import.service';
-import { buildWorkspaceExport, workspaceExportFilename } from './budget-export.service';
+import {
+  buildWorkspaceExport,
+  parseWorkspaceExport,
+  workspaceExportFilename,
+} from './budget-export.service';
 import { DEFAULT_EXPENSE_CATEGORIES, PAYMENT_BANK_OPTIONS } from './budget.models';
 import type {
   BudgetCategory,
@@ -90,11 +97,23 @@ import type {
   Workspace,
   WorkspaceMember,
 } from './budget.models';
+import type {
+  LoanAccount,
+  LoanCalculationResult,
+  LoanEvent,
+  LoanReconciliation,
+} from './domain/loans/loan.models';
 
 registerLocaleData(localeEnIn);
 
 function id(prefix: string): string {
   return `${prefix}-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
+}
+
+function mergeById<T extends { id: string }>(current: readonly T[], incoming: readonly T[]): T[] {
+  const records = new Map(current.map((record) => [record.id, record]));
+  for (const record of incoming) records.set(record.id, record);
+  return [...records.values()];
 }
 
 function monthKey(date: Date): string {
@@ -158,6 +177,20 @@ function daysBetween(startDate: string, endDate: string): number {
 function currentMonth(): string {
   const now = new Date();
   return monthKey(now);
+}
+
+function monthEndDate(month: string): string {
+  const { year, monthIndex } = monthParts(month);
+  const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+  return `${month}-${String(lastDay).padStart(2, '0')}`;
+}
+
+function installmentsThroughEndDate(month: string, endDate?: string): number {
+  const endMonth = dateMonthKey(endDate);
+  if (!endMonth || endMonth < month) return 0;
+  const start = monthParts(month);
+  const end = monthParts(endMonth);
+  return (end.year - start.year) * 12 + end.monthIndex - start.monthIndex + 1;
 }
 
 function monthLabel(month: string): string {
@@ -400,6 +433,10 @@ const WORKSPACE_DATA_COLLECTIONS: BudgetCollectionName[] = [
   'expenses',
   'investments',
   'loans',
+  'loanAccounts',
+  'loanEvents',
+  'loanReconciliations',
+  'loanDocuments',
 ];
 
 @Injectable()
@@ -467,6 +504,10 @@ export class BudgetStore implements OnDestroy {
   readonly expenses = this.financeState.expenses;
   readonly investments = this.financeState.investments;
   readonly loans = this.financeState.loans;
+  readonly loanAccounts = this.financeState.loanAccounts;
+  readonly loanEvents = this.financeState.loanEvents;
+  readonly loanReconciliations = this.financeState.loanReconciliations;
+  readonly loanDocuments = this.financeState.loanDocuments;
   readonly importSummary = signal<BudgetImportSummary | null>(null);
   readonly processedImportFile = signal<{ blob: Blob; filename: string } | null>(null);
 
@@ -603,8 +644,89 @@ export class BudgetStore implements OnDestroy {
     this.investments().filter((record) => this.matchesSelectedMember(record)),
   );
   readonly filteredLoans = computed(() =>
-    this.loans().filter((record) => this.matchesSelectedMember(record)),
+    this.loans().filter(
+      (record) =>
+        !this.loanAccounts().some((account) => account.id === record.id) &&
+        this.matchesSelectedMember(record),
+    ),
   );
+  readonly filteredLoanAccounts = computed(() =>
+    this.loanAccounts().filter(
+      (record) => !record.archivedDate && this.matchesSelectedMember(record),
+    ),
+  );
+  readonly closedLoanAccounts = computed(() =>
+    this.loanAccounts().filter(
+      (record) => !!record.archivedDate && this.matchesSelectedMember(record),
+    ),
+  );
+  readonly loanCalculationRows = computed(() => {
+    const asOfDate = monthEndDate(this.selectedMonth());
+    return this.filteredLoanAccounts().map((account) => {
+      let calculation: LoanCalculationResult;
+      try {
+        calculation = calculateLoan({
+          account,
+          events: this.loanEvents().filter((event) => event.loanId === account.id),
+          asOfDate,
+        });
+      } catch (error) {
+        calculation = this.malformedLoanCalculation(account, asOfDate, error);
+      }
+      const reconciliations = this.loanReconciliations().filter(
+        (reconciliation) => reconciliation.loanId === account.id,
+      );
+      return {
+        account,
+        calculation,
+        accuracy: loanAccuracyStatus(reconciliations),
+      };
+    });
+  });
+  readonly loanAccountRows = computed(() => {
+    const v2Rows = this.loanCalculationRows().map(({ account, calculation, accuracy }) => ({
+      id: account.id,
+      schemaVersion: 2 as const,
+      lender: account.lender,
+      loanType: account.loanType,
+      principal: account.contract.disbursedAmount,
+      outstanding: calculation.position.outstandingPrincipal,
+      emi: calculation.position.currentEmi,
+      annualRate: calculation.position.currentAnnualRate,
+      monthsLeft: calculation.position.remainingInstallments,
+      payoffDate: calculation.position.projectedPayoffDate,
+      paidRatio: this.ratio(
+        account.contract.disbursedAmount - calculation.position.outstandingPrincipal,
+        account.contract.disbursedAmount,
+      ),
+      accuracy,
+      status: calculation.position.status,
+      paymentModeId: account.paymentModeId,
+      historyCoverage: calculation.position.historyCoverage,
+      color: this.loanColor(account.id),
+      paymentModeMeta: this.paymentModeMeta(account.paymentModeId),
+    }));
+    const legacyRows = this.filteredLoans().map((loan) => ({
+      id: loan.id,
+      schemaVersion: 1 as const,
+      lender: loan.lender,
+      loanType: loan.loanType,
+      principal: loan.principal,
+      outstanding: loan.outstanding,
+      emi: loan.emi,
+      annualRate: loan.annualRate,
+      monthsLeft: installmentsThroughEndDate(this.selectedMonth(), loan.endDate),
+      payoffDate: loan.endDate || undefined,
+      paidRatio: this.ratio(loan.principal - loan.outstanding, loan.principal),
+      accuracy: { label: 'Estimated' as const, throughDate: undefined },
+      status: 'needs-attention' as const,
+      paymentModeId: loan.paymentModeId,
+      historyCoverage: 'partial' as const,
+      color: this.loanColor(loan.id),
+      paymentModeMeta: this.paymentModeMeta(loan.paymentModeId),
+    }));
+    return [...v2Rows, ...legacyRows].sort((left, right) => right.outstanding - left.outstanding);
+  });
   readonly showPageSkeleton = computed(
     () =>
       this.firebase.mode === 'firebase' &&
@@ -714,6 +836,9 @@ export class BudgetStore implements OnDestroy {
         normalizedExpenseType(expense) !== 'investment',
     ),
   );
+  readonly activeExpenseEntries = computed(() =>
+    this.selectedEntries().filter((expense) => this.isActiveExpenseVisible(expense)),
+  );
   readonly selectedInvestments = computed(() =>
     this.confirmedInvestmentsForMonth(this.selectedMonth()),
   );
@@ -750,6 +875,16 @@ export class BudgetStore implements OnDestroy {
   );
   readonly recurringTotal = computed(() => this.totalByType('recurring'));
   readonly oneTimeTotal = computed(() => this.totalByType('one-time'));
+  readonly activeRecurringTotal = computed(() =>
+    this.activeExpenseEntries()
+      .filter((expense) => this.expenseTypeLabel(expense) === 'recurring')
+      .reduce((total, expense) => total + expense.amount, 0),
+  );
+  readonly activeOneTimeTotal = computed(() =>
+    this.activeExpenseEntries()
+      .filter((expense) => this.expenseTypeLabel(expense) === 'one-time')
+      .reduce((total, expense) => total + expense.amount, 0),
+  );
   readonly investmentTotal = computed(
     () =>
       this.selectedInvestments().reduce(
@@ -761,21 +896,43 @@ export class BudgetStore implements OnDestroy {
   readonly outflowTotal = computed(() =>
     this.selectedEntries().reduce((total, expense) => total + expense.amount, 0),
   );
+  readonly activeOutflowTotal = computed(() =>
+    this.activeExpenseEntries().reduce((total, expense) => total + expense.amount, 0),
+  );
   readonly remainingFunds = computed(
     () => this.monthlyIncome() - this.outflowTotal() - this.investmentTotal(),
+  );
+  readonly activeRemainingFunds = computed(
+    () => this.monthlyIncome() - this.activeOutflowTotal() - this.investmentTotal(),
   );
   readonly burnoutRatio = computed(() => this.ratio(this.outflowTotal(), this.monthlyIncome()));
   readonly savingsRatio = computed(() =>
     this.ratio(this.investmentTotal() + Math.max(0, this.remainingFunds()), this.monthlyIncome()),
   );
   readonly debtEmiTotal = computed(() =>
-    this.activeLoans().reduce((total, loan) => total + loan.emi, 0),
+    this.loanAccountRows().reduce((total, loan) => total + loan.emi, 0),
   );
   readonly debtRatio = computed(() => this.ratio(this.debtEmiTotal(), this.monthlyIncome()));
   readonly categoryStats = computed(() =>
     this.expenseCategories().map((category) => {
       const monthlyBudget = this.categoryBudgetForMonth(category, this.selectedMonth());
       const spent = this.selectedEntries()
+        .filter((expense) => expense.categoryId === category.id)
+        .reduce((total, expense) => total + expense.amount, 0);
+
+      return {
+        ...category,
+        monthlyBudget,
+        spent,
+        remaining: monthlyBudget - spent,
+        used: this.ratio(spent, monthlyBudget),
+      };
+    }),
+  );
+  readonly activeCategoryStats = computed(() =>
+    this.expenseCategories().map((category) => {
+      const monthlyBudget = this.categoryBudgetForMonth(category, this.selectedMonth());
+      const spent = this.activeExpenseEntries()
         .filter((expense) => expense.categoryId === category.id)
         .reduce((total, expense) => total + expense.amount, 0);
 
@@ -826,11 +983,8 @@ export class BudgetStore implements OnDestroy {
   });
   readonly loanPlans = computed(() =>
     this.activeLoans().map((loan) => {
-      const monthsLeft = Math.max(1, Math.ceil(loan.outstanding / loan.emi));
-      const payoff = loan.endDate ? new Date(loan.endDate) : new Date();
-      if (!loan.endDate) {
-        payoff.setMonth(payoff.getMonth() + monthsLeft);
-      }
+      const monthsLeft = installmentsThroughEndDate(this.selectedMonth(), loan.endDate);
+      const payoff = loan.endDate ? new Date(loan.endDate) : undefined;
 
       return {
         ...loan,
@@ -841,10 +995,26 @@ export class BudgetStore implements OnDestroy {
     }),
   );
   readonly totalDebt = computed(() =>
-    this.activeLoans().reduce((total, loan) => total + loan.outstanding, 0),
+    this.loanAccountRows().reduce((total, loan) => total + loan.outstanding, 0),
   );
   readonly donutStyle = computed(() => {
     const stats = this.categoryStats().filter((category) => category.spent > 0);
+    const total = stats.reduce((sum, category) => sum + category.spent, 0);
+    if (!total) {
+      return 'conic-gradient(#d7dee8 0 100%)';
+    }
+
+    let cursor = 0;
+    const stops = stats.map((category) => {
+      const start = cursor;
+      cursor += (category.spent / total) * 100;
+      return `${category.color} ${start}% ${cursor}%`;
+    });
+
+    return `conic-gradient(${stops.join(', ')})`;
+  });
+  readonly activeDonutStyle = computed(() => {
+    const stats = this.activeCategoryStats().filter((category) => category.spent > 0);
     const total = stats.reduce((sum, category) => sum + category.spent, 0);
     if (!total) {
       return 'conic-gradient(#d7dee8 0 100%)';
@@ -908,23 +1078,18 @@ export class BudgetStore implements OnDestroy {
     return category ?? null;
   });
   readonly runwayLabel = computed(() => {
-    if (this.monthlyIncome() <= 0) {
-      return 'Add income';
-    }
-
-    const ratio = this.remainingFunds() / this.monthlyIncome();
-    if (ratio < 0) {
-      return 'Over plan';
-    }
-
-    if (ratio < 0.12) {
-      return 'Tight runway';
-    }
-
-    return 'Healthy runway';
+    return this.runwayLabelFor(this.remainingFunds());
+  });
+  readonly activeRunwayLabel = computed(() => {
+    return this.runwayLabelFor(this.activeRemainingFunds());
   });
   readonly recurringEntries = computed(() =>
     this.selectedEntries()
+      .filter((expense) => this.expenseTypeLabel(expense) === 'recurring')
+      .sort((left, right) => this.recordDate(left).localeCompare(this.recordDate(right))),
+  );
+  readonly activeRecurringEntries = computed(() =>
+    this.activeExpenseEntries()
       .filter((expense) => this.expenseTypeLabel(expense) === 'recurring')
       .sort((left, right) => this.recordDate(left).localeCompare(this.recordDate(right))),
   );
@@ -933,8 +1098,29 @@ export class BudgetStore implements OnDestroy {
       .filter((expense) => this.expenseTypeLabel(expense) === 'one-time')
       .sort((left, right) => this.recordDate(left).localeCompare(this.recordDate(right))),
   );
+  readonly activeOneTimeEntries = computed(() =>
+    this.activeExpenseEntries()
+      .filter((expense) => this.expenseTypeLabel(expense) === 'one-time')
+      .sort((left, right) => this.recordDate(left).localeCompare(this.recordDate(right))),
+  );
   readonly expenseRows = computed(() =>
     this.selectedEntries()
+      .map((expense) => ({
+        ...expense,
+        categoryName: this.categoryName(expense.categoryId),
+        categoryColor: this.categoryColor(expense.categoryId),
+        dayLabel: this.shortDateLabel(this.recordDate(expense)),
+        memberInitial: this.memberInitial(expense.memberEmail),
+        memberName: this.memberName(expense.memberEmail),
+        paymentModeMeta: this.paymentModeMeta(expense.paymentModeId),
+        paymentModeLabel: this.paymentModeLabel(expense.paymentModeId),
+        paymentModeTone: this.paymentModeTone(expense.paymentModeId),
+        typeLabel: this.expenseTypeLabel(expense),
+      }))
+      .sort((left, right) => this.recordDate(left).localeCompare(this.recordDate(right))),
+  );
+  readonly activeExpenseRows = computed(() =>
+    this.activeExpenseEntries()
       .map((expense) => ({
         ...expense,
         categoryName: this.categoryName(expense.categoryId),
@@ -960,8 +1146,29 @@ export class BudgetStore implements OnDestroy {
       }))
       .sort((left, right) => right.spent - left.spent);
   });
+  readonly activeSpendingBreakdownRows = computed(() => {
+    const total = this.activeOutflowTotal();
+
+    return this.activeCategoryStats()
+      .filter((category) => category.spent > 0)
+      .map((category) => ({
+        ...category,
+        share: this.ratio(category.spent, total),
+      }))
+      .sort((left, right) => right.spent - left.spent);
+  });
   readonly categoryCards = computed(() =>
     this.categoryStats().map((category) => ({
+      ...category,
+      icon: this.categoryIcon(category.name),
+      percent: this.clampPercent(category.used),
+      statusLabel: this.categoryStatusLabel(category.used),
+      statusTone: this.categoryStatusTone(category.used),
+      tone: this.categoryTone(category.name),
+    })),
+  );
+  readonly activeCategoryCards = computed(() =>
+    this.activeCategoryStats().map((category) => ({
       ...category,
       icon: this.categoryIcon(category.name),
       percent: this.clampPercent(category.used),
@@ -990,6 +1197,23 @@ export class BudgetStore implements OnDestroy {
         name: memberEmail === 'UNASSIGNED' ? 'Unassigned' : this.memberName(memberEmail),
         initial: memberEmail === 'UNASSIGNED' ? 'U' : this.memberInitial(memberEmail),
         share: this.ratio(amount, this.outflowTotal()),
+      }))
+      .sort((left, right) => right.amount - left.amount);
+  });
+  readonly activeTopSpenders = computed(() => {
+    const totals = new Map<string, number>();
+    for (const expense of this.activeExpenseEntries()) {
+      const key = expense.memberEmail || 'UNASSIGNED';
+      totals.set(key, (totals.get(key) ?? 0) + expense.amount);
+    }
+
+    return [...totals.entries()]
+      .map(([memberEmail, amount]) => ({
+        amount,
+        memberEmail,
+        name: memberEmail === 'UNASSIGNED' ? 'Unassigned' : this.memberName(memberEmail),
+        initial: memberEmail === 'UNASSIGNED' ? 'U' : this.memberInitial(memberEmail),
+        share: this.ratio(amount, this.activeOutflowTotal()),
       }))
       .sort((left, right) => right.amount - left.amount);
   });
@@ -1096,6 +1320,18 @@ export class BudgetStore implements OnDestroy {
       });
     }
 
+    for (const { account, calculation } of this.loanCalculationRows()) {
+      const schedule = calculation.schedule.find((row) => row.dueDate.startsWith(`${month}-`));
+      if (!schedule) continue;
+      rows.push({
+        amount: schedule.scheduledPayment,
+        color: '#f97316',
+        date: schedule.dueDate,
+        label: `${account.loanType} due`,
+        tone: 'loan',
+      });
+    }
+
     return rows.sort((left, right) => left.date.localeCompare(right.date));
   });
   readonly portfolioRows = computed(() =>
@@ -1152,14 +1388,16 @@ export class BudgetStore implements OnDestroy {
       .sort((left, right) => right.amount - left.amount);
   });
   readonly projectedLoanClosure = computed(() => {
-    const payoff = this.loanPlans()
-      .map((loan) => loan.payoff)
+    const payoff = this.loanAccountRows()
+      .map((loan) => loan.payoffDate)
+      .filter((date): date is string => !!date)
+      .map((date) => dateFromIso(date))
       .sort((left, right) => right.getTime() - left.getTime())[0];
 
     return payoff ?? null;
   });
   readonly totalLoanPrincipal = computed(() =>
-    this.activeLoans().reduce((total, loan) => total + loan.principal, 0),
+    this.loanAccountRows().reduce((total, loan) => total + loan.principal, 0),
   );
   readonly loanRepaymentRows = computed(() =>
     this.loanPlans()
@@ -1180,7 +1418,7 @@ export class BudgetStore implements OnDestroy {
     return Array.from({ length: daysInMonth }, (_, dayIndex) => {
       const day = dayIndex + 1;
       const date = `${this.selectedMonth()}-${String(day).padStart(2, '0')}`;
-      const items = this.activeLoans()
+      const legacyItems = this.activeLoans()
         .filter(
           (loan) =>
             Number(loanOccurrenceDate(this.selectedMonth(), loan.startDate).slice(-2)) === day,
@@ -1191,11 +1429,21 @@ export class BudgetStore implements OnDestroy {
           label: this.loanExpenseName(loan),
           amount: loan.emi,
         }));
+      const v2Items = this.loanCalculationRows()
+        .filter(({ calculation }) => calculation.schedule.some((row) => row.dueDate === date))
+        .map(({ account, calculation }) => ({
+          id: account.id,
+          color: this.loanColor(account.id),
+          label: this.loanExpenseName({ lender: account.lender, loanType: account.loanType }),
+          amount:
+            calculation.schedule.find((row) => row.dueDate === date)?.scheduledPayment ??
+            calculation.position.currentEmi,
+        }));
 
       return {
         date,
         day,
-        items,
+        items: [...legacyItems, ...v2Items],
         muted: false,
       };
     });
@@ -1658,6 +1906,10 @@ export class BudgetStore implements OnDestroy {
         expenses: this.expenses(),
         investments: this.investments(),
         loans: this.loans(),
+        loanAccounts: this.loanAccounts(),
+        loanEvents: this.loanEvents(),
+        loanReconciliations: this.loanReconciliations(),
+        loanDocuments: this.loanDocuments(),
       },
       exportedAt,
     );
@@ -1668,6 +1920,53 @@ export class BudgetStore implements OnDestroy {
       workspaceExportFilename(workspace, exportedAt),
     );
     this.syncStatus.set('Workspace export downloaded');
+  }
+
+  async importWorkspaceSnapshot(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    this.isSyncing.set(true);
+    this.syncError.set(null);
+    try {
+      const snapshot = parseWorkspaceExport(JSON.parse(await file.text()) as unknown);
+      const collections = snapshot.collections;
+      const repository = this.repository();
+      if (repository) {
+        await repository.upsertMany('paymentAccounts', collections.paymentAccounts);
+        await repository.upsertMany('paymentModes', collections.paymentModes);
+        await repository.upsertMany('categories', collections.categories);
+        await repository.upsertMany('incomes', collections.incomes);
+        await repository.upsertMany('templates', collections.templates);
+        await repository.upsertMany('expenses', collections.expenses);
+        await repository.upsertMany('investments', collections.investments);
+        await repository.upsertMany('loans', collections.loans);
+        await repository.upsertMany('loanAccounts', collections.loanAccounts);
+        await repository.upsertMany('loanEvents', collections.loanEvents);
+        await repository.upsertMany('loanReconciliations', collections.loanReconciliations);
+        await repository.upsertMany('loanDocuments', collections.loanDocuments);
+      }
+      this.paymentAccounts.set(mergeById(this.paymentAccounts(), collections.paymentAccounts));
+      this.paymentModes.set(mergeById(this.paymentModes(), collections.paymentModes));
+      this.categories.set(mergeById(this.categories(), collections.categories));
+      this.incomes.set(mergeById(this.incomes(), collections.incomes));
+      this.templates.set(mergeById(this.templates(), collections.templates));
+      this.expenses.set(mergeById(this.expenses(), collections.expenses));
+      this.investments.set(mergeById(this.investments(), collections.investments));
+      this.loans.set(mergeById(this.loans(), collections.loans));
+      this.loanAccounts.set(mergeById(this.loanAccounts(), collections.loanAccounts));
+      this.loanEvents.set(mergeById(this.loanEvents(), collections.loanEvents));
+      this.loanReconciliations.set(
+        mergeById(this.loanReconciliations(), collections.loanReconciliations),
+      );
+      this.loanDocuments.set(mergeById(this.loanDocuments(), collections.loanDocuments));
+      this.syncStatus.set(`Workspace snapshot imported (schema ${snapshot.schemaVersion})`);
+    } catch (error) {
+      this.handleSyncError(error, 'Unable to import workspace snapshot.');
+    } finally {
+      this.isSyncing.set(false);
+    }
   }
 
   downloadProcessedImport(): void {
@@ -1796,6 +2095,354 @@ export class BudgetStore implements OnDestroy {
         void this.applyBulkChanges(result, data);
       }
     });
+  }
+
+  loanAccount(accountId: string): LoanAccount | undefined {
+    return this.loanAccounts().find((account) => account.id === accountId);
+  }
+
+  loanCalculation(
+    accountId: string,
+    asOfDate = monthEndDate(this.selectedMonth()),
+  ): LoanCalculationResult | undefined {
+    const account = this.loanAccount(accountId);
+    if (!account) {
+      return undefined;
+    }
+    try {
+      return calculateLoan({
+        account,
+        events: this.loanEvents().filter((event) => event.loanId === accountId),
+        asOfDate,
+      });
+    } catch (error) {
+      return this.malformedLoanCalculation(account, asOfDate, error);
+    }
+  }
+
+  async saveLoanAccount(
+    account: LoanAccount,
+    openingAnchor?: LoanEvent,
+    assumeHistoricalEmisPaid = false,
+  ): Promise<boolean> {
+    const now = new Date().toISOString();
+    const isNewAccount = !account.id || !this.loanAccount(account.id);
+    const memberEmail = account.memberEmail ?? this.actingMemberEmail();
+    const normalized: LoanAccount = {
+      ...account,
+      id: account.id || id('loan'),
+      schemaVersion: 2,
+      lender: account.lender.trim(),
+      loanType: account.loanType.trim(),
+      notes: account.notes.trim(),
+      memberEmail,
+      ownerUid: this.resolveMemberUid(account.ownerUid, memberEmail),
+      createdDate: account.createdDate || now,
+      updatedDate: now,
+    };
+    const anchor = openingAnchor
+      ? {
+          ...openingAnchor,
+          loanId: normalized.id,
+          memberEmail,
+          ownerUid: normalized.ownerUid,
+          createdDate: openingAnchor.createdDate || now,
+        }
+      : undefined;
+    const historicalRecords =
+      isNewAccount && assumeHistoricalEmisPaid
+        ? this.historicalLoanSetupRecords(normalized, todayDate(), now)
+        : { events: [], expenses: [] };
+    const events = anchor ? [...historicalRecords.events, anchor] : historicalRecords.events;
+    const saved = await this.runFirebaseWrite(
+      async () => {
+        await this.repository()?.upsert('loanAccounts', normalized);
+        if (events.length) {
+          await this.repository()?.upsertMany('loanEvents', events);
+        }
+        if (historicalRecords.expenses.length) {
+          await this.repository()?.upsertMany('expenses', historicalRecords.expenses);
+        }
+      },
+      () => {
+        this.loanAccounts.update((accounts) => [
+          ...accounts.filter((item) => item.id !== normalized.id),
+          normalized,
+        ]);
+        if (events.length) {
+          this.loanEvents.update((items) => mergeById(items, events));
+        }
+        if (historicalRecords.expenses.length) {
+          this.expenses.update((items) => mergeById(items, historicalRecords.expenses));
+        }
+      },
+    );
+    if (saved) {
+      this.syncStatus.set(
+        historicalRecords.events.length
+          ? `Loan account saved; ${historicalRecords.events.length} historical EMIs added to Expenses`
+          : 'Loan account saved',
+      );
+    }
+    return saved;
+  }
+
+  private historicalLoanSetupRecords(
+    account: LoanAccount,
+    throughDate: string,
+    createdDate: string,
+  ): { events: LoanEvent[]; expenses: ExpenseEntry[] } {
+    if (account.contract.firstEmiDate > throughDate) {
+      return { events: [], expenses: [] };
+    }
+
+    const projected = calculateLoan({
+      account,
+      events: [],
+      asOfDate: previousDate(account.contract.firstEmiDate),
+    });
+    const rows = projected.schedule.filter((row) => row.dueDate <= throughDate);
+    const events: LoanEvent[] = rows.map((row) => ({
+      id: `loan-history:${account.id}:${row.dueDate}`,
+      loanId: account.id,
+      type: 'emi-payment',
+      effectiveDate: row.dueDate,
+      amount: row.scheduledPayment,
+      source: 'system',
+      notes: 'Assumed paid during existing-loan setup',
+      memberEmail: account.memberEmail,
+      ownerUid: account.ownerUid,
+      createdDate,
+    }));
+    const expenses: ExpenseEntry[] = rows.map((row) => ({
+      id: `review:loan:${account.id}:${row.dueDate.slice(0, 7)}`,
+      month: row.dueDate.slice(0, 7),
+      date: row.dueDate,
+      name: this.loanExpenseName(account),
+      categoryId: this.loanEmiCategoryId(),
+      amount: row.scheduledPayment,
+      type: 'recurring',
+      note: 'Assumed paid from the existing-loan schedule',
+      templateId: this.loanTemplateId(account.id),
+      sourceLoanId: account.id,
+      paymentModeId: account.paymentModeId,
+      memberEmail: account.memberEmail,
+      ownerUid: account.ownerUid,
+      createdDate,
+    }));
+
+    return { events, expenses };
+  }
+
+  async upgradeLegacyLoan(loanId: string, balanceAsOfDate: string): Promise<boolean> {
+    const legacy = this.loans().find((loan) => loan.id === loanId);
+    if (!legacy) {
+      return false;
+    }
+    const migration = migrateLegacyLoan(legacy, balanceAsOfDate);
+    const saved = await this.saveLoanAccount(migration.account, migration.anchor);
+    if (saved) {
+      this.syncStatus.set(migration.assumption);
+    }
+    return saved;
+  }
+
+  async recordLoanEvent(event: LoanEvent): Promise<boolean> {
+    const account = this.loanAccount(event.loanId);
+    if (!account) {
+      this.syncStatus.set('Select a valid loan account before recording an event');
+      return false;
+    }
+    const normalized: LoanEvent = {
+      ...event,
+      id: event.id || id('loan-event'),
+      ownerUid: account.ownerUid,
+      memberEmail: account.memberEmail,
+      createdDate: event.createdDate || new Date().toISOString(),
+    };
+    const saved = await this.runFirebaseWrite(
+      async () => this.repository()?.upsert('loanEvents', normalized),
+      () =>
+        this.loanEvents.update((events) => [
+          ...events.filter((item) => item.id !== normalized.id),
+          normalized,
+        ]),
+    );
+    if (saved) {
+      this.syncStatus.set('Loan event recorded; projections recalculated');
+    }
+    return saved;
+  }
+
+  async reconcileLoan(input: {
+    loanId: string;
+    asOfDate: string;
+    lenderReportedOutstanding: number;
+    tolerance?: number;
+    sourceKind: LoanReconciliation['sourceKind'];
+    sourceDocumentId?: string;
+    notes?: string;
+  }): Promise<LoanReconciliation | undefined> {
+    const account = this.loanAccount(input.loanId);
+    const calculation = this.loanCalculation(input.loanId, input.asOfDate);
+    if (!account || !calculation) {
+      return undefined;
+    }
+    const existing = this.loanReconciliations().find(
+      (item) =>
+        item.loanId === input.loanId &&
+        item.asOfDate === input.asOfDate &&
+        item.lenderReportedOutstanding === input.lenderReportedOutstanding &&
+        item.sourceKind === input.sourceKind,
+    );
+    const reconciliation = reconcileLoanBalance({
+      id: existing?.id ?? id('loan-reconciliation'),
+      ...input,
+      calculatedOutstanding: calculation.position.outstandingPrincipal,
+      ownerUid: account.ownerUid,
+      memberEmail: account.memberEmail,
+      createdDate: existing?.createdDate ?? new Date().toISOString(),
+    });
+    const saved = await this.runFirebaseWrite(
+      async () => this.repository()?.upsert('loanReconciliations', reconciliation),
+      () =>
+        this.loanReconciliations.update((items) => [
+          ...items.filter((item) => item.id !== reconciliation.id),
+          reconciliation,
+        ]),
+    );
+    if (saved) {
+      this.syncStatus.set(
+        reconciliation.status === 'matched'
+          ? 'Loan balance reconciled'
+          : 'Reconciliation saved with a balance mismatch',
+      );
+      return reconciliation;
+    }
+    return undefined;
+  }
+
+  async archiveLoanAccount(accountId: string): Promise<boolean> {
+    const account = this.loanAccount(accountId);
+    if (!account || account.archivedDate) {
+      return false;
+    }
+    const confirmed = await this.openWorkspaceConfirm({
+      title: 'Archive Loan Account',
+      message: `Archive ${account.lender} · ${account.loanType}? Its history will remain available, and generated EMI expenses from today onward will be removed.`,
+      confirmLabel: 'Archive loan',
+      icon: 'archive',
+    });
+    if (!confirmed) {
+      return false;
+    }
+    const cutoffDate = todayDate();
+    const archivedAccount: LoanAccount = {
+      ...account,
+      archivedDate: new Date().toISOString(),
+      updatedDate: new Date().toISOString(),
+    };
+    const futureExpenseIds = this.futureLoanExpenseIds(accountId, cutoffDate);
+    const saved = await this.runFirebaseWrite(
+      async () => {
+        await this.repository()?.upsert('loanAccounts', archivedAccount);
+        await this.repository()?.deleteFutureLoanExpenses(accountId, cutoffDate);
+      },
+      () => {
+        this.loanAccounts.update((accounts) =>
+          accounts.map((item) => (item.id === accountId ? archivedAccount : item)),
+        );
+        this.expenses.update((expenses) =>
+          expenses.filter((expense) => !futureExpenseIds.has(expense.id)),
+        );
+      },
+    );
+    if (saved) {
+      this.syncStatus.set('Loan archived; future generated EMI expenses removed');
+    }
+    return saved;
+  }
+
+  async restoreLoanAccount(accountId: string): Promise<boolean> {
+    const account = this.loanAccount(accountId);
+    if (!account?.archivedDate) {
+      return false;
+    }
+    const restored = await this.saveLoanAccount({ ...account, archivedDate: undefined });
+    if (restored) {
+      this.syncStatus.set('Loan account restored');
+      await this.ensureMonthDefaults();
+    }
+    return restored;
+  }
+
+  async permanentlyDeleteLoanAccount(accountId: string): Promise<boolean> {
+    const account = this.loanAccount(accountId);
+    if (!account?.archivedDate) {
+      this.syncStatus.set('Archive the loan before permanently deleting it');
+      return false;
+    }
+    const confirmed = await this.openWorkspaceConfirm({
+      title: 'Permanently Delete Loan',
+      message: `Permanently delete ${account.lender} · ${account.loanType}? The account, event ledger, reconciliations, document metadata, and future generated EMI expenses will be removed. Historical expenses already recorded will remain. This cannot be undone.`,
+      confirmLabel: 'Delete permanently',
+      icon: 'delete_forever',
+    });
+    if (!confirmed) {
+      return false;
+    }
+    const cutoffDate = todayDate();
+    const futureExpenseIds = this.futureLoanExpenseIds(accountId, cutoffDate);
+    const deleted = await this.runFirebaseWrite(
+      async () => {
+        await this.repository()?.deleteLoanAccountCascade(accountId, cutoffDate);
+      },
+      () => {
+        this.loanAccounts.update((items) => items.filter((item) => item.id !== accountId));
+        this.loans.update((items) => items.filter((item) => item.id !== accountId));
+        this.loanEvents.update((items) => items.filter((item) => item.loanId !== accountId));
+        this.loanReconciliations.update((items) =>
+          items.filter((item) => item.loanId !== accountId),
+        );
+        this.loanDocuments.update((items) => items.filter((item) => item.loanId !== accountId));
+        this.expenses.update((items) => items.filter((item) => !futureExpenseIds.has(item.id)));
+      },
+    );
+    if (deleted) {
+      this.syncStatus.set('Loan account permanently deleted; historical expenses retained');
+    }
+    return deleted;
+  }
+
+  async deleteLegacyLoan(loanId: string): Promise<boolean> {
+    const loan = this.loans().find((item) => item.id === loanId);
+    if (!loan || this.loanAccount(loanId)) {
+      return false;
+    }
+    const confirmed = await this.openWorkspaceConfirm({
+      title: 'Delete Legacy Loan',
+      message: `Delete ${loan.lender} · ${loan.loanType}? Future generated EMI expenses will be removed, while historical expenses remain. This cannot be undone.`,
+      confirmLabel: 'Delete loan',
+      icon: 'delete_forever',
+    });
+    if (!confirmed) {
+      return false;
+    }
+    const cutoffDate = todayDate();
+    const futureExpenseIds = this.futureLoanExpenseIds(loanId, cutoffDate);
+    const deleted = await this.runFirebaseWrite(
+      async () => {
+        await this.repository()?.deleteLegacyLoanCascade(loanId, cutoffDate);
+      },
+      () => {
+        this.loans.update((items) => items.filter((item) => item.id !== loanId));
+        this.expenses.update((items) => items.filter((item) => !futureExpenseIds.has(item.id)));
+      },
+    );
+    if (deleted) {
+      this.syncStatus.set('Legacy loan deleted; historical expenses retained');
+    }
+    return deleted;
   }
 
   async openMonthlyReview(): Promise<void> {
@@ -2124,6 +2771,10 @@ export class BudgetStore implements OnDestroy {
       loans: rows
         .filter((row) => row.collectionName === 'loans')
         .map((row) => ({ ...(row.record as Loan), memberEmail: importerEmail })),
+      loanAccounts: [],
+      loanEvents: [],
+      loanReconciliations: [],
+      loanDocuments: [],
     } satisfies { [TName in BudgetCollectionName]: BudgetDataMap[TName][] };
 
     const availableAccounts = [...this.paymentAccounts(), ...records.paymentAccounts];
@@ -2298,7 +2949,33 @@ export class BudgetStore implements OnDestroy {
         paymentModeId: loan.paymentModeId,
       }));
 
-    return [...templateEntries, ...loanEntries];
+    const v2LoanEntries = this.loanCalculationRows()
+      .filter(({ account }) => !existingTemplateIds.has(this.loanTemplateId(account.id)))
+      .map(({ account, calculation }) => ({
+        account,
+        row: calculation.schedule.find((row) => row.dueDate.startsWith(`${month}-`)),
+      }))
+      .filter(
+        (item): item is typeof item & { row: NonNullable<typeof item.row> } =>
+          !!item.row && item.row.scheduledPayment > 0,
+      )
+      .map<ExpenseEntry>(({ account, row }) => ({
+        id: `review:loan:${account.id}:${month}`,
+        month,
+        date: row.dueDate,
+        name: this.loanExpenseName(account),
+        categoryId: this.loanEmiCategoryId(),
+        amount: row.scheduledPayment,
+        type: 'recurring',
+        note: 'Generated from the calculated loan schedule',
+        templateId: this.loanTemplateId(account.id),
+        sourceLoanId: account.id,
+        memberEmail: account.memberEmail,
+        ownerUid: account.ownerUid,
+        paymentModeId: account.paymentModeId,
+      }));
+
+    return [...templateEntries, ...loanEntries, ...v2LoanEntries];
   }
 
   categoryName(categoryId: string): string {
@@ -3417,6 +4094,36 @@ export class BudgetStore implements OnDestroy {
     );
   }
 
+  private isActiveExpenseVisible(expense: ExpenseEntry): boolean {
+    const loanId =
+      expense.sourceLoanId ??
+      (expense.templateId?.startsWith('loan:')
+        ? expense.templateId.slice('loan:'.length)
+        : undefined);
+
+    if (!loanId) {
+      return true;
+    }
+
+    const account = this.loanAccounts().find((candidate) => candidate.id === loanId);
+    if (account) {
+      if (account.archivedDate) {
+        return false;
+      }
+
+      return this.loanCalculationRows().some(
+        ({ account: candidate, calculation }) =>
+          candidate.id === loanId &&
+          calculation.schedule.some(
+            (row) => row.dueDate === this.recordDate(expense) && row.scheduledPayment > 0,
+          ),
+      );
+    }
+
+    const legacyLoan = this.filteredLoans().find((candidate) => candidate.id === loanId);
+    return !!legacyLoan && !!this.loanVersionForMonth(legacyLoan, this.selectedMonth());
+  }
+
   private isTemplateChanged(previous: ExpenseTemplate | undefined, next: ExpenseTemplate): boolean {
     return (
       !previous ||
@@ -3582,6 +4289,19 @@ export class BudgetStore implements OnDestroy {
 
   private loanExpenseName(loan: Pick<Loan, 'lender' | 'loanType'>): string {
     return [loan.lender, loan.loanType].filter(Boolean).join(' - ') || 'Loan EMI';
+  }
+
+  private futureLoanExpenseIds(loanId: string, cutoffDate: string): Set<string> {
+    const cutoffMonth = cutoffDate.slice(0, 7);
+    return new Set(
+      this.expenses()
+        .filter(
+          (expense) =>
+            expense.sourceLoanId === loanId &&
+            (expense.date ? expense.date >= cutoffDate : expense.month >= cutoffMonth),
+        )
+        .map((expense) => expense.id),
+    );
   }
 
   private normalizeIncomeRecord(
@@ -4386,6 +5106,14 @@ export class BudgetStore implements OnDestroy {
       return;
     }
     const workspaceId = this.workspaceId();
+    const listenerError =
+      (collectionName: BudgetCollectionName, message: string) => (error: unknown) => {
+        // A listener can fail asynchronously after listen() has returned. Treat failure as a
+        // settled hydration result so a rules/client rollout mismatch cannot leave the entire
+        // application behind a permanent loading skeleton. The sync error remains visible.
+        this.markWorkspaceCollectionLoaded(collectionName, workspaceId);
+        this.handleSyncError(error, message, 'firestore');
+      };
 
     try {
       const subscriptions = await Promise.all([
@@ -4395,7 +5123,7 @@ export class BudgetStore implements OnDestroy {
             this.paymentAccounts.set(records);
             this.markWorkspaceCollectionLoaded('paymentAccounts', workspaceId);
           },
-          (error) => this.handleSyncError(error, 'Payment account listener failed.', 'firestore'),
+          listenerError('paymentAccounts', 'Payment account listener failed.'),
         ),
         repository.listen(
           'paymentModes',
@@ -4404,7 +5132,7 @@ export class BudgetStore implements OnDestroy {
             this.ensureDefaultPaymentModeRecord(records);
             this.markWorkspaceCollectionLoaded('paymentModes', workspaceId);
           },
-          (error) => this.handleSyncError(error, 'Payment mode listener failed.', 'firestore'),
+          listenerError('paymentModes', 'Payment mode listener failed.'),
         ),
         repository.listen(
           'categories',
@@ -4413,7 +5141,7 @@ export class BudgetStore implements OnDestroy {
             this.ensureDefaultCategoryRecord(records);
             this.markWorkspaceCollectionLoaded('categories', workspaceId);
           },
-          (error) => this.handleSyncError(error, 'Category listener failed.', 'firestore'),
+          listenerError('categories', 'Category listener failed.'),
         ),
         repository.listen(
           'incomes',
@@ -4421,7 +5149,7 @@ export class BudgetStore implements OnDestroy {
             this.incomes.set(records);
             this.markWorkspaceCollectionLoaded('incomes', workspaceId);
           },
-          (error) => this.handleSyncError(error, 'Income listener failed.', 'firestore'),
+          listenerError('incomes', 'Income listener failed.'),
         ),
         repository.listen(
           'templates',
@@ -4429,7 +5157,7 @@ export class BudgetStore implements OnDestroy {
             this.templates.set(records);
             this.markWorkspaceCollectionLoaded('templates', workspaceId);
           },
-          (error) => this.handleSyncError(error, 'Template listener failed.', 'firestore'),
+          listenerError('templates', 'Template listener failed.'),
         ),
         repository.listen(
           'expenses',
@@ -4437,7 +5165,7 @@ export class BudgetStore implements OnDestroy {
             this.expenses.set(records);
             this.markWorkspaceCollectionLoaded('expenses', workspaceId);
           },
-          (error) => this.handleSyncError(error, 'Expense listener failed.', 'firestore'),
+          listenerError('expenses', 'Expense listener failed.'),
         ),
         repository.listen(
           'investments',
@@ -4445,7 +5173,7 @@ export class BudgetStore implements OnDestroy {
             this.investments.set(records);
             this.markWorkspaceCollectionLoaded('investments', workspaceId);
           },
-          (error) => this.handleSyncError(error, 'Investment listener failed.', 'firestore'),
+          listenerError('investments', 'Investment listener failed.'),
         ),
         repository.listen(
           'loans',
@@ -4453,7 +5181,39 @@ export class BudgetStore implements OnDestroy {
             this.loans.set(records);
             this.markWorkspaceCollectionLoaded('loans', workspaceId);
           },
-          (error) => this.handleSyncError(error, 'Loan listener failed.', 'firestore'),
+          listenerError('loans', 'Loan listener failed.'),
+        ),
+        repository.listen(
+          'loanAccounts',
+          (records) => {
+            this.loanAccounts.set(records);
+            this.markWorkspaceCollectionLoaded('loanAccounts', workspaceId);
+          },
+          listenerError('loanAccounts', 'Loan account listener failed.'),
+        ),
+        repository.listen(
+          'loanEvents',
+          (records) => {
+            this.loanEvents.set(records);
+            this.markWorkspaceCollectionLoaded('loanEvents', workspaceId);
+          },
+          listenerError('loanEvents', 'Loan event listener failed.'),
+        ),
+        repository.listen(
+          'loanReconciliations',
+          (records) => {
+            this.loanReconciliations.set(records);
+            this.markWorkspaceCollectionLoaded('loanReconciliations', workspaceId);
+          },
+          listenerError('loanReconciliations', 'Loan reconciliation listener failed.'),
+        ),
+        repository.listen(
+          'loanDocuments',
+          (records) => {
+            this.loanDocuments.set(records);
+            this.markWorkspaceCollectionLoaded('loanDocuments', workspaceId);
+          },
+          listenerError('loanDocuments', 'Loan document listener failed.'),
         ),
       ]);
 
@@ -5229,12 +5989,63 @@ export class BudgetStore implements OnDestroy {
       .reduce((total, expense) => total + expense.amount, 0);
   }
 
+  private runwayLabelFor(remainingFunds: number): string {
+    if (this.monthlyIncome() <= 0) {
+      return 'Add income';
+    }
+
+    const ratio = remainingFunds / this.monthlyIncome();
+    if (ratio < 0) {
+      return 'Over plan';
+    }
+
+    if (ratio < 0.12) {
+      return 'Tight runway';
+    }
+
+    return 'Healthy runway';
+  }
+
   private ratio(value: number, total: number): number {
     return total <= 0 ? 0 : value / total;
   }
 
   private isMobileViewport(): boolean {
     return globalThis.matchMedia?.('(max-width: 780px)').matches ?? false;
+  }
+
+  private malformedLoanCalculation(
+    account: LoanAccount,
+    asOfDate: string,
+    error: unknown,
+  ): LoanCalculationResult {
+    return {
+      position: {
+        asOfDate,
+        outstandingPrincipal: 0,
+        currentAnnualRate: account.contract.initialAnnualRate,
+        currentEmi: account.contract.initialEmi,
+        chargesPaid: 0,
+        prepaymentsMade: 0,
+        accruedInterest: 0,
+        remainingInstallments: 0,
+        futureInterest: 0,
+        projectedRemainingPayments: 0,
+        totalPaidToDate: 0,
+        status: 'needs-attention',
+        historyCoverage: account.historyCoverageStartDate ? 'partial' : 'complete',
+        historyCoverageStartDate: account.historyCoverageStartDate,
+      },
+      schedule: [],
+      transactions: [],
+      diagnostics: [
+        {
+          code: 'invalid-event',
+          severity: 'error',
+          message: error instanceof Error ? error.message : 'The loan record is malformed.',
+        },
+      ],
+    };
   }
 
   private isSwipeIgnoredTarget(target: EventTarget | null): boolean {
@@ -5265,5 +6076,9 @@ export class BudgetStore implements OnDestroy {
     this.expenses.set([]);
     this.investments.set([]);
     this.loans.set([]);
+    this.loanAccounts.set([]);
+    this.loanEvents.set([]);
+    this.loanReconciliations.set([]);
+    this.loanDocuments.set([]);
   }
 }
