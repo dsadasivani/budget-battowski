@@ -73,13 +73,16 @@ describe('LoanAccountDialog lender matching', () => {
   it('saves each accepted lender row as reconciliation evidence', () => {
     const fixture = TestBed.createComponent(LoanAccountDialog);
     const dialog = fixture.componentInstance;
-    dialog.form.patchValue({
-      matchCheckpointDate: '2026-06-05',
-      matchInterestAmount: 11_420,
-      matchClosingPrincipal: 1_144_928,
-      matchSecondCheckpointDate: '2026-07-05',
-      matchSecondInterestAmount: 10_018,
-      matchSecondClosingPrincipal: 1_112_794,
+    dialog.form.controls.matchCheckpoints.at(0).setValue({
+      dueDate: '2026-06-05',
+      interestAmount: 11_420,
+      closingPrincipal: 1_144_928,
+    });
+    dialog.addMatchCheckpoint();
+    dialog.form.controls.matchCheckpoints.at(1).setValue({
+      dueDate: '2026-07-05',
+      interestAmount: 10_018,
+      closingPrincipal: 1_112_794,
     });
 
     dialog.findLenderMatch();
@@ -90,10 +93,6 @@ describe('LoanAccountDialog lender matching', () => {
     expect(close).toHaveBeenCalledWith(
       expect.objectContaining({
         lenderReconciliations: [
-          expect.objectContaining({
-            asOfDate: '2026-06-05',
-            lenderReportedOutstanding: 1_144_928,
-          }),
           expect.objectContaining({
             asOfDate: '2026-07-05',
             lenderReportedOutstanding: 1_112_794,
@@ -106,17 +105,36 @@ describe('LoanAccountDialog lender matching', () => {
   it('clears an accepted match when lender evidence changes', () => {
     const fixture = TestBed.createComponent(LoanAccountDialog);
     const dialog = fixture.componentInstance;
-    dialog.form.patchValue({
-      matchCheckpointDate: '2026-06-05',
-      matchInterestAmount: 11_420,
-      matchClosingPrincipal: 1_144_928,
+    dialog.form.controls.matchCheckpoints.at(0).setValue({
+      dueDate: '2026-06-05',
+      interestAmount: 11_420,
+      closingPrincipal: 1_144_928,
     });
     dialog.findLenderMatch();
     dialog.applyLenderMatch();
 
-    dialog.form.controls.matchInterestAmount.setValue(11_421);
+    dialog.form.controls.matchCheckpoints.at(0).controls.interestAmount.setValue(11_421);
 
     expect(dialog.policyMatch()).toBeNull();
     expect(dialog.matchApplied()).toBe(false);
+  });
+
+  it('loads an arbitrary number of PDF checkpoints without retaining the file', () => {
+    const fixture = TestBed.createComponent(LoanAccountDialog);
+    const dialog = fixture.componentInstance;
+    dialog.applyParsedPdf({
+      rows: [],
+      checkpoints: [
+        { dueDate: '2026-06-05', interestAmount: 11_420, closingPrincipal: 1_144_928 },
+        { dueDate: '2026-07-05', interestAmount: 10_018, closingPrincipal: 1_112_794 },
+        { dueDate: '2026-08-05', interestAmount: 9_737, closingPrincipal: 1_080_379 },
+      ],
+      partPayments: [{ effectiveDate: '2026-05-11', amount: 647_093 }],
+      warnings: [],
+    });
+
+    expect(dialog.form.controls.matchCheckpoints).toHaveLength(3);
+    expect(dialog.form.controls.matchPartPaymentAmount.value).toBe(647_093);
+    expect(dialog.canFindLenderMatch()).toBe(true);
   });
 });

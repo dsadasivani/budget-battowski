@@ -11,12 +11,14 @@ import { MatStepperModule } from '@angular/material/stepper';
 import { merge } from 'rxjs';
 
 import type { PaymentMode } from './budget.models';
+import type { ParsedLoanPdf } from './domain/loans/loan-pdf-parser';
 import {
   loanPolicyDescription,
   matchLoanCalculationPolicy,
   type LoanPolicyMatchResult,
 } from './domain/loans/loan-policy-matcher';
 import type { LoanAccount, LoanEvent, LoanRoundingPolicy } from './domain/loans/loan.models';
+import { LoanPdfImportPanel } from './loan-pdf-import-panel';
 
 export interface LoanAccountDialogData {
   account?: LoanAccount;
@@ -50,6 +52,7 @@ function today(): string {
   imports: [
     CurrencyPipe,
     DatePipe,
+    LoanPdfImportPanel,
     ReactiveFormsModule,
     MatButtonModule,
     MatCheckboxModule,
@@ -72,6 +75,17 @@ function today(): string {
           so it can be reconciled to a lender statement. Record later rate, EMI, tenure, and balance
           changes from the account's Transactions tab.
         </p>
+      }
+      <app-loan-pdf-import-panel (parsed)="applyParsedPdf($event)" />
+      @if (pdfImportWarnings().length) {
+        <div class="import-warnings" role="status" aria-live="polite">
+          <strong>Review these items</strong>
+          <ul>
+            @for (warning of pdfImportWarnings(); track warning) {
+              <li>{{ warning }}</li>
+            }
+          </ul>
+        </div>
       }
       <form [formGroup]="form" id="loan-account-form" (ngSubmit)="save()">
         <mat-stepper orientation="vertical" [linear]="true">
@@ -199,36 +213,61 @@ function today(): string {
 
             @if (form.controls.calculationSetup.value === 'lender-match') {
               <section class="setup-card match-card" aria-labelledby="lender-match-heading">
-                <h3 id="lender-match-heading">Match a lender schedule row</h3>
+                <h3 id="lender-match-heading">Match lender schedule rows</h3>
                 <p>
-                  Copy one EMI row from the repayment schedule. A row immediately after a
-                  part-payment or rate change gives the strongest match.
+                  Add as many EMI rows as needed. Rows around a part-payment or rate change provide
+                  the strongest evidence.
                 </p>
+                <div formArrayName="matchCheckpoints" class="checkpoint-list">
+                  @for (
+                    checkpoint of form.controls.matchCheckpoints.controls;
+                    track checkpoint;
+                    let index = $index
+                  ) {
+                    <fieldset [formGroupName]="index" class="checkpoint-row">
+                      <legend>EMI row {{ index + 1 }}</legend>
+                      <div class="form-grid compact-grid">
+                        <mat-form-field appearance="outline">
+                          <mat-label>EMI date</mat-label>
+                          <input matInput type="date" formControlName="dueDate" />
+                        </mat-form-field>
+                        <mat-form-field appearance="outline">
+                          <mat-label>Interest shown</mat-label>
+                          <input
+                            matInput
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            formControlName="interestAmount"
+                          />
+                        </mat-form-field>
+                        <mat-form-field appearance="outline">
+                          <mat-label>Closing principal</mat-label>
+                          <input
+                            matInput
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            formControlName="closingPrincipal"
+                          />
+                        </mat-form-field>
+                      </div>
+                      <button
+                        mat-button
+                        type="button"
+                        (click)="removeMatchCheckpoint(index)"
+                        [disabled]="form.controls.matchCheckpoints.length === 1"
+                        [attr.aria-label]="'Remove EMI row ' + (index + 1)"
+                      >
+                        Remove row
+                      </button>
+                    </fieldset>
+                  }
+                </div>
+                <button mat-button type="button" (click)="addMatchCheckpoint()">
+                  Add another EMI row
+                </button>
                 <div class="form-grid compact-grid">
-                  <mat-form-field appearance="outline">
-                    <mat-label>EMI date on schedule</mat-label>
-                    <input matInput type="date" formControlName="matchCheckpointDate" />
-                  </mat-form-field>
-                  <mat-form-field appearance="outline">
-                    <mat-label>Interest shown for that EMI</mat-label>
-                    <input
-                      matInput
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      formControlName="matchInterestAmount"
-                    />
-                  </mat-form-field>
-                  <mat-form-field appearance="outline">
-                    <mat-label>Closing principal after that EMI</mat-label>
-                    <input
-                      matInput
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      formControlName="matchClosingPrincipal"
-                    />
-                  </mat-form-field>
                   <mat-form-field appearance="outline">
                     <mat-label>Part-payment date (optional)</mat-label>
                     <input matInput type="date" formControlName="matchPartPaymentDate" />
@@ -244,39 +283,6 @@ function today(): string {
                     />
                   </mat-form-field>
                 </div>
-                <details class="additional-checkpoint">
-                  <summary>Add another EMI row for a stronger match</summary>
-                  <p>
-                    Use a different EMI date from the same schedule. This helps distinguish rules
-                    that happen to produce the same values for one month.
-                  </p>
-                  <div class="form-grid compact-grid">
-                    <mat-form-field appearance="outline">
-                      <mat-label>Second EMI date</mat-label>
-                      <input matInput type="date" formControlName="matchSecondCheckpointDate" />
-                    </mat-form-field>
-                    <mat-form-field appearance="outline">
-                      <mat-label>Interest shown for second EMI</mat-label>
-                      <input
-                        matInput
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        formControlName="matchSecondInterestAmount"
-                      />
-                    </mat-form-field>
-                    <mat-form-field appearance="outline">
-                      <mat-label>Closing principal after second EMI</mat-label>
-                      <input
-                        matInput
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        formControlName="matchSecondClosingPrincipal"
-                      />
-                    </mat-form-field>
-                  </div>
-                </details>
                 @if (matchPartPaymentWillBeRecorded()) {
                   <p class="recording-note">
                     This part-payment will also be recorded as a loan transaction when you save.
@@ -300,32 +306,36 @@ function today(): string {
                     <strong>{{ result.message }}</strong>
                     @if (result.best; as best) {
                       <p>{{ policyDescription(best) }}</p>
-                      @for (checkpoint of best.checkpointResults; track checkpoint.dueDate) {
-                        <dl [attr.aria-label]="'Match for EMI dated ' + checkpoint.dueDate">
-                          <div>
-                            <dt>EMI date</dt>
-                            <dd>{{ checkpoint.dueDate | date: 'mediumDate' }}</dd>
-                          </div>
-                          <div>
-                            <dt>Calculated interest</dt>
-                            <dd>
-                              {{
-                                checkpoint.calculatedInterest
-                                  | currency: 'INR' : 'symbol' : '1.0-2' : 'en-IN'
-                              }}
-                            </dd>
-                          </div>
-                          <div>
-                            <dt>Calculated closing principal</dt>
-                            <dd>
-                              {{
-                                checkpoint.calculatedClosingPrincipal
-                                  | currency: 'INR' : 'symbol' : '1.0-2' : 'en-IN'
-                              }}
-                            </dd>
-                          </div>
-                        </dl>
-                      }
+                      <p>{{ best.checkpointResults.length }} schedule rows checked.</p>
+                      <details class="matched-rows">
+                        <summary>Review matched rows</summary>
+                        @for (checkpoint of best.checkpointResults; track checkpoint.dueDate) {
+                          <dl [attr.aria-label]="'Match for EMI dated ' + checkpoint.dueDate">
+                            <div>
+                              <dt>EMI date</dt>
+                              <dd>{{ checkpoint.dueDate | date: 'mediumDate' }}</dd>
+                            </div>
+                            <div>
+                              <dt>Calculated interest</dt>
+                              <dd>
+                                {{
+                                  checkpoint.calculatedInterest
+                                    | currency: 'INR' : 'symbol' : '1.0-2' : 'en-IN'
+                                }}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Calculated closing principal</dt>
+                              <dd>
+                                {{
+                                  checkpoint.calculatedClosingPrincipal
+                                    | currency: 'INR' : 'symbol' : '1.0-2' : 'en-IN'
+                                }}
+                              </dd>
+                            </div>
+                          </dl>
+                        }
+                      </details>
                       <p class="difference-total">
                         Total difference:
                         <strong>
@@ -474,16 +484,41 @@ function today(): string {
       cursor: pointer;
       font-weight: 700;
     }
-    .additional-checkpoint {
-      margin: 4px 0 14px;
+    .checkpoint-list {
+      display: grid;
+      gap: 10px;
+      max-height: 420px;
+      overflow: auto;
+      margin: 12px 0 4px;
+      padding-right: 4px;
     }
-    .additional-checkpoint summary {
+    .checkpoint-row {
+      margin: 0;
+      padding: 4px 12px 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
+    }
+    .checkpoint-row legend {
+      padding: 0 6px;
+      font-weight: 700;
+    }
+    .import-warnings {
+      padding: 10px 12px;
+      border-radius: 8px;
+      color: #92400e;
+      background: #fffbeb;
+    }
+    .import-warnings ul {
+      margin: 6px 0 0;
+      padding-left: 20px;
+    }
+    .matched-rows {
+      max-height: 320px;
+      overflow: auto;
+    }
+    .matched-rows summary {
       cursor: pointer;
       font-weight: 600;
-    }
-    .additional-checkpoint p {
-      margin: 8px 0 0;
-      font-size: 0.86rem;
     }
     .compact-grid {
       padding-top: 8px;
@@ -564,6 +599,7 @@ export class LoanAccountDialog {
     .sort((left, right) => right.effectiveDate.localeCompare(left.effectiveDate))[0];
   readonly policyMatch = signal<LoanPolicyMatchResult | null>(null);
   readonly matchApplied = signal(false);
+  readonly pdfImportWarnings = signal<string[]>([]);
   readonly form = this.formBuilder.nonNullable.group({
     lender: [this.account?.lender ?? '', Validators.required],
     loanType: [this.account?.loanType ?? '', Validators.required],
@@ -609,12 +645,7 @@ export class LoanAccountDialog {
         ? 'lender-match'
         : 'standard') as 'standard' | 'lender-match' | 'advanced',
     ],
-    matchCheckpointDate: [''],
-    matchInterestAmount: [0],
-    matchClosingPrincipal: [0],
-    matchSecondCheckpointDate: [''],
-    matchSecondInterestAmount: [0],
-    matchSecondClosingPrincipal: [0],
+    matchCheckpoints: this.formBuilder.nonNullable.array([this.createCheckpointForm()]),
     matchPartPaymentDate: [this.latestPartPayment?.effectiveDate ?? ''],
     matchPartPaymentAmount: [
       this.latestPartPayment?.type === 'part-prepayment' ? this.latestPartPayment.amount : 0,
@@ -637,12 +668,7 @@ export class LoanAccountDialog {
       this.form.controls.initialEmi.valueChanges,
       this.form.controls.initialAnnualRate.valueChanges,
       this.form.controls.firstPeriodInterestAmount.valueChanges,
-      this.form.controls.matchCheckpointDate.valueChanges,
-      this.form.controls.matchInterestAmount.valueChanges,
-      this.form.controls.matchClosingPrincipal.valueChanges,
-      this.form.controls.matchSecondCheckpointDate.valueChanges,
-      this.form.controls.matchSecondInterestAmount.valueChanges,
-      this.form.controls.matchSecondClosingPrincipal.valueChanges,
+      this.form.controls.matchCheckpoints.valueChanges,
       this.form.controls.matchPartPaymentDate.valueChanges,
       this.form.controls.matchPartPaymentAmount.valueChanges,
     ).subscribe(() => {
@@ -680,17 +706,15 @@ export class LoanAccountDialog {
 
   canFindLenderMatch(): boolean {
     const value = this.form.getRawValue();
-    const secondCheckpointIsValid =
-      !value.matchSecondCheckpointDate ||
-      (value.matchSecondCheckpointDate !== value.matchCheckpointDate &&
-        value.matchSecondInterestAmount >= 0 &&
-        value.matchSecondClosingPrincipal >= 0);
+    const checkpoints = this.matchingCheckpoints();
+    const uniqueDates = new Set(checkpoints.map((checkpoint) => checkpoint.dueDate));
     return (
-      !!value.matchCheckpointDate &&
-      value.matchInterestAmount >= 0 &&
-      value.matchClosingPrincipal >= 0 &&
-      secondCheckpointIsValid &&
+      checkpoints.length > 0 &&
+      checkpoints.length === this.form.controls.matchCheckpoints.length &&
+      uniqueDates.size === checkpoints.length &&
       value.disbursedAmount > 0 &&
+      !!value.disbursementDate &&
+      value.firstEmiDate >= value.disbursementDate &&
       value.initialEmi > 0 &&
       value.initialAnnualRate >= 0
     );
@@ -698,26 +722,11 @@ export class LoanAccountDialog {
 
   findLenderMatch(): void {
     if (!this.canFindLenderMatch()) return;
-    const value = this.form.getRawValue();
-    const checkpoints = [
-      {
-        dueDate: value.matchCheckpointDate,
-        interestAmount: value.matchInterestAmount,
-        closingPrincipal: value.matchClosingPrincipal,
-      },
-    ];
-    if (value.matchSecondCheckpointDate) {
-      checkpoints.push({
-        dueDate: value.matchSecondCheckpointDate,
-        interestAmount: value.matchSecondInterestAmount,
-        closingPrincipal: value.matchSecondClosingPrincipal,
-      });
-    }
     this.policyMatch.set(
       matchLoanCalculationPolicy({
         account: this.accountFromForm(),
         events: this.eventsForMatching(),
-        checkpoints,
+        checkpoints: this.matchingCheckpoints(),
       }),
     );
     this.matchApplied.set(false);
@@ -739,6 +748,74 @@ export class LoanAccountDialog {
     return loanPolicyDescription(candidate);
   }
 
+  addMatchCheckpoint(): void {
+    this.form.controls.matchCheckpoints.push(this.createCheckpointForm());
+  }
+
+  removeMatchCheckpoint(index: number): void {
+    if (this.form.controls.matchCheckpoints.length === 1) return;
+    this.form.controls.matchCheckpoints.removeAt(index);
+  }
+
+  applyParsedPdf(parsed: ParsedLoanPdf): void {
+    const warnings = [...parsed.warnings];
+    if (parsed.partPayments.length > 1) {
+      warnings.push(
+        `The PDF contains ${parsed.partPayments.length} part-payments. The first was filled here; record the others from Transactions before matching.`,
+      );
+    }
+    this.pdfImportWarnings.set(warnings);
+    this.form.controls.calculationSetup.setValue('lender-match');
+
+    if (!this.account) {
+      if (parsed.lender) this.form.controls.lender.setValue(parsed.lender);
+      if (parsed.loanType) this.form.controls.loanType.setValue(parsed.loanType);
+      if (parsed.accountReferenceLastFour) {
+        this.form.controls.accountReferenceLastFour.setValue(parsed.accountReferenceLastFour);
+      }
+      if (parsed.sanctionedAmount !== undefined) {
+        this.form.controls.sanctionedAmount.setValue(parsed.sanctionedAmount);
+      }
+      if (parsed.disbursedAmount !== undefined) {
+        this.form.controls.disbursedAmount.setValue(parsed.disbursedAmount);
+      }
+      if (parsed.disbursementDate) {
+        this.form.controls.disbursementDate.setValue(parsed.disbursementDate);
+      }
+      if (parsed.firstEmiDate) this.form.controls.firstEmiDate.setValue(parsed.firstEmiDate);
+      if (parsed.contractualMaturityDate) {
+        this.form.controls.contractualMaturityDate.setValue(parsed.contractualMaturityDate);
+      }
+      if (parsed.tenureMonths !== undefined) {
+        this.form.controls.originalTenureMonths.setValue(parsed.tenureMonths);
+      }
+      if (parsed.initialEmi !== undefined) {
+        this.form.controls.initialEmi.setValue(parsed.initialEmi);
+      }
+      if (parsed.initialAnnualRate !== undefined) {
+        this.form.controls.initialAnnualRate.setValue(parsed.initialAnnualRate);
+      }
+      if (parsed.firstPeriodInterestAmount !== undefined) {
+        this.form.controls.firstPeriodInterestAmount.setValue(parsed.firstPeriodInterestAmount);
+      }
+    }
+
+    this.form.controls.matchCheckpoints.clear({ emitEvent: false });
+    for (const checkpoint of parsed.checkpoints) {
+      this.form.controls.matchCheckpoints.push(this.createCheckpointForm(checkpoint), {
+        emitEvent: false,
+      });
+    }
+    this.form.controls.matchCheckpoints.updateValueAndValidity();
+    const partPayment = parsed.partPayments[0];
+    if (partPayment) {
+      this.form.patchValue({
+        matchPartPaymentDate: partPayment.effectiveDate,
+        matchPartPaymentAmount: partPayment.amount,
+      });
+    }
+  }
+
   matchPartPaymentWillBeRecorded(): boolean {
     const value = this.form.getRawValue();
     return (
@@ -753,6 +830,31 @@ export class LoanAccountDialog {
       (event) =>
         event.type === 'part-prepayment' && event.effectiveDate === date && event.amount === amount,
     );
+  }
+
+  private createCheckpointForm(
+    checkpoint: { dueDate: string; interestAmount: number; closingPrincipal: number } = {
+      dueDate: '',
+      interestAmount: 0,
+      closingPrincipal: 0,
+    },
+  ) {
+    return this.formBuilder.nonNullable.group({
+      dueDate: [checkpoint.dueDate],
+      interestAmount: [checkpoint.interestAmount, Validators.min(0)],
+      closingPrincipal: [checkpoint.closingPrincipal, Validators.min(0)],
+    });
+  }
+
+  private matchingCheckpoints() {
+    return this.form.controls.matchCheckpoints
+      .getRawValue()
+      .filter(
+        (checkpoint) =>
+          !!checkpoint.dueDate &&
+          checkpoint.interestAmount >= 0 &&
+          checkpoint.closingPrincipal >= 0,
+      );
   }
 
   private eventsForMatching(): LoanEvent[] {
@@ -846,20 +948,23 @@ export class LoanAccountDialog {
           } satisfies LoanEvent)
         : undefined;
     const appliedMatch = this.matchApplied() ? this.policyMatch()?.best : undefined;
+    const latestMatchedCheckpoint = appliedMatch?.checkpointResults.at(-1);
+    const lenderReconciliation =
+      appliedMatch && latestMatchedCheckpoint
+        ? {
+            asOfDate: latestMatchedCheckpoint.dueDate,
+            lenderReportedOutstanding: latestMatchedCheckpoint.closingPrincipal,
+            tolerance: 0,
+            notes: `Matched ${appliedMatch.checkpointResults.length} lender repayment schedule rows using ${loanPolicyDescription(appliedMatch)}. Latest lender interest: ${latestMatchedCheckpoint.interestAmount}.`,
+          }
+        : undefined;
     this.dialogRef.close({
       account,
       openingAnchor,
       matchingPartPayment: this.matchPartPaymentWillBeRecorded()
         ? this.eventsForMatching().find((event) => event.id === 'lender-match-part-payment')
         : undefined,
-      lenderReconciliations: appliedMatch
-        ? appliedMatch.checkpointResults.map((checkpoint) => ({
-            asOfDate: checkpoint.dueDate,
-            lenderReportedOutstanding: checkpoint.closingPrincipal,
-            tolerance: 0,
-            notes: `Matched from lender repayment schedule using ${loanPolicyDescription(appliedMatch)}. Lender interest: ${checkpoint.interestAmount}.`,
-          }))
-        : undefined,
+      lenderReconciliations: lenderReconciliation ? [lenderReconciliation] : undefined,
       assumeHistoricalEmisPaid: !this.account && value.assumeHistoricalEmisPaid,
     });
   }

@@ -235,6 +235,8 @@ Recorded lender values, engine-calculated values, and future projections must re
 
 Users can simulate a prepayment without changing saved data and compare payoff date, installments saved, future interest, and interest saved. Only **Record this prepayment** adds an event. Reconciliation compares lender-reported and calculated principal at the same date with a tolerance. Accuracy is **Estimated**, **Reconciled**, or conservatively **Verified** through a lender-backed checkpoint; projections are never described as verified.
 
+Loan setup can extract contract suggestions, schedule checkpoints, and recognizable part-payments from a user-selected text-based repayment-schedule PDF entirely in browser memory. The source PDF must not be uploaded or persisted. Users can review and edit every extracted value, supply missing terms, and match any number of schedule rows against one generic calculation policy.
+
 The Loan Detail route provides overview, schedule, transactions, insights, reconciliation, document metadata, and an Indian financial-year repayment summary with CSV export. Generated summaries state that they are not official lender certificates.
 
 ### 8.4 Expense projection
