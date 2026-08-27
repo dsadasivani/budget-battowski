@@ -38,6 +38,36 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 
           <article class="panel-card action-card import-export-card">
             <div class="import-export-card-heading">
+              <span class="icon-chip orange"
+                ><mat-icon aria-hidden="true">settings_backup_restore</mat-icon></span
+              >
+              <div>
+                <h2>Restore Workspace Snapshot</h2>
+                <p>
+                  Merge a Budget Battowski JSON export, including loan events and reconciliations.
+                </p>
+              </div>
+            </div>
+            <button
+              mat-flat-button
+              type="button"
+              (click)="snapshotInput.click()"
+              [disabled]="!store.canWrite()"
+            >
+              <mat-icon aria-hidden="true">upload</mat-icon> Import snapshot
+            </button>
+            <input
+              #snapshotInput
+              class="visually-hidden-file"
+              type="file"
+              accept=".json,application/json"
+              aria-label="Import workspace JSON snapshot"
+              (change)="store.importWorkspaceSnapshot($event)"
+            />
+          </article>
+
+          <article class="panel-card action-card import-export-card">
+            <div class="import-export-card-heading">
               <span class="icon-chip green"><mat-icon aria-hidden="true">archive</mat-icon></span>
               <div>
                 <h2>Export Workspace</h2>

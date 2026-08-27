@@ -73,11 +73,11 @@ service cloud.firestore {
     }
     function generatedExpenseOwnerValid(workspaceId, data) {
       let templatePath = /databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/templates/$(data.templateId);
-      let loanPath = /databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/loans/$(data.sourceLoanId);
+      let loanAccountPath = /databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/loanAccounts/$(data.sourceLoanId);
       return ('templateId' in data && data.templateId is string && exists(templatePath) &&
           sameOwner(get(templatePath).data, data)) ||
-        ('sourceLoanId' in data && data.sourceLoanId is string && exists(loanPath) &&
-          sameOwner(get(loanPath).data, data));
+        ('sourceLoanId' in data && data.sourceLoanId is string && exists(loanAccountPath) &&
+          sameOwner(get(loanAccountPath).data, data));
     }
     function generatedInvestmentOwnerValid(workspaceId, data) {
       let sourcePath = /databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/investments/$(data.sourceInvestmentId);
@@ -210,19 +210,95 @@ service cloud.firestore {
         return commonOwned(data) && data.keys().hasOnly(['name','amount','categoryId','frequency','date','startDate','effectiveStartDate','endDate','notes','createdDate','skippedMonths','sourceInvestmentId','ownerUid','memberEmail','paymentModeId','auditTrail','version','createdAt','updatedAt']) && data.name is string && data.amount is number && data.amount >= 0 &&
           frequency(data.frequency) && data.notes is string;
       }
-      match /loans/{id} {
+      function validLoanRoundingPolicy(policy) {
+        return policy is map &&
+          policy.keys().hasOnly(['monetaryScale','interestRounding','installmentRounding','finalInstallmentAdjustment']) &&
+          policy.monetaryScale in [0, 2] &&
+          policy.interestRounding in ['half-up','half-even'] &&
+          policy.installmentRounding in ['half-up','half-even'] &&
+          policy.finalInstallmentAdjustment == true;
+      }
+      function validLoanContract(contract) {
+        return contract is map && contract.keys().hasOnly(['sanctionedAmount','disbursedAmount','disbursementDate','firstEmiDate','originalTenureMonths','contractualMaturityDate','initialEmi','initialAnnualRate','firstPeriodInterestAmount','interestType','interestCalculationMethod','dayCountConvention','compoundingFrequency','postPrepaymentStrategy','roundingPolicy','benchmark','spread']) &&
+          contract.disbursedAmount is number && contract.disbursedAmount >= 0 &&
+          validDate(contract.disbursementDate) && validDate(contract.firstEmiDate) &&
+          contract.initialEmi is number && contract.initialEmi > 0 &&
+          contract.initialAnnualRate is number && contract.initialAnnualRate >= 0 &&
+          (!('firstPeriodInterestAmount' in contract) || (contract.firstPeriodInterestAmount is number && contract.firstPeriodInterestAmount >= 0)) &&
+          contract.interestType in ['fixed','floating'] &&
+          contract.interestCalculationMethod in ['monthly-reducing','daily-reducing'] &&
+          contract.dayCountConvention in ['actual-360','actual-365','actual-366','actual-actual','30-360'] &&
+          contract.compoundingFrequency == 'monthly' &&
+          contract.postPrepaymentStrategy in ['keep-emi-reduce-tenure','keep-tenure-reduce-emi','bank-specified'] &&
+          validLoanRoundingPolicy(contract.roundingPolicy);
+      }
+      function validLoanAccount(data) {
+        return commonOwned(data) && data.keys().hasOnly(['schemaVersion','lender','loanType','accountReferenceLastFour','contract','notes','paymentModeId','ownerUid','memberEmail','historyCoverageStartDate','createdDate','updatedDate','archivedDate','version','createdAt','updatedAt']) &&
+          data.schemaVersion == 2 && data.lender is string && data.loanType is string &&
+          data.notes is string && validLoanContract(data.contract) &&
+          optionalString(data, 'accountReferenceLastFour') && optionalString(data, 'historyCoverageStartDate');
+      }
+      match /loanAccounts/{id} {
         allow read: if member(workspaceId);
         allow create: if member(workspaceId) && validOwnedCreate(request.resource.data) &&
-          validLoan(request.resource.data) && linkedModeValid(workspaceId, request.resource.data, true);
-        allow update: if member(workspaceId) && immutableOwner() && validLoan(request.resource.data) &&
-          linkedModeValid(workspaceId, request.resource.data, true);
+          validLoanAccount(request.resource.data) && optionalLinkedMode(workspaceId, request.resource.data);
+        allow update: if member(workspaceId) && immutableOwner() && validLoanAccount(request.resource.data) &&
+          optionalLinkedMode(workspaceId, request.resource.data);
         allow delete: if member(workspaceId);
       }
-      function validLoan(data) {
-        return commonOwned(data) && data.keys().hasOnly(['lender','loanType','principal','outstanding','annualRate','emi','startDate','endDate','notes','ownerUid','memberEmail','paymentModeId','auditTrail','version','createdAt','updatedAt']) && data.lender is string && data.loanType is string &&
-          data.principal is number && data.principal >= 0 && data.outstanding is number && data.outstanding >= 0 &&
-          data.annualRate is number && data.annualRate >= 0 && data.emi is number && data.emi >= 0 &&
-          validDate(data.startDate) && validDate(data.endDate) && data.notes is string;
+      function validLoanEvent(data) {
+        return commonOwned(data) && data.keys().hasOnly(['loanId','type','effectiveDate','amount','newAnnualRate','newEmi','newMaturityDate','newRemainingInstallments','notes','source','sourceReference','sourceFingerprint','ownerUid','memberEmail','createdDate','version','createdAt','updatedAt']) &&
+          data.loanId is string && validDate(data.effectiveDate) &&
+          data.type in ['balance-anchor','disbursement','emi-payment','part-prepayment','rate-change','emi-change','tenure-change','charge','charge-reversal','penal-charge','waiver','refund','adjustment','moratorium-start','moratorium-end','foreclosure'] &&
+          data.source in ['manual','statement-import','schedule-import','system'] &&
+          (!('amount' in data) || data.amount is number) &&
+          (!('newAnnualRate' in data) || (data.newAnnualRate is number && data.newAnnualRate >= 0)) &&
+          (!('newEmi' in data) || (data.newEmi is number && data.newEmi > 0));
+      }
+      function eventOwnerValid(workspaceId, data) {
+        let path = /databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/loanAccounts/$(data.loanId);
+        return exists(path) && sameOwner(get(path).data, data);
+      }
+      match /loanEvents/{id} {
+        allow read: if member(workspaceId);
+        allow create: if member(workspaceId) && validLoanEvent(request.resource.data) &&
+          eventOwnerValid(workspaceId, request.resource.data);
+        allow update: if member(workspaceId) && immutableOwner() &&
+          request.resource.data.loanId == resource.data.loanId && validLoanEvent(request.resource.data) &&
+          eventOwnerValid(workspaceId, request.resource.data);
+        allow delete: if member(workspaceId);
+      }
+      function validReconciliation(data) {
+        return commonOwned(data) && data.keys().hasOnly(['loanId','asOfDate','lenderReportedOutstanding','calculatedOutstanding','difference','tolerance','sourceKind','sourceDocumentId','status','notes','ownerUid','memberEmail','createdDate','version','createdAt','updatedAt']) &&
+          data.loanId is string && validDate(data.asOfDate) &&
+          data.lenderReportedOutstanding is number && data.lenderReportedOutstanding >= 0 &&
+          data.calculatedOutstanding is number && data.calculatedOutstanding >= 0 &&
+          data.difference is number && data.tolerance is number && data.tolerance >= 0 &&
+          data.sourceKind in ['manual','bank-statement','repayment-schedule','certificate'] &&
+          data.status in ['matched','mismatch','accepted-adjustment'];
+      }
+      match /loanReconciliations/{id} {
+        allow read: if member(workspaceId);
+        allow create: if member(workspaceId) && validReconciliation(request.resource.data) &&
+          eventOwnerValid(workspaceId, request.resource.data);
+        allow update: if member(workspaceId) && immutableOwner() &&
+          request.resource.data.loanId == resource.data.loanId && validReconciliation(request.resource.data) &&
+          eventOwnerValid(workspaceId, request.resource.data);
+        allow delete: if member(workspaceId);
+      }
+      function validLoanDocument(data) {
+        return commonOwned(data) && data.keys().hasOnly(['loanId','name','kind','periodStart','periodEnd','storageReference','importStatus','notes','ownerUid','memberEmail','createdDate','version','createdAt','updatedAt']) &&
+          data.loanId is string && data.name is string &&
+          data.kind in ['bank-statement','repayment-schedule','certificate','other'] &&
+          data.importStatus in ['metadata-only','imported','unsupported','failed'];
+      }
+      match /loanDocuments/{id} {
+        allow read: if member(workspaceId);
+        allow create: if member(workspaceId) && validLoanDocument(request.resource.data) &&
+          eventOwnerValid(workspaceId, request.resource.data);
+        allow update: if member(workspaceId) && immutableOwner() && validLoanDocument(request.resource.data) &&
+          eventOwnerValid(workspaceId, request.resource.data);
+        allow delete: if member(workspaceId);
       }
       match /categoryRemapOperations/{id} {
         allow read, create, update: if member(workspaceId);

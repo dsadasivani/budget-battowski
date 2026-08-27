@@ -60,9 +60,9 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
           </div>
           <div class="header-actions">
             <app-month-member-controls />
-            <span class="runway-badge" [class.warning]="store.remainingFunds() < 0">
+            <span class="runway-badge" [class.warning]="store.activeRemainingFunds() < 0">
               <mat-icon aria-hidden="true">shield</mat-icon>
-              {{ store.runwayLabel() }}
+              {{ store.activeRunwayLabel() }}
             </span>
           </div>
         </header>
@@ -83,7 +83,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
             <span class="icon-chip red"><mat-icon aria-hidden="true">upload</mat-icon></span>
             <p>Total Expenses</p>
             <strong>{{
-              store.outflowTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+              store.activeOutflowTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
             }}</strong>
           </article>
           <article class="stat-card investment-stat">
@@ -106,7 +106,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
             <span class="icon-chip green"><mat-icon aria-hidden="true">savings</mat-icon></span>
             <p>Remaining Runway</p>
             <strong>{{
-              store.remainingFunds() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+              store.activeRemainingFunds() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
             }}</strong>
           </article>
         </section>
@@ -120,7 +120,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
             <a routerLink="/categories">Manage</a>
           </header>
           <div class="progress-list">
-            @for (category of store.categoryCards().slice(0, 4); track category.id) {
+            @for (category of store.activeCategoryCards().slice(0, 4); track category.id) {
               <article class="progress-row">
                 <div>
                   <strong>{{ category.name }}</strong>
@@ -152,7 +152,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                 <a routerLink="/expenses">View all</a>
               </header>
               <div class="soft-list">
-                @for (expense of store.recurringEntries().slice(0, 4); track expense.id) {
+                @for (expense of store.activeRecurringEntries().slice(0, 4); track expense.id) {
                   <article class="list-row no-leading-icon">
                     <div>
                       <strong>{{ expense.name }}</strong>
@@ -174,7 +174,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                 <a routerLink="/expenses">View all</a>
               </header>
               <div class="soft-list">
-                @for (expense of store.oneTimeEntries().slice(0, 4); track expense.id) {
+                @for (expense of store.activeOneTimeEntries().slice(0, 4); track expense.id) {
                   <article class="list-row no-leading-icon">
                     <div>
                       <strong>{{ expense.name }}</strong>
@@ -233,7 +233,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                 </div>
               </header>
               <div class="progress-list">
-                @for (category of store.categoryCards(); track category.id) {
+                @for (category of store.activeCategoryCards(); track category.id) {
                   <article class="progress-row">
                     <div>
                       <span

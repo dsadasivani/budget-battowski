@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import type { BudgetWorkspaceExport } from './budget-export.service';
-import { buildWorkspaceExport, workspaceExportFilename } from './budget-export.service';
+import {
+  buildWorkspaceExport,
+  parseWorkspaceExport,
+  workspaceExportFilename,
+} from './budget-export.service';
 import type { Workspace } from './budget.models';
 
 describe('workspace export helpers', () => {
@@ -59,19 +63,25 @@ describe('workspace export helpers', () => {
       templates: [],
       expenses: [],
       investments: [],
-      loans: [],
+      loanAccounts: [],
+      loanEvents: [],
+      loanReconciliations: [],
+      loanDocuments: [],
     };
 
     const result = buildWorkspaceExport(workspace, collections, '2026-08-15T10:30:00.000Z');
 
-    expect(result.schemaVersion).toBe(1);
+    expect(result.schemaVersion).toBe(2);
     expect(Object.keys(result.collections).sort()).toEqual(
       [
         'categories',
         'expenses',
         'incomes',
         'investments',
-        'loans',
+        'loanAccounts',
+        'loanEvents',
+        'loanReconciliations',
+        'loanDocuments',
         'paymentAccounts',
         'paymentModes',
         'templates',
@@ -93,7 +103,10 @@ describe('workspace export helpers', () => {
         templates: [],
         expenses: [],
         investments: [],
-        loans: [],
+        loanAccounts: [],
+        loanEvents: [],
+        loanReconciliations: [],
+        loanDocuments: [],
       },
       '2026-08-15T10:30:00.000Z',
     );
@@ -104,5 +117,25 @@ describe('workspace export helpers', () => {
     expect(workspaceExportFilename(workspace, result.exportedAt)).toBe(
       'budget-battowski-family-home-2026-08-15.json',
     );
+  });
+
+  it('round-trips loan collections and safely reads older workspace snapshots', () => {
+    const snapshot = parseWorkspaceExport({
+      schemaVersion: 1,
+      exportedAt: '2026-01-01T00:00:00.000Z',
+      workspace,
+      collections: {
+        paymentAccounts: [],
+        paymentModes: [],
+        categories: [],
+        incomes: [],
+        templates: [],
+        expenses: [],
+        investments: [],
+      },
+    });
+    expect(snapshot.collections.loanAccounts).toEqual([]);
+    expect(snapshot.collections.loanEvents).toEqual([]);
+    expect(() => parseWorkspaceExport({ schemaVersion: 99 })).toThrow(/Unsupported/);
   });
 });

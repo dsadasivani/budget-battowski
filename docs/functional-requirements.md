@@ -217,32 +217,31 @@ The system must make it possible to determine:
 
 ## 8. Loans
 
-### 8.1 Loan records
+### 8.1 Loan accounts and repayment tracking
 
-Users must be able to record their existing loans.
+Loans uses a contract plus an effective-dated event ledger as its source of truth. The loan account stores identity, ownership, payment mode, and agreed contract terms. Outstanding principal, paid principal, paid interest, remaining installments, future interest, and projected closure are calculated values and must not be edited or persisted as authoritative state.
 
-A loan must support:
+The contract supports fixed and floating rates; monthly-reducing and daily-reducing interest; Actual/365, Actual/366, Actual/Actual, and 30/360 day counts; monthly compounding; contractual maturity; and keep-EMI, keep-tenure, or lender-specified prepayment treatment.
 
-- Lender
-- Loan type
-- Principal amount
-- Outstanding amount
-- Annual interest rate
-- EMI amount
-- Start date
-- End date
-- Notes
-- The payment mode used for the EMI and its linked payment account, where applicable
-- An implicitly recorded member owner
+The event ledger supports balance anchors, disbursements, EMI payments, part prepayments, rate/EMI/tenure changes, charges and reversals, waivers, refunds, adjustments, moratoria, and foreclosure. Events are ordered by effective date, documented same-day priority, and stable identifier. Historical changes never rewrite earlier schedule periods.
 
-These fields reflect the current implementation. Start and end dates determine the active loan period and its projected payment schedule. Loan cadence is always monthly; the user is not offered a cadence selector.
+### 8.2 Position, schedule, and provenance
 
-### 8.2 Future projections and confirmation
+The deterministic engine must provide the current position, full amortization schedule, recorded transaction history, diagnostics, and future projection. Money is calculated with controlled decimal arithmetic and stored/displayed to paise precision. The final installment is adjusted to prevent a negative or residual paise balance, and non-amortizing loans stop with a diagnostic.
 
-- Loan-related payments must be available in future applicable months.
-- Loan EMIs are fixed monthly obligations and do not participate in monthly review.
-- An applicable EMI is materialized automatically and is immediately treated as confirmed financial data.
-- Users cannot change or skip an individual monthly EMI through review. Changes must be made on the loan source and apply only from the operation date forward.
+Recorded lender values, engine-calculated values, and future projections must remain distinguishable. A balance anchor starts partial history coverage; lifetime principal and interest totals before that anchor are shown as unavailable rather than estimated.
+
+### 8.3 Prepayment, reconciliation, and reports
+
+Users can simulate a prepayment without changing saved data and compare payoff date, installments saved, future interest, and interest saved. Only **Record this prepayment** adds an event. Reconciliation compares lender-reported and calculated principal at the same date with a tolerance. Accuracy is **Estimated**, **Reconciled**, or conservatively **Verified** through a lender-backed checkpoint; projections are never described as verified.
+
+Loan setup can extract contract suggestions, schedule checkpoints, and recognizable part-payments from a user-selected text-based repayment-schedule PDF entirely in browser memory. The source PDF must not be uploaded or persisted. Users can review and edit every extracted value, supply missing terms, and match any number of schedule rows against one generic calculation policy.
+
+The Loan Detail route provides overview, schedule, transactions, insights, reconciliation, document metadata, and an Indian financial-year repayment summary with CSV export. Generated summaries state that they are not official lender certificates.
+
+### 8.4 Expense projection
+
+The engine-derived scheduled payment supplies the monthly Loan EMI expense. The stable `loan:<loanId>` source identity prevents duplicates. Loan payments remain automatically confirmed and outside Monthly Review. A changed rate, EMI, tenure, prepayment, or foreclosure recalculates future occurrences without changing historical materialized expenses.
 
 ## 9. Investments
 
@@ -343,13 +342,13 @@ These dimensions support member-level, category-level, payment-mode, and bank-ac
 
 The following table records the current implementation baseline for financial-record fields. System identifiers, audit history, creation timestamps, skipped months, and generated-source identifiers are maintained internally where applicable.
 
-| Record            | User-facing fields                                                                                                |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Income            | Source, amount, cadence, income category, month, notes, start date, end date                                      |
-| One-time expense  | Name, date/month, expense category, amount, note, payment mode                                                    |
-| Recurring expense | Name, expense category, amount, frequency, start date, end date, payment mode                                     |
-| Investment        | Name, amount, investment category, frequency, date, start date, end date, notes, payment mode                     |
-| Loan              | Lender, loan type, principal, outstanding amount, annual rate, EMI, start date, end date, notes, EMI payment mode |
+| Record            | User-facing fields                                                                                            |
+| ----------------- | ------------------------------------------------------------------------------------------------------------- |
+| Income            | Source, amount, cadence, income category, month, notes, start date, end date                                  |
+| One-time expense  | Name, date/month, expense category, amount, note, payment mode                                                |
+| Recurring expense | Name, expense category, amount, frequency, start date, end date, payment mode                                 |
+| Investment        | Name, amount, investment category, frequency, date, start date, end date, notes, payment mode                 |
+| Loan              | Account identity, contract terms, notes, ownership, EMI payment mode; events and reconciliations are separate |
 
 The signed-in member owner is recorded implicitly for every record. An account-backed payment mode provides the payment-account relationship. Attachments are not part of the current record model.
 
@@ -663,8 +662,8 @@ The following items are explicitly or implicitly outside the confirmed scope:
 - Additional workspace roles beyond owner and member
 - Pause/resume for recurring records
 - Recurring exceptions beyond an end date and monthly-review skips
-- Attachments on financial records
-- New analytics, alerts, and reports beyond the supported Dashboard and Planning capabilities defined in section 14
+- Binary document storage and automatic parsing for unsupported lender statement formats
+- Analytics and alerts beyond the supported Dashboard, Planning, and loan statement capabilities
 - Unspecified financial features such as tax planning, bill payment, or money transfers
 
 ## 17. Clarification status

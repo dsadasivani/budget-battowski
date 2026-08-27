@@ -66,14 +66,14 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
             <span class="icon-chip red"><mat-icon aria-hidden="true">credit_card</mat-icon></span>
             <p>Total Expenses</p>
             <strong>{{
-              store.outflowTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+              store.activeOutflowTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
             }}</strong>
           </article>
           <article class="stat-card recurring-total-card">
             <span class="icon-chip orange"><mat-icon aria-hidden="true">sync</mat-icon></span>
             <p>Recurring</p>
             <strong>{{
-              store.recurringTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+              store.activeRecurringTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
             }}</strong>
           </article>
           <article class="stat-card one-time-total-card">
@@ -82,7 +82,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
             >
             <p>One-time</p>
             <strong>{{
-              store.oneTimeTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+              store.activeOneTimeTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
             }}</strong>
           </article>
         </section>
@@ -248,18 +248,20 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
               <div class="donut-layout">
                 <div
                   class="donut-chart"
-                  [style.background]="store.donutStyle()"
+                  [style.background]="store.activeDonutStyle()"
                   role="img"
-                  [attr.aria-label]="'Expense total ' + store.formatMoney(store.outflowTotal())"
+                  [attr.aria-label]="
+                    'Expense total ' + store.formatMoney(store.activeOutflowTotal())
+                  "
                 >
                   <span
                     >Total<br /><b>{{
-                      store.outflowTotal() | currency: 'INR' : 'symbol' : '1.1-1' : 'en-IN'
+                      store.activeOutflowTotal() | currency: 'INR' : 'symbol' : '1.1-1' : 'en-IN'
                     }}</b></span
                   >
                 </div>
                 <div class="legend-list">
-                  @for (category of store.spendingBreakdownRows(); track category.id) {
+                  @for (category of store.activeSpendingBreakdownRows(); track category.id) {
                     <div>
                       <span
                         class="dot"
@@ -283,7 +285,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                 <mat-icon class="panel-icon" aria-hidden="true">group</mat-icon>
               </header>
               <div class="progress-list">
-                @for (member of store.topSpenders(); track member.memberEmail) {
+                @for (member of store.activeTopSpenders(); track member.memberEmail) {
                   <article class="member-progress">
                     <div>
                       <span class="avatar mini">{{ member.initial }}</span>
@@ -315,11 +317,11 @@ export class ExpensesPage {
   readonly filteredRows = computed(() => {
     const query = this.query().trim().toLowerCase();
     if (!query) {
-      return this.store.expenseRows();
+      return this.store.activeExpenseRows();
     }
 
     return this.store
-      .expenseRows()
+      .activeExpenseRows()
       .filter((expense) =>
         [expense.name, expense.categoryName, expense.typeLabel]
           .join(' ')

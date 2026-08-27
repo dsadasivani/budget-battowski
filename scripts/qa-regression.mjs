@@ -541,10 +541,10 @@ async function runOwnerBehaviorChecks(page) {
         app.setSelectedMember('ALL');
         await wait(600);
         add('Owner can manage workspace', app.canManageWorkspace() === true, String(app.canManageWorkspace()));
-        add('Seeded collections loaded', app.categories().length >= 8 && app.expenses().length >= 5 && app.loans().length >= 3, JSON.stringify({
+        add('Seeded collections loaded', app.categories().length >= 8 && app.expenses().length >= 5 && app.loanAccounts().length >= 3, JSON.stringify({
           categories: app.categories().length,
           expenses: app.expenses().length,
-          loans: app.loans().length,
+          loanAccounts: app.loanAccounts().length,
         }));
         add('Dashboard totals populated', app.monthlyIncome() > 0 && app.outflowTotal() > 0 && app.debtEmiTotal() > 0, JSON.stringify({
           income: app.monthlyIncome(),
@@ -642,26 +642,42 @@ async function runOwnerBehaviorChecks(page) {
         await runDelete('investments', 'investments', investment.id);
         add('Delete investment', !app.investments().some((item) => item.id === investment.id));
 
-        const loan = {
+        const loanAccount = {
           id: 'qa-runtime-loan',
+          schemaVersion: 2,
           lender: 'Runtime QA Lender',
           loanType: 'Test',
-          principal: 100000,
-          outstanding: 80000,
-          annualRate: 10.5,
-          emi: 10000,
-          startDate: '2026-06-10',
-          endDate: '2027-02-10',
+          contract: {
+            sanctionedAmount: 100000,
+            disbursedAmount: 100000,
+            disbursementDate: '2026-06-01',
+            firstEmiDate: '2026-06-10',
+            originalTenureMonths: 9,
+            contractualMaturityDate: '2027-02-10',
+            initialEmi: 10000,
+            initialAnnualRate: 10.5,
+            interestType: 'fixed',
+            interestCalculationMethod: 'monthly-reducing',
+            dayCountConvention: 'actual-365',
+            compoundingFrequency: 'monthly',
+            postPrepaymentStrategy: 'keep-emi-reduce-tenure',
+            roundingPolicy: {
+              monetaryScale: 2,
+              interestRounding: 'half-up',
+              installmentRounding: 'half-up',
+              finalInstallmentAdjustment: true,
+            },
+          },
           notes: 'Created by regression',
           memberEmail: 'qa.owner@budget.test',
           paymentModeId: 'pm-upi-gpay',
         };
-        await runWrite('loans', 'loans', loan);
-        add('Create loan', app.loans().some((item) => item.id === loan.id));
-        await runWrite('loans', 'loans', { ...loan, outstanding: 70000 });
-        add('Update loan', app.loans().some((item) => item.id === loan.id && item.outstanding === 70000));
-        await runDelete('loans', 'loans', loan.id);
-        add('Delete loan', !app.loans().some((item) => item.id === loan.id));
+        await runWrite('loanAccounts', 'loanAccounts', loanAccount);
+        add('Create loan', app.loanAccounts().some((item) => item.id === loanAccount.id));
+        await runWrite('loanAccounts', 'loanAccounts', { ...loanAccount, notes: 'Updated by regression' });
+        add('Update loan', app.loanAccounts().some((item) => item.id === loanAccount.id && item.notes === 'Updated by regression'));
+        await runDelete('loanAccounts', 'loanAccounts', loanAccount.id);
+        add('Delete loan', !app.loanAccounts().some((item) => item.id === loanAccount.id));
       } catch (error) {
         add('Owner behavior check execution', false, error instanceof Error ? error.stack ?? error.message : String(error));
       }
