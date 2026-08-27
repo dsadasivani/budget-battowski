@@ -44,8 +44,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
               <div>
                 <h2>Restore Workspace Snapshot</h2>
                 <p>
-                  Merge a Budget Battowski JSON export, including Loan V2 events and
-                  reconciliations.
+                  Merge a Budget Battowski JSON export, including loan events and reconciliations.
                 </p>
               </div>
             </div>

@@ -63,7 +63,6 @@ describe('workspace export helpers', () => {
       templates: [],
       expenses: [],
       investments: [],
-      loans: [],
       loanAccounts: [],
       loanEvents: [],
       loanReconciliations: [],
@@ -79,7 +78,6 @@ describe('workspace export helpers', () => {
         'expenses',
         'incomes',
         'investments',
-        'loans',
         'loanAccounts',
         'loanEvents',
         'loanReconciliations',
@@ -105,7 +103,6 @@ describe('workspace export helpers', () => {
         templates: [],
         expenses: [],
         investments: [],
-        loans: [],
         loanAccounts: [],
         loanEvents: [],
         loanReconciliations: [],
@@ -122,8 +119,8 @@ describe('workspace export helpers', () => {
     );
   });
 
-  it('round-trips Loan V2 collections and safely reads schema 1 snapshots', () => {
-    const legacy = parseWorkspaceExport({
+  it('round-trips loan collections and safely reads older workspace snapshots', () => {
+    const snapshot = parseWorkspaceExport({
       schemaVersion: 1,
       exportedAt: '2026-01-01T00:00:00.000Z',
       workspace,
@@ -135,11 +132,10 @@ describe('workspace export helpers', () => {
         templates: [],
         expenses: [],
         investments: [],
-        loans: [],
       },
     });
-    expect(legacy.collections.loanAccounts).toEqual([]);
-    expect(legacy.collections.loanEvents).toEqual([]);
+    expect(snapshot.collections.loanAccounts).toEqual([]);
+    expect(snapshot.collections.loanEvents).toEqual([]);
     expect(() => parseWorkspaceExport({ schemaVersion: 99 })).toThrow(/Unsupported/);
   });
 });

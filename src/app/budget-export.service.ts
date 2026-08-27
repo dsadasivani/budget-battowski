@@ -4,7 +4,6 @@ import type {
   ExpenseTemplate,
   IncomeSource,
   InvestmentEntry,
-  Loan,
   PaymentAccount,
   PaymentMode,
   Workspace,
@@ -28,7 +27,6 @@ export interface BudgetWorkspaceExport {
     templates: ExpenseTemplate[];
     expenses: ExpenseEntry[];
     investments: InvestmentEntry[];
-    loans: Loan[];
     loanAccounts: LoanAccount[];
     loanEvents: LoanEvent[];
     loanReconciliations: LoanReconciliation[];
@@ -83,7 +81,6 @@ export function parseWorkspaceExport(value: unknown): BudgetWorkspaceExport {
     'templates',
     'expenses',
     'investments',
-    'loans',
   ] as const;
   if (required.some((name) => !Array.isArray(source[name]))) {
     throw new Error('Workspace snapshot contains an invalid collection.');
@@ -103,7 +100,6 @@ export function parseWorkspaceExport(value: unknown): BudgetWorkspaceExport {
       templates: structuredClone(source['templates'] as ExpenseTemplate[]),
       expenses: structuredClone(source['expenses'] as ExpenseEntry[]),
       investments: structuredClone(source['investments'] as InvestmentEntry[]),
-      loans: structuredClone(source['loans'] as Loan[]),
       loanAccounts: structuredClone((source['loanAccounts'] ?? []) as LoanAccount[]),
       loanEvents: structuredClone((source['loanEvents'] ?? []) as LoanEvent[]),
       loanReconciliations: structuredClone(

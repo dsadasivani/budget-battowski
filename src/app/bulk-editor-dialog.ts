@@ -27,8 +27,6 @@ import type {
   InvestmentAuditVersion,
   InvestmentEntry,
   InvestmentFrequency,
-  Loan,
-  LoanAuditVersion,
   PaymentAccount,
   PaymentMode,
   WorkspaceMember,
@@ -72,29 +70,23 @@ type PaymentModeMeta = {
   iconSrc: string;
   label: string;
 };
-type BulkTableKey = 'expenses' | 'templates' | 'incomes' | 'categories' | 'loans' | 'investments';
+type BulkTableKey = 'expenses' | 'templates' | 'incomes' | 'categories' | 'investments';
 type SortDirection = 'asc' | 'desc';
 type RowStatusFilter = 'all' | 'active' | 'new' | 'suggested' | 'marked-delete' | 'modified';
 type BulkSortColumn =
   | ''
   | 'amount'
-  | 'annualRate'
   | 'cadence'
   | 'category'
   | 'color'
   | 'date'
-  | 'emi'
   | 'endDate'
   | 'frequency'
-  | 'lender'
-  | 'loanType'
   | 'monthlyBudget'
   | 'month'
   | 'name'
   | 'note'
-  | 'outstanding'
   | 'paymentMode'
-  | 'principal'
   | 'source'
   | 'startDate'
   | 'status'
@@ -105,7 +97,6 @@ type BulkDisplayRow =
   | DraftTemplate
   | DraftRow<IncomeSource>
   | DraftRow<BudgetCategory>
-  | DraftRow<Loan>
   | DraftRow<InvestmentEntry>;
 type SelectOption<T extends string = string> = {
   label: string;
@@ -131,24 +122,18 @@ type BulkHeaderValueKind =
 type BulkHeaderField =
   | ''
   | 'amount'
-  | 'annualRate'
   | 'cadence'
   | 'categoryId'
   | 'color'
   | 'date'
-  | 'emi'
   | 'endDate'
   | 'frequency'
-  | 'lender'
-  | 'loanType'
   | 'monthlyBudget'
   | 'month'
   | 'name'
   | 'note'
   | 'notes'
-  | 'outstanding'
   | 'paymentModeId'
-  | 'principal'
   | 'source'
   | 'startDate'
   | 'type';
@@ -163,7 +148,7 @@ type BulkHeaderEditState = {
   touched: Partial<Record<BulkHeaderEditableField, boolean>>;
   values: Partial<Record<BulkHeaderEditableField, string>>;
 };
-export type BulkEditorScope = 'monthly' | 'planning' | 'loans';
+export type BulkEditorScope = 'monthly' | 'planning';
 
 export interface BulkEditorData {
   scope: BulkEditorScope;
@@ -180,7 +165,6 @@ export interface BulkEditorData {
   templates: ExpenseTemplate[];
   expenses: ExpenseEntry[];
   investments: InvestmentEntry[];
-  loans: Loan[];
 }
 
 export interface BulkEditorResult {
@@ -190,14 +174,12 @@ export interface BulkEditorResult {
   templates: ExpenseTemplate[];
   expenses: ExpenseEntry[];
   investments: InvestmentEntry[];
-  loans: Loan[];
   deleted: {
     categories: string[];
     incomes: string[];
     templates: string[];
     expenses: string[];
     investments: string[];
-    loans: string[];
   };
 }
 
@@ -317,23 +299,17 @@ const PAYMENT_BANK_ICON_BY_NAME = new Map(
 const BULK_SORT_COLUMNS: ReadonlySet<string> = new Set<BulkSortColumn>([
   '',
   'amount',
-  'annualRate',
   'cadence',
   'category',
   'color',
   'date',
-  'emi',
   'endDate',
   'frequency',
-  'lender',
-  'loanType',
   'monthlyBudget',
   'month',
   'name',
   'note',
-  'outstanding',
   'paymentMode',
-  'principal',
   'source',
   'startDate',
   'status',
@@ -400,17 +376,6 @@ const TABLE_SORT_OPTIONS = {
     { value: 'monthlyBudget:desc', label: 'Budget high-low' },
     { value: 'monthlyBudget:asc', label: 'Budget low-high' },
   ],
-  loans: [
-    { value: '', label: 'Default order' },
-    { value: 'lender:asc', label: 'Lender A-Z' },
-    { value: 'lender:desc', label: 'Lender Z-A' },
-    { value: 'outstanding:desc', label: 'Outstanding high-low' },
-    { value: 'outstanding:asc', label: 'Outstanding low-high' },
-    { value: 'emi:desc', label: 'EMI high-low' },
-    { value: 'emi:asc', label: 'EMI low-high' },
-    { value: 'startDate:asc', label: 'Start oldest' },
-    { value: 'endDate:asc', label: 'End soonest' },
-  ],
   investments: [
     { value: '', label: 'Default order' },
     { value: 'name:asc', label: 'Name A-Z' },
@@ -461,18 +426,6 @@ const BULK_HEADER_FIELDS = {
     { value: 'monthlyBudget', label: 'Monthly budget', kind: 'number' },
     { value: 'color', label: 'Color', kind: 'color' },
   ],
-  loans: [
-    { value: 'lender', label: 'Lender', kind: 'text', newRowsOnly: true },
-    { value: 'loanType', label: 'Type', kind: 'text', newRowsOnly: true },
-    { value: 'principal', label: 'Principal', kind: 'number' },
-    { value: 'outstanding', label: 'Outstanding', kind: 'number' },
-    { value: 'annualRate', label: 'Rate', kind: 'number' },
-    { value: 'emi', label: 'EMI', kind: 'number' },
-    { value: 'startDate', label: 'Start', kind: 'date' },
-    { value: 'endDate', label: 'End', kind: 'date' },
-    { value: 'notes', label: 'Notes', kind: 'text' },
-    { value: 'paymentModeId', label: 'EMI paid via', kind: 'paymentMode' },
-  ],
   investments: [
     { value: 'name', label: 'Name', kind: 'text', newRowsOnly: true },
     { value: 'amount', label: 'Amount', kind: 'number' },
@@ -509,7 +462,6 @@ function defaultTableFilters(): Record<BulkTableKey, BulkTableFilterState> {
     templates: defaultFilterState(),
     incomes: defaultFilterState(),
     categories: defaultFilterState(),
-    loans: defaultFilterState(),
     investments: defaultFilterState(),
   };
 }
@@ -520,7 +472,6 @@ function defaultTableSorts(): Record<BulkTableKey, BulkTableSortState> {
     templates: { column: '', direction: 'asc' },
     incomes: { column: '', direction: 'asc' },
     categories: { column: '', direction: 'asc' },
-    loans: { column: '', direction: 'asc' },
     investments: { column: '', direction: 'asc' },
   };
 }
@@ -531,7 +482,6 @@ function defaultTableSelections(): Record<BulkTableKey, Set<string>> {
     templates: new Set<string>(),
     incomes: new Set<string>(),
     categories: new Set<string>(),
-    loans: new Set<string>(),
     investments: new Set<string>(),
   };
 }
@@ -550,7 +500,6 @@ function defaultBulkHeaderEditStates(): Record<BulkTableKey, BulkHeaderEditState
     templates: defaultBulkHeaderEditState(),
     incomes: defaultBulkHeaderEditState(),
     categories: defaultBulkHeaderEditState(),
-    loans: defaultBulkHeaderEditState(),
     investments: defaultBulkHeaderEditState(),
   };
 }
@@ -564,7 +513,6 @@ function defaultModifiedCells(): Record<
     templates: {},
     incomes: {},
     categories: {},
-    loans: {},
     investments: {},
   };
 }
@@ -639,9 +587,6 @@ export class BulkEditorDialog {
   private readonly originalInvestmentsById = new Map(
     this.data.investments.map((investment) => [investment.id, { ...investment }]),
   );
-  private readonly originalLoansById = new Map(
-    this.data.loans.map((loan) => [loan.id, { ...loan }]),
-  );
   private readonly originalTemplatesById = new Map(
     this.sourceTemplates.map((template) => [template.id, template]),
   );
@@ -677,35 +622,29 @@ export class BulkEditorDialog {
       frequency: investment.frequency || 'one-time',
     })),
   );
-  protected readonly loans = signal<Array<DraftRow<Loan>>>(cloneRows(this.data.loans));
   protected readonly editingRowIds = signal(this.initialEditingRowIds());
   protected readonly title = computed(() =>
     this.data.scope === 'monthly'
       ? 'Monthly Entry Editor'
       : this.data.scope === 'planning'
         ? 'Income & Budget Editor'
-        : 'Loans & EMI Editor',
+        : 'Income & Budget Editor',
   );
   protected readonly subtitle = computed(() =>
     this.data.scope === 'monthly'
       ? 'Bulk edit monthly expenses and entries'
       : this.data.scope === 'planning'
         ? 'Planning scope · bulk edit spreadsheet'
-        : 'Bulk edit loan accounts and repayment schedules',
+        : 'Planning bulk editor',
   );
   protected readonly scopeIcon = computed(() =>
-    this.data.scope === 'loans'
-      ? 'account_balance'
-      : this.data.scope === 'planning'
-        ? 'grid_view'
-        : 'dashboard',
+    this.data.scope === 'planning' ? 'grid_view' : 'dashboard',
   );
   protected readonly selectedMonthLabel = computed(() =>
     this.auditMonthLabel(monthStartDate(this.data.selectedMonth), this.data.selectedMonth),
   );
   protected readonly showMonthlyTables = computed(() => this.data.scope === 'monthly');
   protected readonly showPlanningTables = computed(() => this.data.scope === 'planning');
-  protected readonly showLoanTables = computed(() => this.data.scope === 'loans');
   protected readonly initialTabIndex = computed(() => this.data.initialTabIndex ?? 0);
   protected readonly memberLocked = computed(() => this.isMemberLocked());
   protected readonly expandedTemplateIds = signal(new Set<string>());
@@ -724,7 +663,6 @@ export class BulkEditorDialog {
   protected readonly filteredCategories = computed(() =>
     this.tableRows('categories', this.categories()),
   );
-  protected readonly filteredLoans = computed(() => this.tableRows('loans', this.loans()));
   protected readonly filteredInvestments = computed(() =>
     this.tableRows('investments', this.investments()),
   );
@@ -859,27 +797,6 @@ export class BulkEditorDialog {
     ]);
   }
 
-  protected addLoan(): void {
-    this.loans.update((loans) => [
-      {
-        id: id('loan'),
-        lender: '',
-        loanType: '',
-        principal: undefined as unknown as number,
-        outstanding: undefined as unknown as number,
-        annualRate: undefined as unknown as number,
-        emi: undefined as unknown as number,
-        startDate: '',
-        endDate: '',
-        notes: '',
-        memberEmail: this.defaultMemberEmail(),
-        paymentModeId: '',
-        isNew: true,
-      },
-      ...loans,
-    ]);
-  }
-
   protected addInvestment(): void {
     this.investments.update((investments) => [
       {
@@ -907,7 +824,6 @@ export class BulkEditorDialog {
       templates: 'Recurring expense bulk actions',
       incomes: 'Income bulk actions',
       categories: 'Category bulk actions',
-      loans: 'Loan bulk actions',
       investments: 'Investment bulk actions',
     };
 
@@ -1045,7 +961,6 @@ export class BulkEditorDialog {
       templates: 'selected recurring expenses',
       incomes: 'selected income rows',
       categories: 'selected categories',
-      loans: 'selected loans',
       investments: 'selected investments',
     };
 
@@ -1337,7 +1252,6 @@ export class BulkEditorDialog {
       templates: 'No recurring expenses available.',
       incomes: 'No income sources available.',
       categories: 'No categories available.',
-      loans: 'No loan accounts available.',
       investments: 'No investments available.',
     };
 
@@ -1436,7 +1350,6 @@ export class BulkEditorDialog {
     this.templates.update((rows) => [...rows]);
     this.expenses.update((rows) => [...rows]);
     this.investments.update((rows) => [...rows]);
-    this.loans.update((rows) => [...rows]);
   }
 
   private setRowSelection(table: BulkTableKey, rowId: string, checked: boolean): void {
@@ -1667,8 +1580,6 @@ export class BulkEditorDialog {
         return (this.originalCategoriesById.get(row.id) as unknown as Record<string, unknown>)?.[
           field
         ];
-      case 'loans':
-        return (this.originalLoansById.get(row.id) as unknown as Record<string, unknown>)?.[field];
       case 'investments':
         return (this.originalInvestmentsById.get(row.id) as unknown as Record<string, unknown>)?.[
           field
@@ -1680,14 +1591,7 @@ export class BulkEditorDialog {
     field: BulkHeaderEditableField,
     value: unknown,
   ): number | string | undefined {
-    if (
-      field === 'amount' ||
-      field === 'annualRate' ||
-      field === 'emi' ||
-      field === 'monthlyBudget' ||
-      field === 'outstanding' ||
-      field === 'principal'
-    ) {
+    if (field === 'amount' || field === 'monthlyBudget') {
       return toNumber(value);
     }
 
@@ -1736,8 +1640,6 @@ export class BulkEditorDialog {
         return this.incomes();
       case 'categories':
         return this.categories();
-      case 'loans':
-        return this.loans();
       case 'investments':
         return this.investments();
     }
@@ -1753,8 +1655,6 @@ export class BulkEditorDialog {
         return this.filteredIncomes();
       case 'categories':
         return this.filteredCategories();
-      case 'loans':
-        return this.filteredLoans();
       case 'investments':
         return this.filteredInvestments();
     }
@@ -1836,22 +1736,6 @@ export class BulkEditorDialog {
           audit.startDate ||
           audit.date ||
           monthStartDate(this.data.selectedMonth),
-        endDate: audit.effectiveEndDate || audit.endDate,
-      }))
-      .filter((audit) => !audit.startDate || !audit.endDate || audit.startDate <= audit.endDate)
-      .sort((a, b) => (b.startDate ?? '').localeCompare(a.startDate ?? ''));
-  }
-
-  protected loanAuditRows(loan: Loan): AuditDisplayRow[] {
-    return (loan.auditTrail ?? [])
-      .filter((audit) => this.isVisibleAuditOperation(audit.operation))
-      .map((audit) => ({
-        id: audit.id,
-        operation: this.auditOperationLabel(audit.operation),
-        name: `${audit.lender} ${audit.loanType}`.trim(),
-        amount: audit.emi,
-        recordedDate: audit.recordedDate,
-        startDate: audit.effectiveStartDate || audit.startDate,
         endDate: audit.effectiveEndDate || audit.endDate,
       }))
       .filter((audit) => !audit.startDate || !audit.endDate || audit.startDate <= audit.endDate)
@@ -2044,10 +1928,6 @@ export class BulkEditorDialog {
     });
   }
 
-  protected loanDateInvalid(value: unknown): boolean {
-    return this.validationError().includes('loan') && !dateValue(value);
-  }
-
   protected expenseRowLabel(expense: DraftExpense, rowIndex: number): string {
     return this.rowLabel('Expense', expense.name, rowIndex, expense);
   }
@@ -2062,10 +1942,6 @@ export class BulkEditorDialog {
 
   protected categoryRowLabel(category: DraftRow<BudgetCategory>, rowIndex: number): string {
     return this.rowLabel('Category', category.name, rowIndex, category);
-  }
-
-  protected loanRowLabel(loan: DraftRow<Loan>, rowIndex: number): string {
-    return this.rowLabel('Loan', `${loan.lender} ${loan.loanType}`.trim(), rowIndex, loan);
   }
 
   protected investmentRowLabel(investment: DraftRow<InvestmentEntry>, rowIndex: number): string {
@@ -2113,11 +1989,6 @@ export class BulkEditorDialog {
   }
 
   protected apply(): void {
-    if (this.hasLoanDateErrors()) {
-      this.validationError.set('Every active loan must have both start and end dates.');
-      return;
-    }
-
     const recurringValidationError = this.recurringValidationError();
     if (recurringValidationError) {
       this.validationError.set(recurringValidationError);
@@ -2254,44 +2125,14 @@ export class BulkEditorDialog {
           ownerUid: investment.ownerUid,
           paymentModeId: investment.paymentModeId || undefined,
         })),
-      loans: this.loans()
-        .filter((loan) => !loan.pendingDelete)
-        .map((loan) => ({
-          id: loan.id,
-          version: loan.version,
-          lender: loan.isNew
-            ? loan.lender.trim() || 'Lender'
-            : this.originalLoansById.get(loan.id)?.lender || loan.lender.trim() || 'Lender',
-          loanType: loan.isNew
-            ? loan.loanType.trim() || 'Loan'
-            : this.originalLoansById.get(loan.id)?.loanType || loan.loanType.trim() || 'Loan',
-          principal: toNumber(loan.principal),
-          outstanding: toNumber(loan.outstanding),
-          annualRate: toNumber(loan.annualRate),
-          emi: toNumber(loan.emi),
-          startDate: requiredDate(loan.startDate),
-          endDate: requiredDate(loan.endDate),
-          notes: loan.notes ?? '',
-          memberEmail: this.recordMemberEmail(loan),
-          ownerUid: loan.ownerUid,
-          paymentModeId: loan.paymentModeId || undefined,
-          auditTrail: loan.auditTrail ?? [],
-        })),
       deleted: {
         categories: this.deletedIds(this.categories()),
         incomes: this.deletedIds(this.incomes()),
         templates: this.deletedIds(this.templates()),
         expenses: this.deletedIds(this.expenses()),
         investments: this.deletedIds(this.investments()),
-        loans: this.deletedIds(this.loans()),
       },
     });
-  }
-
-  protected hasLoanDateErrors(): boolean {
-    return this.activeRows(this.loans()).some(
-      (loan) => !dateValue(loan.startDate) || !dateValue(loan.endDate),
-    );
   }
 
   protected cancel(): void {
@@ -2327,7 +2168,6 @@ export class BulkEditorDialog {
       ...this.templates(),
       ...this.incomes(),
       ...this.categories(),
-      ...this.loans(),
       ...this.investments(),
     ]) {
       if (row.isNew || ('isSuggested' in row && row.isSuggested)) {
@@ -2535,22 +2375,6 @@ export class BulkEditorDialog {
           this.rowStatusLabel(category),
         ].join(' ');
       }
-      case 'loans': {
-        const loan = row as DraftRow<Loan>;
-        return [
-          loan.lender,
-          loan.loanType,
-          loan.principal,
-          loan.outstanding,
-          loan.annualRate,
-          loan.emi,
-          loan.startDate,
-          loan.endDate,
-          loan.notes,
-          this.paymentModeName(loan.paymentModeId),
-          this.rowStatusLabel(loan),
-        ].join(' ');
-      }
       case 'investments': {
         const investment = row as DraftRow<InvestmentEntry>;
         return [
@@ -2602,10 +2426,6 @@ export class BulkEditorDialog {
       case 'categories': {
         const category = row as DraftRow<BudgetCategory>;
         return this.categorySortValue(category, column);
-      }
-      case 'loans': {
-        const loan = row as DraftRow<Loan>;
-        return this.loanSortValue(loan, column);
       }
       case 'investments': {
         const investment = row as DraftRow<InvestmentEntry>;
@@ -2691,42 +2511,6 @@ export class BulkEditorDialog {
     }
 
     return category.name ?? '';
-  }
-
-  private loanSortValue(loan: DraftRow<Loan>, column: BulkSortColumn): number | string {
-    if (column === 'principal') {
-      return toNumber(loan.principal);
-    }
-
-    if (column === 'outstanding') {
-      return toNumber(loan.outstanding);
-    }
-
-    if (column === 'annualRate') {
-      return toNumber(loan.annualRate);
-    }
-
-    if (column === 'emi') {
-      return toNumber(loan.emi);
-    }
-
-    if (column === 'startDate') {
-      return dateValue(loan.startDate) ?? '';
-    }
-
-    if (column === 'endDate') {
-      return dateValue(loan.endDate) ?? '';
-    }
-
-    if (column === 'loanType') {
-      return loan.loanType ?? '';
-    }
-
-    if (column === 'note') {
-      return loan.notes ?? '';
-    }
-
-    return loan.lender ?? '';
   }
 
   private investmentSortValue(
@@ -2815,10 +2599,6 @@ export class BulkEditorDialog {
       return (row as DraftTemplate).paymentModeId;
     }
 
-    if (table === 'loans') {
-      return (row as DraftRow<Loan>).paymentModeId;
-    }
-
     if (table === 'investments') {
       return (row as DraftRow<InvestmentEntry>).paymentModeId;
     }
@@ -2855,7 +2635,7 @@ export class BulkEditorDialog {
       ];
     }
 
-    return this.filteredLoans();
+    return [];
   }
 
   private rowLabel(
@@ -2998,16 +2778,6 @@ export class BulkEditorDialog {
     }
 
     if (
-      this.activeRows(this.loans()).some(
-        (loan) =>
-          (!this.originalLoansById.has(loan.id) || this.isRowModified('loans', loan)) &&
-          !validPaymentMode(loan, true),
-      )
-    ) {
-      return 'Every active loan must use a payment mode linked to an active payment account.';
-    }
-
-    if (
       this.activeRows(this.investments()).some(
         (investment) =>
           (!this.originalInvestmentsById.has(investment.id) ||
@@ -3136,8 +2906,7 @@ export class BulkEditorDialog {
     operation:
       | ExpenseTemplateAuditVersion['operation']
       | IncomeAuditVersion['operation']
-      | InvestmentAuditVersion['operation']
-      | LoanAuditVersion['operation'],
+      | InvestmentAuditVersion['operation'],
   ): boolean {
     return operation !== 'created';
   }

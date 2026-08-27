@@ -60,8 +60,7 @@ export interface LoanAccount {
   version?: number;
 }
 
-export type LoanEventSource =
-  'manual' | 'legacy-migration' | 'statement-import' | 'schedule-import' | 'system';
+export type LoanEventSource = 'manual' | 'statement-import' | 'schedule-import' | 'system';
 
 interface LoanEventBase {
   id: string;

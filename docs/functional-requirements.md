@@ -219,7 +219,7 @@ The system must make it possible to determine:
 
 ### 8.1 Loan accounts and repayment tracking
 
-Loans V2 uses a contract plus an effective-dated event ledger as its source of truth. The loan account stores identity, ownership, payment mode, and agreed contract terms. Outstanding principal, paid principal, paid interest, remaining installments, future interest, and projected closure are calculated values and must not be edited or persisted as authoritative state.
+Loans uses a contract plus an effective-dated event ledger as its source of truth. The loan account stores identity, ownership, payment mode, and agreed contract terms. Outstanding principal, paid principal, paid interest, remaining installments, future interest, and projected closure are calculated values and must not be edited or persisted as authoritative state.
 
 The contract supports fixed and floating rates; monthly-reducing and daily-reducing interest; Actual/365, Actual/366, Actual/Actual, and 30/360 day counts; monthly compounding; contractual maturity; and keep-EMI, keep-tenure, or lender-specified prepayment treatment.
 
@@ -242,10 +242,6 @@ The Loan Detail route provides overview, schedule, transactions, insights, recon
 ### 8.4 Expense projection
 
 The engine-derived scheduled payment supplies the monthly Loan EMI expense. The stable `loan:<loanId>` source identity prevents duplicates. Loan payments remain automatically confirmed and outside Monthly Review. A changed rate, EMI, tenure, prepayment, or foreclosure recalculates future occurrences without changing historical materialized expenses.
-
-### 8.5 Legacy compatibility
-
-Legacy snapshot loans remain readable and are labelled **Estimated**. Upgrade requires an explicit balance as-of date, creates a V2 account and legacy balance-anchor event, retains ownership/payment-mode/notes, and reports partial history. No all-at-once Firestore migration is required.
 
 ## 9. Investments
 
@@ -352,7 +348,7 @@ The following table records the current implementation baseline for financial-re
 | One-time expense  | Name, date/month, expense category, amount, note, payment mode                                                |
 | Recurring expense | Name, expense category, amount, frequency, start date, end date, payment mode                                 |
 | Investment        | Name, amount, investment category, frequency, date, start date, end date, notes, payment mode                 |
-| Loan V2           | Account identity, contract terms, notes, ownership, EMI payment mode; events and reconciliations are separate |
+| Loan              | Account identity, contract terms, notes, ownership, EMI payment mode; events and reconciliations are separate |
 
 The signed-in member owner is recorded implicitly for every record. An account-backed payment mode provides the payment-account relationship. Attachments are not part of the current record model.
 
@@ -667,7 +663,7 @@ The following items are explicitly or implicitly outside the confirmed scope:
 - Pause/resume for recurring records
 - Recurring exceptions beyond an end date and monthly-review skips
 - Binary document storage and automatic parsing for unsupported lender statement formats
-- Analytics and alerts beyond the supported Dashboard, Planning, and Loan V2 statement capabilities
+- Analytics and alerts beyond the supported Dashboard, Planning, and loan statement capabilities
 - Unspecified financial features such as tax planning, bill payment, or money transfers
 
 ## 17. Clarification status

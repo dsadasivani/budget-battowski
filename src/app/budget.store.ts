@@ -17,9 +17,8 @@ import {
 import { effectiveValueForOccurrence } from './domain/effective-dating/effective-dating-engine';
 import { MonthlyReviewSourceConflictError } from './domain/errors';
 import { haveSameOwner, isWorkspaceOwner, normalizeEmail } from './domain/identity/identity';
-import { isLoanOccurrenceInRange, loanOccurrenceDate } from './domain/loans/loan-schedule-engine';
+import { loanOccurrenceDate } from './domain/loans/loan-schedule-engine';
 import { calculateLoan } from './domain/loans/loan-engine';
-import { migrateLegacyLoan } from './domain/loans/loan-migration';
 import { loanAccuracyStatus, reconcileLoanBalance } from './domain/loans/loan-reconciliation';
 import { scheduleForMonth } from './domain/recurrence/recurrence-engine';
 import { applyEntityMutations, planEntityMutations } from './domain/mutations/mutation-planner';
@@ -84,8 +83,6 @@ import type {
   InvestmentAuditVersion,
   InvestmentEntry,
   InvestmentFrequency,
-  Loan,
-  LoanAuditVersion,
   PaymentAccount,
   PaymentBankName,
   PaymentCardType,
@@ -183,14 +180,6 @@ function monthEndDate(month: string): string {
   const { year, monthIndex } = monthParts(month);
   const lastDay = new Date(year, monthIndex + 1, 0).getDate();
   return `${month}-${String(lastDay).padStart(2, '0')}`;
-}
-
-function installmentsThroughEndDate(month: string, endDate?: string): number {
-  const endMonth = dateMonthKey(endDate);
-  if (!endMonth || endMonth < month) return 0;
-  const start = monthParts(month);
-  const end = monthParts(endMonth);
-  return (end.year - start.year) * 12 + end.monthIndex - start.monthIndex + 1;
 }
 
 function monthLabel(month: string): string {
@@ -432,7 +421,6 @@ const WORKSPACE_DATA_COLLECTIONS: BudgetCollectionName[] = [
   'templates',
   'expenses',
   'investments',
-  'loans',
   'loanAccounts',
   'loanEvents',
   'loanReconciliations',
@@ -503,7 +491,6 @@ export class BudgetStore implements OnDestroy {
   readonly templates = this.planningState.templates;
   readonly expenses = this.financeState.expenses;
   readonly investments = this.financeState.investments;
-  readonly loans = this.financeState.loans;
   readonly loanAccounts = this.financeState.loanAccounts;
   readonly loanEvents = this.financeState.loanEvents;
   readonly loanReconciliations = this.financeState.loanReconciliations;
@@ -539,7 +526,7 @@ export class BudgetStore implements OnDestroy {
         this.templates().length +
         this.expenses().length +
         this.investments().length +
-        this.loans().length >
+        this.loanAccounts().length >
       0,
   );
   readonly activePaymentAccounts = computed(() =>
@@ -643,13 +630,6 @@ export class BudgetStore implements OnDestroy {
   readonly filteredInvestments = computed(() =>
     this.investments().filter((record) => this.matchesSelectedMember(record)),
   );
-  readonly filteredLoans = computed(() =>
-    this.loans().filter(
-      (record) =>
-        !this.loanAccounts().some((account) => account.id === record.id) &&
-        this.matchesSelectedMember(record),
-    ),
-  );
   readonly filteredLoanAccounts = computed(() =>
     this.loanAccounts().filter(
       (record) => !record.archivedDate && this.matchesSelectedMember(record),
@@ -684,48 +664,29 @@ export class BudgetStore implements OnDestroy {
     });
   });
   readonly loanAccountRows = computed(() => {
-    const v2Rows = this.loanCalculationRows().map(({ account, calculation, accuracy }) => ({
-      id: account.id,
-      schemaVersion: 2 as const,
-      lender: account.lender,
-      loanType: account.loanType,
-      principal: account.contract.disbursedAmount,
-      outstanding: calculation.position.outstandingPrincipal,
-      emi: calculation.position.currentEmi,
-      annualRate: calculation.position.currentAnnualRate,
-      monthsLeft: calculation.position.remainingInstallments,
-      payoffDate: calculation.position.projectedPayoffDate,
-      paidRatio: this.ratio(
-        account.contract.disbursedAmount - calculation.position.outstandingPrincipal,
-        account.contract.disbursedAmount,
-      ),
-      accuracy,
-      status: calculation.position.status,
-      paymentModeId: account.paymentModeId,
-      historyCoverage: calculation.position.historyCoverage,
-      color: this.loanColor(account.id),
-      paymentModeMeta: this.paymentModeMeta(account.paymentModeId),
-    }));
-    const legacyRows = this.filteredLoans().map((loan) => ({
-      id: loan.id,
-      schemaVersion: 1 as const,
-      lender: loan.lender,
-      loanType: loan.loanType,
-      principal: loan.principal,
-      outstanding: loan.outstanding,
-      emi: loan.emi,
-      annualRate: loan.annualRate,
-      monthsLeft: installmentsThroughEndDate(this.selectedMonth(), loan.endDate),
-      payoffDate: loan.endDate || undefined,
-      paidRatio: this.ratio(loan.principal - loan.outstanding, loan.principal),
-      accuracy: { label: 'Estimated' as const, throughDate: undefined },
-      status: 'needs-attention' as const,
-      paymentModeId: loan.paymentModeId,
-      historyCoverage: 'partial' as const,
-      color: this.loanColor(loan.id),
-      paymentModeMeta: this.paymentModeMeta(loan.paymentModeId),
-    }));
-    return [...v2Rows, ...legacyRows].sort((left, right) => right.outstanding - left.outstanding);
+    return this.loanCalculationRows()
+      .map(({ account, calculation, accuracy }) => ({
+        id: account.id,
+        lender: account.lender,
+        loanType: account.loanType,
+        principal: account.contract.disbursedAmount,
+        outstanding: calculation.position.outstandingPrincipal,
+        emi: calculation.position.currentEmi,
+        annualRate: calculation.position.currentAnnualRate,
+        monthsLeft: calculation.position.remainingInstallments,
+        payoffDate: calculation.position.projectedPayoffDate,
+        paidRatio: this.ratio(
+          account.contract.disbursedAmount - calculation.position.outstandingPrincipal,
+          account.contract.disbursedAmount,
+        ),
+        accuracy,
+        status: calculation.position.status,
+        paymentModeId: account.paymentModeId,
+        historyCoverage: calculation.position.historyCoverage,
+        color: this.loanColor(account.id),
+        paymentModeMeta: this.paymentModeMeta(account.paymentModeId),
+      }))
+      .sort((left, right) => right.outstanding - left.outstanding);
   });
   readonly showPageSkeleton = computed(
     () =>
@@ -811,11 +772,6 @@ export class BudgetStore implements OnDestroy {
 
     return activeIncomes.filter((income) => !income.month);
   });
-  readonly activeLoans = computed(() =>
-    this.filteredLoans()
-      .map((loan) => this.loanVersionForMonth(loan, this.selectedMonth()))
-      .filter((loan): loan is Loan => !!loan && loan.emi > 0),
-  );
   readonly investmentPlans = computed(() =>
     this.filteredInvestments().filter(
       (investment) =>
@@ -981,19 +937,6 @@ export class BudgetStore implements OnDestroy {
       };
     });
   });
-  readonly loanPlans = computed(() =>
-    this.activeLoans().map((loan) => {
-      const monthsLeft = installmentsThroughEndDate(this.selectedMonth(), loan.endDate);
-      const payoff = loan.endDate ? new Date(loan.endDate) : undefined;
-
-      return {
-        ...loan,
-        monthsLeft,
-        payoff,
-        paidRatio: this.ratio(loan.principal - loan.outstanding, loan.principal),
-      };
-    }),
-  );
   readonly totalDebt = computed(() =>
     this.loanAccountRows().reduce((total, loan) => total + loan.outstanding, 0),
   );
@@ -1310,16 +1253,6 @@ export class BudgetStore implements OnDestroy {
       });
     }
 
-    for (const loan of this.activeLoans()) {
-      rows.push({
-        amount: loan.emi,
-        color: '#f97316',
-        date: loanOccurrenceDate(month, loan.startDate),
-        label: `${loan.loanType} due`,
-        tone: 'loan',
-      });
-    }
-
     for (const { account, calculation } of this.loanCalculationRows()) {
       const schedule = calculation.schedule.find((row) => row.dueDate.startsWith(`${month}-`));
       if (!schedule) continue;
@@ -1400,14 +1333,29 @@ export class BudgetStore implements OnDestroy {
     this.loanAccountRows().reduce((total, loan) => total + loan.principal, 0),
   );
   readonly loanRepaymentRows = computed(() =>
-    this.loanPlans()
-      .map((loan) => ({
-        ...loan,
-        color: this.loanColor(loan.id),
-        paymentModeMeta: this.paymentModeMeta(loan.paymentModeId),
-        paymentModeLabel: this.paymentModeLabel(loan.paymentModeId),
-        paymentModeTone: this.paymentModeTone(loan.paymentModeId),
-        share: this.ratio(loan.emi, this.debtEmiTotal()),
+    this.loanCalculationRows()
+      .map(({ account, calculation }) => ({
+        id: account.id,
+        lender: account.lender,
+        loanType: account.loanType,
+        principal: account.contract.disbursedAmount,
+        outstanding: calculation.position.outstandingPrincipal,
+        annualRate: calculation.position.currentAnnualRate,
+        emi: calculation.position.currentEmi,
+        monthsLeft: calculation.position.remainingInstallments,
+        payoff: calculation.position.projectedPayoffDate
+          ? dateFromIso(calculation.position.projectedPayoffDate)
+          : undefined,
+        paidRatio: this.ratio(
+          account.contract.disbursedAmount - calculation.position.outstandingPrincipal,
+          account.contract.disbursedAmount,
+        ),
+        paymentModeId: account.paymentModeId,
+        color: this.loanColor(account.id),
+        paymentModeMeta: this.paymentModeMeta(account.paymentModeId),
+        paymentModeLabel: this.paymentModeLabel(account.paymentModeId),
+        paymentModeTone: this.paymentModeTone(account.paymentModeId),
+        share: this.ratio(calculation.position.currentEmi, this.debtEmiTotal()),
       }))
       .sort((left, right) => right.emi - left.emi),
   );
@@ -1418,18 +1366,7 @@ export class BudgetStore implements OnDestroy {
     return Array.from({ length: daysInMonth }, (_, dayIndex) => {
       const day = dayIndex + 1;
       const date = `${this.selectedMonth()}-${String(day).padStart(2, '0')}`;
-      const legacyItems = this.activeLoans()
-        .filter(
-          (loan) =>
-            Number(loanOccurrenceDate(this.selectedMonth(), loan.startDate).slice(-2)) === day,
-        )
-        .map((loan) => ({
-          id: loan.id,
-          color: this.loanColor(loan.id),
-          label: this.loanExpenseName(loan),
-          amount: loan.emi,
-        }));
-      const v2Items = this.loanCalculationRows()
+      const items = this.loanCalculationRows()
         .filter(({ calculation }) => calculation.schedule.some((row) => row.dueDate === date))
         .map(({ account, calculation }) => ({
           id: account.id,
@@ -1443,7 +1380,7 @@ export class BudgetStore implements OnDestroy {
       return {
         date,
         day,
-        items: [...legacyItems, ...v2Items],
+        items,
         muted: false,
       };
     });
@@ -1905,7 +1842,6 @@ export class BudgetStore implements OnDestroy {
         templates: this.templates(),
         expenses: this.expenses(),
         investments: this.investments(),
-        loans: this.loans(),
         loanAccounts: this.loanAccounts(),
         loanEvents: this.loanEvents(),
         loanReconciliations: this.loanReconciliations(),
@@ -1941,7 +1877,6 @@ export class BudgetStore implements OnDestroy {
         await repository.upsertMany('templates', collections.templates);
         await repository.upsertMany('expenses', collections.expenses);
         await repository.upsertMany('investments', collections.investments);
-        await repository.upsertMany('loans', collections.loans);
         await repository.upsertMany('loanAccounts', collections.loanAccounts);
         await repository.upsertMany('loanEvents', collections.loanEvents);
         await repository.upsertMany('loanReconciliations', collections.loanReconciliations);
@@ -1954,7 +1889,6 @@ export class BudgetStore implements OnDestroy {
       this.templates.set(mergeById(this.templates(), collections.templates));
       this.expenses.set(mergeById(this.expenses(), collections.expenses));
       this.investments.set(mergeById(this.investments(), collections.investments));
-      this.loans.set(mergeById(this.loans(), collections.loans));
       this.loanAccounts.set(mergeById(this.loanAccounts(), collections.loanAccounts));
       this.loanEvents.set(mergeById(this.loanEvents(), collections.loanEvents));
       this.loanReconciliations.set(
@@ -2057,7 +1991,6 @@ export class BudgetStore implements OnDestroy {
       templates: this.filteredTemplates(),
       expenses: this.filteredExpenses(),
       investments: this.investmentPlans(),
-      loans: this.filteredLoans(),
     };
 
     if (this.breakpointObserver.isMatched('(max-width: 760px)')) {
@@ -2234,19 +2167,6 @@ export class BudgetStore implements OnDestroy {
     return { events, expenses };
   }
 
-  async upgradeLegacyLoan(loanId: string, balanceAsOfDate: string): Promise<boolean> {
-    const legacy = this.loans().find((loan) => loan.id === loanId);
-    if (!legacy) {
-      return false;
-    }
-    const migration = migrateLegacyLoan(legacy, balanceAsOfDate);
-    const saved = await this.saveLoanAccount(migration.account, migration.anchor);
-    if (saved) {
-      this.syncStatus.set(migration.assumption);
-    }
-    return saved;
-  }
-
   async recordLoanEvent(event: LoanEvent): Promise<boolean> {
     const account = this.loanAccount(event.loanId);
     if (!account) {
@@ -2399,7 +2319,6 @@ export class BudgetStore implements OnDestroy {
       },
       () => {
         this.loanAccounts.update((items) => items.filter((item) => item.id !== accountId));
-        this.loans.update((items) => items.filter((item) => item.id !== accountId));
         this.loanEvents.update((items) => items.filter((item) => item.loanId !== accountId));
         this.loanReconciliations.update((items) =>
           items.filter((item) => item.loanId !== accountId),
@@ -2410,37 +2329,6 @@ export class BudgetStore implements OnDestroy {
     );
     if (deleted) {
       this.syncStatus.set('Loan account permanently deleted; historical expenses retained');
-    }
-    return deleted;
-  }
-
-  async deleteLegacyLoan(loanId: string): Promise<boolean> {
-    const loan = this.loans().find((item) => item.id === loanId);
-    if (!loan || this.loanAccount(loanId)) {
-      return false;
-    }
-    const confirmed = await this.openWorkspaceConfirm({
-      title: 'Delete Legacy Loan',
-      message: `Delete ${loan.lender} · ${loan.loanType}? Future generated EMI expenses will be removed, while historical expenses remain. This cannot be undone.`,
-      confirmLabel: 'Delete loan',
-      icon: 'delete_forever',
-    });
-    if (!confirmed) {
-      return false;
-    }
-    const cutoffDate = todayDate();
-    const futureExpenseIds = this.futureLoanExpenseIds(loanId, cutoffDate);
-    const deleted = await this.runFirebaseWrite(
-      async () => {
-        await this.repository()?.deleteLegacyLoanCascade(loanId, cutoffDate);
-      },
-      () => {
-        this.loans.update((items) => items.filter((item) => item.id !== loanId));
-        this.expenses.update((items) => items.filter((item) => !futureExpenseIds.has(item.id)));
-      },
-    );
-    if (deleted) {
-      this.syncStatus.set('Legacy loan deleted; historical expenses retained');
     }
     return deleted;
   }
@@ -2768,9 +2656,6 @@ export class BudgetStore implements OnDestroy {
       investments: rows
         .filter((row) => row.collectionName === 'investments')
         .map((row) => ({ ...(row.record as InvestmentEntry), memberEmail: importerEmail })),
-      loans: rows
-        .filter((row) => row.collectionName === 'loans')
-        .map((row) => ({ ...(row.record as Loan), memberEmail: importerEmail })),
       loanAccounts: [],
       loanEvents: [],
       loanReconciliations: [],
@@ -2790,7 +2675,6 @@ export class BudgetStore implements OnDestroy {
       ...records.templates,
       ...records.expenses,
       ...records.investments,
-      ...records.loans,
     ];
     const invalidImportedRecord = importedFinancialRecords.some((record) => {
       if (!record.paymentModeId) {
@@ -2829,7 +2713,6 @@ export class BudgetStore implements OnDestroy {
           repository.upsertMany('templates', records.templates),
           repository.upsertMany('expenses', records.expenses),
           repository.upsertMany('investments', records.investments),
-          repository.upsertMany('loans', records.loans),
         ]);
       },
       () => {
@@ -2846,7 +2729,6 @@ export class BudgetStore implements OnDestroy {
         this.templates.update((items) => [...items, ...records.templates]);
         this.expenses.update((items) => [...items, ...records.expenses]);
         this.investments.update((items) => [...items, ...records.investments]);
-        this.loans.update((items) => [...items, ...records.loans]);
       },
     );
   }
@@ -2924,32 +2806,7 @@ export class BudgetStore implements OnDestroy {
             .map<ExpenseEntry>((template) => this.expenseFromTemplate(template, month))
         : [];
 
-    const loanEntries = this.filteredLoans()
-      .filter((loan) => {
-        const templateId = this.loanTemplateId(loan.id);
-        return (
-          loan.emi > 0 &&
-          !existingTemplateIds.has(templateId) &&
-          isLoanOccurrenceInRange(month, loan.startDate, loan.endDate)
-        );
-      })
-      .map<ExpenseEntry>((loan) => ({
-        id: `review:loan:${loan.id}:${month}`,
-        month,
-        date: loanOccurrenceDate(month, loan.startDate),
-        name: this.loanExpenseName(loan),
-        categoryId: this.loanEmiCategoryId(),
-        amount: loan.emi,
-        type: 'recurring',
-        note: 'Prepopulated from loan EMI',
-        templateId: this.loanTemplateId(loan.id),
-        sourceLoanId: loan.id,
-        memberEmail: loan.memberEmail,
-        ownerUid: loan.ownerUid,
-        paymentModeId: loan.paymentModeId,
-      }));
-
-    const v2LoanEntries = this.loanCalculationRows()
+    const loanEntries = this.loanCalculationRows()
       .filter(({ account }) => !existingTemplateIds.has(this.loanTemplateId(account.id)))
       .map(({ account, calculation }) => ({
         account,
@@ -2975,7 +2832,7 @@ export class BudgetStore implements OnDestroy {
         paymentModeId: account.paymentModeId,
       }));
 
-    return [...templateEntries, ...loanEntries, ...v2LoanEntries];
+    return [...templateEntries, ...loanEntries];
   }
 
   categoryName(categoryId: string): string {
@@ -3424,7 +3281,7 @@ export class BudgetStore implements OnDestroy {
       this.expenses().some((record) => record.paymentModeId === paymentModeId) ||
       this.templates().some((record) => record.paymentModeId === paymentModeId) ||
       this.investments().some((record) => record.paymentModeId === paymentModeId) ||
-      this.loans().some((record) => record.paymentModeId === paymentModeId);
+      this.loanAccounts().some((record) => record.paymentModeId === paymentModeId);
     if (isReferenced) {
       this.syncStatus.set('This payment mode is retained because financial records reference it');
       return false;
@@ -4067,33 +3924,6 @@ export class BudgetStore implements OnDestroy {
     );
   }
 
-  private loanVersionForMonth(loan: Loan, month: string): Loan | null {
-    const historical = (loan.auditTrail ?? []).map((audit) => ({
-      ...loan,
-      lender: audit.lender,
-      loanType: audit.loanType,
-      principal: audit.principal,
-      outstanding: audit.outstanding,
-      annualRate: audit.annualRate,
-      emi: audit.emi,
-      startDate: audit.startDate,
-      endDate: audit.endDate,
-      notes: audit.notes ?? '',
-      memberEmail: audit.memberEmail ?? loan.memberEmail,
-      paymentModeId: audit.paymentModeId ?? loan.paymentModeId,
-      effectiveStartDate: audit.effectiveStartDate,
-      effectiveEndDate: audit.effectiveEndDate,
-      operation: audit.operation === 'deleted' ? ('updated' as const) : audit.operation,
-    }));
-    return (
-      effectiveValueForOccurrence(loan, historical, (value) =>
-        isLoanOccurrenceInRange(month, value.startDate, value.endDate)
-          ? loanOccurrenceDate(month, value.startDate)
-          : null,
-      )?.value ?? null
-    );
-  }
-
   private isActiveExpenseVisible(expense: ExpenseEntry): boolean {
     const loanId =
       expense.sourceLoanId ??
@@ -4120,8 +3950,7 @@ export class BudgetStore implements OnDestroy {
       );
     }
 
-    const legacyLoan = this.filteredLoans().find((candidate) => candidate.id === loanId);
-    return !!legacyLoan && !!this.loanVersionForMonth(legacyLoan, this.selectedMonth());
+    return false;
   }
 
   private isTemplateChanged(previous: ExpenseTemplate | undefined, next: ExpenseTemplate): boolean {
@@ -4287,7 +4116,7 @@ export class BudgetStore implements OnDestroy {
     return `loan:${loanId}`;
   }
 
-  private loanExpenseName(loan: Pick<Loan, 'lender' | 'loanType'>): string {
+  private loanExpenseName(loan: { lender: string; loanType: string }): string {
     return [loan.lender, loan.loanType].filter(Boolean).join(' - ') || 'Loan EMI';
   }
 
@@ -4438,53 +4267,6 @@ export class BudgetStore implements OnDestroy {
     };
   }
 
-  private normalizeLoanRecord(loan: Loan, previous: Loan | undefined, operationDate: string): Loan {
-    if (!previous) {
-      return {
-        ...loan,
-        auditTrail: loan.auditTrail ?? [],
-      };
-    }
-
-    const immutableLoan = {
-      ...loan,
-      lender: previous.lender,
-      loanType: previous.loanType,
-      memberEmail: previous.memberEmail,
-    };
-
-    if (!this.isLoanChanged(previous, immutableLoan)) {
-      return {
-        ...immutableLoan,
-        auditTrail: previous.auditTrail ?? loan.auditTrail ?? [],
-      };
-    }
-
-    const auditEndDate = previousDate(operationDate);
-    const auditVersion = this.auditVersionFromLoan(previous, 'updated', auditEndDate);
-
-    return {
-      ...immutableLoan,
-      startDate: immutableLoan.startDate,
-      auditTrail: this.appendLoanAudit(previous.auditTrail, auditVersion),
-    };
-  }
-
-  private closeLoanRecord(previous: Loan, operationDate: string): Loan {
-    const effectiveEndDate = previousDate(operationDate);
-    if (previous.endDate && previous.endDate < operationDate) {
-      return previous;
-    }
-    const auditVersion = this.auditVersionFromLoan(previous, 'deleted', effectiveEndDate);
-
-    return {
-      ...previous,
-      endDate:
-        previous.endDate && previous.endDate < operationDate ? previous.endDate : effectiveEndDate,
-      auditTrail: this.appendLoanAudit(previous.auditTrail, auditVersion),
-    };
-  }
-
   private isIncomeChanged(previous: IncomeSource, next: IncomeSource): boolean {
     return (
       previous.amount !== next.amount ||
@@ -4503,20 +4285,6 @@ export class BudgetStore implements OnDestroy {
       (previous.categoryId || '') !== (next.categoryId || '') ||
       previous.frequency !== next.frequency ||
       (previous.date || '') !== (next.date || '') ||
-      (previous.startDate || '') !== (next.startDate || '') ||
-      (previous.endDate || '') !== (next.endDate || '') ||
-      (previous.notes || '') !== (next.notes || '') ||
-      (previous.memberEmail || '') !== (next.memberEmail || '') ||
-      (previous.paymentModeId || '') !== (next.paymentModeId || '')
-    );
-  }
-
-  private isLoanChanged(previous: Loan, next: Loan): boolean {
-    return (
-      previous.principal !== next.principal ||
-      previous.outstanding !== next.outstanding ||
-      previous.annualRate !== next.annualRate ||
-      previous.emi !== next.emi ||
       (previous.startDate || '') !== (next.startDate || '') ||
       (previous.endDate || '') !== (next.endDate || '') ||
       (previous.notes || '') !== (next.notes || '') ||
@@ -4578,31 +4346,6 @@ export class BudgetStore implements OnDestroy {
     };
   }
 
-  private auditVersionFromLoan(
-    loan: Loan,
-    operation: LoanAuditVersion['operation'],
-    effectiveEndDate: string | undefined,
-  ): LoanAuditVersion {
-    return {
-      id: id('audit'),
-      operation,
-      recordedDate: new Date().toISOString(),
-      effectiveStartDate: loan.startDate,
-      effectiveEndDate,
-      lender: loan.lender,
-      loanType: loan.loanType,
-      principal: loan.principal,
-      outstanding: loan.outstanding,
-      annualRate: loan.annualRate,
-      emi: loan.emi,
-      startDate: loan.startDate,
-      endDate: loan.endDate,
-      notes: loan.notes,
-      memberEmail: loan.memberEmail,
-      paymentModeId: loan.paymentModeId,
-    };
-  }
-
   private appendIncomeAudit(
     auditTrail: IncomeAuditVersion[] | undefined,
     auditVersion: IncomeAuditVersion,
@@ -4638,30 +4381,6 @@ export class BudgetStore implements OnDestroy {
         (audit.categoryId || '') === (auditVersion.categoryId || '') &&
         audit.frequency === auditVersion.frequency &&
         (audit.date || '') === (auditVersion.date || '') &&
-        (audit.startDate || '') === (auditVersion.startDate || '') &&
-        (audit.endDate || '') === (auditVersion.endDate || '') &&
-        (audit.memberEmail || '') === (auditVersion.memberEmail || '') &&
-        (audit.paymentModeId || '') === (auditVersion.paymentModeId || ''),
-    )
-      ? (auditTrail ?? [])
-      : [...(auditTrail ?? []), auditVersion];
-  }
-
-  private appendLoanAudit(
-    auditTrail: LoanAuditVersion[] | undefined,
-    auditVersion: LoanAuditVersion,
-  ): LoanAuditVersion[] {
-    return (auditTrail ?? []).some(
-      (audit) =>
-        audit.operation === auditVersion.operation &&
-        (audit.effectiveStartDate || '') === (auditVersion.effectiveStartDate || '') &&
-        (audit.effectiveEndDate || '') === (auditVersion.effectiveEndDate || '') &&
-        audit.lender === auditVersion.lender &&
-        audit.loanType === auditVersion.loanType &&
-        audit.principal === auditVersion.principal &&
-        audit.outstanding === auditVersion.outstanding &&
-        audit.annualRate === auditVersion.annualRate &&
-        audit.emi === auditVersion.emi &&
         (audit.startDate || '') === (auditVersion.startDate || '') &&
         (audit.endDate || '') === (auditVersion.endDate || '') &&
         (audit.memberEmail || '') === (auditVersion.memberEmail || '') &&
@@ -5176,14 +4895,6 @@ export class BudgetStore implements OnDestroy {
           listenerError('investments', 'Investment listener failed.'),
         ),
         repository.listen(
-          'loans',
-          (records) => {
-            this.loans.set(records);
-            this.markWorkspaceCollectionLoaded('loans', workspaceId);
-          },
-          listenerError('loans', 'Loan listener failed.'),
-        ),
-        repository.listen(
           'loanAccounts',
           (records) => {
             this.loanAccounts.set(records);
@@ -5430,13 +5141,11 @@ export class BudgetStore implements OnDestroy {
     const deletedExpenseIds = new Set(result.deleted.expenses);
     const deletedIncomeIds = new Set(result.deleted.incomes);
     const deletedInvestmentIds = new Set(result.deleted.investments);
-    const deletedLoanIds = new Set(result.deleted.loans);
     const deletedTemplateIds = new Set(result.deleted.templates);
     const hardDeletedTemplateIds = deletedTemplateIds;
     const selectedMonth = this.selectedMonth();
     const operationDate = todayDate();
     const recurringOperationMonth = currentMonth();
-    const planOperationMonth = currentMonth();
 
     const effectiveBudgetMonth = this.selectedMonth();
     const categories = this.withDefaultCategories([
@@ -5455,11 +5164,9 @@ export class BudgetStore implements OnDestroy {
     const existingInvestmentsById = new Map(
       this.investments().map((investment) => [investment.id, investment]),
     );
-    const existingLoansById = new Map(this.loans().map((loan) => [loan.id, loan]));
     const returnedIncomeIds = new Set(result.incomes.map((income) => income.id));
     const returnedTemplateIds = new Set(result.templates.map((template) => template.id));
     const returnedInvestmentIds = new Set(result.investments.map((investment) => investment.id));
-    const returnedLoanIds = new Set(result.loans.map((loan) => loan.id));
     let incomes = [
       ...this.incomes().filter(
         (income) => !returnedIncomeIds.has(income.id) && !deletedIncomeIds.has(income.id),
@@ -5529,21 +5236,6 @@ export class BudgetStore implements OnDestroy {
         ...expense,
         categoryId: categoryRemaps.get(expense.categoryId) ?? expense.categoryId,
       }));
-    const loans = [
-      ...this.loans().filter(
-        (loan) => !returnedLoanIds.has(loan.id) && !deletedLoanIds.has(loan.id),
-      ),
-      ...result.loans
-        .filter((loan) => !deletedLoanIds.has(loan.id))
-        .map((loan) =>
-          this.normalizeLoanRecord(loan, existingLoansById.get(loan.id), operationDate),
-        ),
-      ...result.deleted.loans
-        .map((recordId) => existingLoansById.get(recordId))
-        .filter((loan): loan is Loan => !!loan)
-        .map((loan) => this.closeLoanRecord(loan, operationDate)),
-    ];
-
     const remapCategoryId = (categoryId: string | undefined): string | undefined =>
       categoryId ? (categoryRemaps.get(categoryId) ?? categoryId) : undefined;
     incomes = incomes.map((income) => ({
@@ -5575,13 +5267,6 @@ export class BudgetStore implements OnDestroy {
         !deletedTemplateIds.has(template.id),
     );
     const extraDeletedExpenseIds = new Set<string>();
-    const loansById = new Map(loans.map((loan) => [loan.id, loan]));
-    const changedLoanIds = new Set(
-      loans
-        .filter((loan) => this.isLoanChanged(existingLoansById.get(loan.id) ?? loan, loan))
-        .map((loan) => loan.id),
-    );
-
     const investmentPlansById = new Map(
       investments
         .filter((investment) => !investment.sourceInvestmentId)
@@ -5623,52 +5308,6 @@ export class BudgetStore implements OnDestroy {
         memberEmail: source.memberEmail,
         paymentModeId: source.paymentModeId,
       };
-    });
-
-    expenses = expenses.flatMap((expense) => {
-      if (!expense.templateId?.startsWith('loan:')) {
-        return [expense];
-      }
-
-      const loanId = expense.templateId.slice('loan:'.length);
-      const expenseMonth = entryMonthKey(expense);
-
-      if (deletedLoanIds.has(loanId)) {
-        if (expenseMonth > planOperationMonth) {
-          extraDeletedExpenseIds.add(expense.id);
-          return [];
-        }
-
-        return [expense];
-      }
-
-      const loan = loansById.get(loanId);
-      if (
-        !loan ||
-        !changedLoanIds.has(loanId) ||
-        expenseMonth < planOperationMonth ||
-        this.recordDate(expense) < operationDate
-      ) {
-        return [expense];
-      }
-
-      if (!isLoanOccurrenceInRange(expenseMonth, loan.startDate, loan.endDate)) {
-        extraDeletedExpenseIds.add(expense.id);
-        return [];
-      }
-
-      return [
-        {
-          ...expense,
-          date: loanOccurrenceDate(expenseMonth, loan.startDate),
-          name: this.loanExpenseName(loan),
-          categoryId: this.loanEmiCategoryId(),
-          amount: loan.emi,
-          type: 'recurring' as const,
-          note: expense.note || 'Prepopulated from loan EMI',
-          paymentModeId: loan.paymentModeId,
-        },
-      ];
     });
 
     if (result.scope === 'monthly') {
@@ -5834,7 +5473,6 @@ export class BudgetStore implements OnDestroy {
     const openingTemplates = openingSnapshot?.templates ?? this.templates();
     const openingExpenses = openingSnapshot?.expenses ?? this.expenses();
     const openingInvestments = openingSnapshot?.investments ?? this.investments();
-    const openingLoans = openingSnapshot?.loans ?? this.loans();
     const mutations: BudgetMutationSet = {
       categories: excludeUntouchedEditorUpdates(
         planEntityMutations(this.categories(), categories),
@@ -5863,11 +5501,6 @@ export class BudgetStore implements OnDestroy {
         openingInvestments,
         planEntityMutations(openingInvestments, result.investments, result.deleted.investments),
       ),
-      loans: excludeUntouchedEditorUpdates(
-        planEntityMutations(this.loans(), loans),
-        openingLoans,
-        planEntityMutations(openingLoans, result.loans, result.deleted.loans),
-      ),
     };
     const changedTemplateSourceIds = new Set(
       templates
@@ -5888,14 +5521,10 @@ export class BudgetStore implements OnDestroy {
       const isTemplateCascade =
         !!templateId &&
         (hardDeletedTemplateIds.has(templateId) || changedTemplateSourceIds.has(templateId));
-      const isLoanCascade =
-        !!templateId?.startsWith('loan:') &&
-        (changedLoanIds.has(templateId.slice('loan:'.length)) ||
-          deletedLoanIds.has(templateId.slice('loan:'.length)));
       const isCategoryCascade = !!previous && categoryRemaps.has(previous.categoryId);
       if (
         !retainedExpenseUpdateIds.has(update.record.id) &&
-        (isTemplateCascade || isLoanCascade || isCategoryCascade)
+        (isTemplateCascade || isCategoryCascade)
       ) {
         mutations.expenses!.updates.push(update);
       }
@@ -5923,7 +5552,6 @@ export class BudgetStore implements OnDestroy {
         this.templates.set(applyEntityMutations(this.templates(), mutations.templates!));
         this.expenses.set(applyEntityMutations(this.expenses(), mutations.expenses!));
         this.investments.set(applyEntityMutations(this.investments(), mutations.investments!));
-        this.loans.set(applyEntityMutations(this.loans(), mutations.loans!));
       },
     );
 
@@ -6075,7 +5703,6 @@ export class BudgetStore implements OnDestroy {
     this.templates.set([]);
     this.expenses.set([]);
     this.investments.set([]);
-    this.loans.set([]);
     this.loanAccounts.set([]);
     this.loanEvents.set([]);
     this.loanReconciliations.set([]);

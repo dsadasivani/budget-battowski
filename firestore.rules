@@ -73,12 +73,9 @@ service cloud.firestore {
     }
     function generatedExpenseOwnerValid(workspaceId, data) {
       let templatePath = /databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/templates/$(data.templateId);
-      let loanPath = /databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/loans/$(data.sourceLoanId);
       let loanAccountPath = /databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/loanAccounts/$(data.sourceLoanId);
       return ('templateId' in data && data.templateId is string && exists(templatePath) &&
           sameOwner(get(templatePath).data, data)) ||
-        ('sourceLoanId' in data && data.sourceLoanId is string && exists(loanPath) &&
-          sameOwner(get(loanPath).data, data)) ||
         ('sourceLoanId' in data && data.sourceLoanId is string && exists(loanAccountPath) &&
           sameOwner(get(loanAccountPath).data, data));
     }
@@ -213,20 +210,6 @@ service cloud.firestore {
         return commonOwned(data) && data.keys().hasOnly(['name','amount','categoryId','frequency','date','startDate','effectiveStartDate','endDate','notes','createdDate','skippedMonths','sourceInvestmentId','ownerUid','memberEmail','paymentModeId','auditTrail','version','createdAt','updatedAt']) && data.name is string && data.amount is number && data.amount >= 0 &&
           frequency(data.frequency) && data.notes is string;
       }
-      match /loans/{id} {
-        allow read: if member(workspaceId);
-        allow create: if member(workspaceId) && validOwnedCreate(request.resource.data) &&
-          validLoan(request.resource.data) && linkedModeValid(workspaceId, request.resource.data, true);
-        allow update: if member(workspaceId) && immutableOwner() && validLoan(request.resource.data) &&
-          linkedModeValid(workspaceId, request.resource.data, true);
-        allow delete: if member(workspaceId);
-      }
-      function validLoan(data) {
-        return commonOwned(data) && data.keys().hasOnly(['lender','loanType','principal','outstanding','annualRate','emi','startDate','endDate','notes','ownerUid','memberEmail','paymentModeId','auditTrail','version','createdAt','updatedAt']) && data.lender is string && data.loanType is string &&
-          data.principal is number && data.principal >= 0 && data.outstanding is number && data.outstanding >= 0 &&
-          data.annualRate is number && data.annualRate >= 0 && data.emi is number && data.emi >= 0 &&
-          validDate(data.startDate) && validDate(data.endDate) && data.notes is string;
-      }
       function validLoanRoundingPolicy(policy) {
         return policy is map &&
           policy.keys().hasOnly(['monetaryScale','interestRounding','installmentRounding','finalInstallmentAdjustment']) &&
@@ -267,7 +250,7 @@ service cloud.firestore {
         return commonOwned(data) && data.keys().hasOnly(['loanId','type','effectiveDate','amount','newAnnualRate','newEmi','newMaturityDate','newRemainingInstallments','notes','source','sourceReference','sourceFingerprint','ownerUid','memberEmail','createdDate','version','createdAt','updatedAt']) &&
           data.loanId is string && validDate(data.effectiveDate) &&
           data.type in ['balance-anchor','disbursement','emi-payment','part-prepayment','rate-change','emi-change','tenure-change','charge','charge-reversal','penal-charge','waiver','refund','adjustment','moratorium-start','moratorium-end','foreclosure'] &&
-          data.source in ['manual','legacy-migration','statement-import','schedule-import','system'] &&
+          data.source in ['manual','statement-import','schedule-import','system'] &&
           (!('amount' in data) || data.amount is number) &&
           (!('newAnnualRate' in data) || (data.newAnnualRate is number && data.newAnnualRate >= 0)) &&
           (!('newEmi' in data) || (data.newEmi is number && data.newEmi > 0));

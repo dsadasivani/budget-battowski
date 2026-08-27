@@ -6,13 +6,12 @@ import type {
   ExpenseTemplate,
   IncomeSource,
   InvestmentEntry,
-  Loan,
   PaymentMode,
   WorkspaceMember,
 } from './budget.models';
 
 export type ImportRecordType =
-  'category' | 'income' | 'expense' | 'recurring_expense' | 'investment' | 'loan';
+  'category' | 'income' | 'expense' | 'recurring_expense' | 'investment';
 
 export type ImportStatus = 'pending' | 'success' | 'error';
 
@@ -150,34 +149,6 @@ const SHEETS: Record<ImportRecordType, SheetDefinition> = {
       date: '2026-06-01',
       startDate: '2026-06-01',
       notes: 'Monthly index fund',
-      memberEmail: '',
-    },
-  },
-  loan: {
-    collectionName: 'loans',
-    headers: [
-      'lender',
-      'loanType',
-      'principal',
-      'outstanding',
-      'annualRate',
-      'emi',
-      'startDate',
-      'endDate',
-      'notes',
-      'paymentModeName',
-      'memberEmail',
-    ],
-    sample: {
-      lender: 'Bank',
-      loanType: 'Home loan',
-      principal: '4000000',
-      outstanding: '3200000',
-      annualRate: '8.7',
-      emi: '38000',
-      startDate: '2024-01-01',
-      endDate: '2036-12-31',
-      notes: 'Existing EMI',
       memberEmail: '',
     },
   },
@@ -442,9 +413,6 @@ function validateRows(
       case 'investment':
         validateInvestment(row, categoryNameToId, memberEmails, paymentModeNameToMode);
         break;
-      case 'loan':
-        validateLoan(row, memberEmails, paymentModeNameToMode);
-        break;
       default:
         break;
     }
@@ -630,51 +598,6 @@ function validateInvestment(
     memberEmail,
     paymentModeId,
   } satisfies InvestmentEntry;
-}
-
-function validateLoan(
-  row: BudgetImportRow,
-  memberEmails: Set<string>,
-  paymentModes: Map<string, PaymentMode>,
-): void {
-  const lender = required(row, 'lender');
-  const loanType = required(row, 'loanType');
-  const principal = numberField(row, 'principal');
-  const outstanding = numberField(row, 'outstanding');
-  const annualRate = numberField(row, 'annualRate');
-  const emi = numberField(row, 'emi');
-  const startDate = optionalDate(row, 'startDate');
-  const endDate = optionalDate(row, 'endDate');
-  const memberEmail = optionalMemberEmailField(row, memberEmails);
-  const paymentModeId = paymentModeIdField(row, paymentModes, true);
-
-  if (!startDate) {
-    row.comments.push('startDate is required.');
-  }
-
-  if (!endDate) {
-    row.comments.push('endDate is required.');
-  }
-
-  if (row.comments.length) {
-    return;
-  }
-
-  row.collectionName = 'loans';
-  row.record = {
-    id: createImportId('loan'),
-    lender,
-    loanType,
-    principal,
-    outstanding,
-    annualRate,
-    emi,
-    startDate: startDate!,
-    endDate: endDate!,
-    notes: optional(row, 'notes'),
-    memberEmail,
-    paymentModeId,
-  } satisfies Loan;
 }
 
 function categoryTypeField(row: BudgetImportRow): CategoryType {

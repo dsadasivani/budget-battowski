@@ -17,7 +17,7 @@ The release-blocking correctness and security findings are resolved:
 - Owned financial records require an immutable `ownerUid`; records without UID ownership cannot be created, updated, or linked.
 - Frontend workspace, member, and related-record identity checks use the same UID-only policy as the rules.
 - Public invite lookup uses UID and normalized-email directory records containing only public identity fields. Private user state is stored by UID.
-- Production temporal resolution for expense templates, income, investments, and loans uses the framework-independent effective-dating engine.
+- Production temporal resolution for expense templates, income, and investments uses the framework-independent effective-dating engine. Loans use the contract and effective-dated event ledger described in `docs/loans.md`.
 - `BudgetFacade` uses composition and `App` no longer copies a facade surface through reflection or prototype walking.
 - Authentication behavior now lives in `SessionStore`; active workspace, member selection, and administration behavior now live in `WorkspaceStore`.
 - Income, category-retirement, workspace-form, and workspace-confirm dialogs are loaded dynamically in addition to the existing lazy Monthly Review and Bulk Editor dialogs.

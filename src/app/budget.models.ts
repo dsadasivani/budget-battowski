@@ -346,39 +346,6 @@ export interface InvestmentAuditVersion {
   paymentModeId?: string;
 }
 
-export interface Loan extends OwnedRecord {
-  lender: string;
-  loanType: string;
-  principal: number;
-  outstanding: number;
-  annualRate: number;
-  emi: number;
-  startDate: string;
-  endDate: string;
-  notes: string;
-  paymentModeId?: string;
-  auditTrail?: LoanAuditVersion[];
-}
-
-export interface LoanAuditVersion {
-  id: string;
-  operation: 'created' | 'updated' | 'deleted';
-  recordedDate: string;
-  effectiveStartDate?: string;
-  effectiveEndDate?: string;
-  lender: string;
-  loanType: string;
-  principal: number;
-  outstanding: number;
-  annualRate: number;
-  emi: number;
-  startDate: string;
-  endDate: string;
-  notes?: string;
-  memberEmail?: string;
-  paymentModeId?: string;
-}
-
 export interface BudgetDataMap {
   paymentAccounts: PaymentAccount;
   paymentModes: PaymentMode;
@@ -387,7 +354,6 @@ export interface BudgetDataMap {
   templates: ExpenseTemplate;
   expenses: ExpenseEntry;
   investments: InvestmentEntry;
-  loans: Loan;
   loanAccounts: LoanAccount;
   loanEvents: LoanEvent;
   loanReconciliations: LoanReconciliation;

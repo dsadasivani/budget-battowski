@@ -16,11 +16,6 @@ import type {
 import { MonthMemberControls } from '../shared/month-member-controls';
 import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 
-function today(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-}
-
 @Component({
   selector: 'app-loans-page',
   imports: [
@@ -36,7 +31,7 @@ function today(): string {
     @if (store.showPageSkeleton()) {
       <app-page-skeleton variant="loans" />
     } @else {
-      <section class="page loans-v2-page">
+      <section class="page loans-page">
         <header class="page-header desktop-page-header">
           <div>
             <h1>Loans</h1>
@@ -108,9 +103,6 @@ function today(): string {
               >
                 <header>
                   <div>
-                    <span class="version">{{
-                      loan.schemaVersion === 2 ? 'Loan V2' : 'Legacy loan'
-                    }}</span>
                     <h3>{{ loan.lender }}</h3>
                     <p>{{ loan.loanType }}</p>
                   </div>
@@ -125,9 +117,7 @@ function today(): string {
                   <div>
                     <dt>Outstanding</dt>
                     <dd>{{ loan.outstanding | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</dd>
-                    <small>{{
-                      loan.schemaVersion === 2 ? 'Calculated' : 'Recorded legacy value'
-                    }}</small>
+                    <small>Calculated</small>
                   </div>
                   <div>
                     <dt>Current EMI</dt>
@@ -150,56 +140,16 @@ function today(): string {
                   [attr.aria-label]="loan.lender + ' calculated principal repayment progress'"
                 />
 
-                @if (loan.schemaVersion === 1) {
-                  <aside class="migration-note">
-                    <mat-icon aria-hidden="true">info</mat-icon>
-                    <div>
-                      <strong>Choose the date for the recorded outstanding</strong>
-                      <p>
-                        Upgrade creates a balance anchor. Earlier principal and interest breakup
-                        remains unknown.
-                      </p>
-                      <label [for]="'anchor-' + loan.id">Balance as-of date</label>
-                      <div class="upgrade-row">
-                        <input
-                          #anchorDate
-                          [id]="'anchor-' + loan.id"
-                          type="date"
-                          [value]="todayDate"
-                        />
-                        <button
-                          mat-stroked-button
-                          type="button"
-                          (click)="upgradeLegacy(loan.id, anchorDate.value)"
-                        >
-                          Upgrade safely
-                        </button>
-                      </div>
-                    </div>
-                  </aside>
-                }
                 <footer>
-                  @if (loan.schemaVersion === 2) {
-                    <a mat-flat-button [routerLink]="['/loans', loan.id]">Open account</a>
-                    <button
-                      mat-button
-                      type="button"
-                      (click)="openAccountEditor(loan.id)"
-                      [disabled]="!store.canWrite()"
-                    >
-                      Edit account
-                    </button>
-                  } @else {
-                    <button
-                      mat-button
-                      type="button"
-                      class="danger-button"
-                      (click)="deleteLegacyLoan(loan.id)"
-                      [disabled]="!store.canWrite()"
-                    >
-                      Delete legacy loan
-                    </button>
-                  }
+                  <a mat-flat-button [routerLink]="['/loans', loan.id]">Open account</a>
+                  <button
+                    mat-button
+                    type="button"
+                    (click)="openAccountEditor(loan.id)"
+                    [disabled]="!store.canWrite()"
+                  >
+                    Edit account
+                  </button>
                   <span>{{
                     loan.historyCoverage === 'partial' ? 'Partial history' : 'Complete history'
                   }}</span>
@@ -269,13 +219,6 @@ function today(): string {
       margin: 2px 0;
       color: #64748b;
     }
-    .version {
-      color: #64748b;
-      font-size: 0.72rem;
-      font-weight: 800;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }
     .accuracy {
       border-radius: 999px;
       padding: 5px 9px;
@@ -305,35 +248,6 @@ function today(): string {
       color: #0f172a;
       font-weight: 800;
     }
-    .migration-note {
-      display: flex;
-      gap: 12px;
-      margin: 16px 0;
-      padding: 14px;
-      border-radius: 12px;
-      color: #713f12;
-      background: #fffbeb;
-    }
-    .migration-note p {
-      margin: 4px 0 10px;
-    }
-    .migration-note label {
-      display: block;
-      font-size: 0.78rem;
-      font-weight: 700;
-    }
-    .upgrade-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-    .upgrade-row input {
-      min-height: 38px;
-      border: 1px solid #a8a29e;
-      border-radius: 7px;
-      padding: 0 8px;
-    }
     .account-card footer {
       align-items: center;
       margin-top: 18px;
@@ -341,9 +255,6 @@ function today(): string {
     .account-card footer span {
       color: #64748b;
       font-size: 0.78rem;
-    }
-    .danger-button {
-      color: #b91c1c;
     }
     .rich-empty {
       grid-column: 1 / -1;
@@ -385,7 +296,6 @@ function today(): string {
 })
 export class LoansPage {
   readonly store = inject(BudgetStore);
-  readonly todayDate = today();
   private readonly dialog = inject(MatDialog);
 
   async openAccountEditor(accountId?: string): Promise<void> {
@@ -429,13 +339,5 @@ export class LoansPage {
         }
       }
     }
-  }
-
-  async upgradeLegacy(loanId: string, balanceAsOfDate: string): Promise<void> {
-    if (balanceAsOfDate) await this.store.upgradeLegacyLoan(loanId, balanceAsOfDate);
-  }
-
-  async deleteLegacyLoan(loanId: string): Promise<void> {
-    await this.store.deleteLegacyLoan(loanId);
   }
 }

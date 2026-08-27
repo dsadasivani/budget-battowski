@@ -136,7 +136,6 @@ export class BudgetFirestoreRepository {
       'templates',
       'expenses',
       'investments',
-      'loans',
       'loanAccounts',
       'loanEvents',
       'loanReconciliations',
@@ -482,17 +481,8 @@ export class BudgetFirestoreRepository {
     await this.deleteDocumentReferences([
       ...childReferences,
       doc(db, WORKSPACE_COLLECTION, this.workspaceId, 'loanAccounts', loanId),
-      // A migrated account can retain a same-id legacy document during rolling migration.
-      doc(db, WORKSPACE_COLLECTION, this.workspaceId, 'loans', loanId),
     ]);
     return { futureExpenseIds };
-  }
-
-  async deleteLegacyLoanCascade(loanId: string, cutoffDate: string): Promise<void> {
-    const { deleteDoc, doc } = await import('firebase/firestore');
-    const db = await this.database();
-    await this.deleteFutureLoanExpenses(loanId, cutoffDate);
-    await deleteDoc(doc(db, WORKSPACE_COLLECTION, this.workspaceId, 'loans', loanId));
   }
 
   async saveCategoryRemapOperation(operation: CategoryRemapOperation): Promise<void> {
@@ -677,12 +667,6 @@ export class BudgetFirestoreRepository {
 
         return `${leftAccount.bankName}-${leftAccount.name}`.localeCompare(
           `${rightAccount.bankName}-${rightAccount.name}`,
-        );
-      }
-
-      if (collectionName === 'loans') {
-        return (left as { loanType: string }).loanType.localeCompare(
-          (right as { loanType: string }).loanType,
         );
       }
 

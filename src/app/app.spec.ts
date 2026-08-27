@@ -1263,7 +1263,7 @@ describe('App', () => {
       buildDefaultMonthEntries: (
         month: string,
       ) => Array<{ memberEmail?: string; paymentModeId?: string; templateId?: string }>;
-      loans: { set: (records: unknown[]) => void };
+      loanAccounts: { set: (records: unknown[]) => void };
       selectedMemberEmail: { set: (email: string) => void };
       templates: { set: (records: unknown[]) => void };
       workspaceId: { set: (id: string) => void };
@@ -1294,17 +1294,30 @@ describe('App', () => {
         paymentModeId: 'pm-gpay',
       },
     ]);
-    app.loans.set([
+    app.loanAccounts.set([
       {
         id: 'loan-home',
+        schemaVersion: 2,
         lender: 'Bank',
         loanType: 'Home',
-        principal: 1000000,
-        outstanding: 900000,
-        annualRate: 8,
-        emi: 30000,
-        startDate: '2026-01-01',
-        endDate: '2026-12-31',
+        contract: {
+          disbursedAmount: 1000000,
+          disbursementDate: '2026-01-01',
+          firstEmiDate: '2026-02-01',
+          initialEmi: 30000,
+          initialAnnualRate: 8,
+          interestType: 'fixed',
+          interestCalculationMethod: 'monthly-reducing',
+          dayCountConvention: 'actual-365',
+          compoundingFrequency: 'monthly',
+          postPrepaymentStrategy: 'keep-emi-reduce-tenure',
+          roundingPolicy: {
+            monetaryScale: 2,
+            interestRounding: 'half-up',
+            installmentRounding: 'half-up',
+            finalInstallmentAdjustment: true,
+          },
+        },
         notes: '',
         ownerUid: 'uid-a',
         memberEmail: 'a@example.com',
@@ -1919,14 +1932,12 @@ describe('App', () => {
       templates: [],
       expenses: [],
       investments: [],
-      loans: [],
       deleted: {
         categories: [],
         incomes: [],
         templates: ['fixed-rent'],
         expenses: [],
         investments: [],
-        loans: [],
       },
     });
 
@@ -1938,178 +1949,7 @@ describe('App', () => {
     expect(juneExpense?.templateId).toBeUndefined();
   });
 
-  it('should close loan deletes on the operation date and remove only future EMI expenses', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 5, 11));
-    const fixture = TestBed.createComponent(App);
-    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
-      applyBulkChanges: (result: unknown) => Promise<void>;
-      expenses: {
-        set: (records: unknown[]) => void;
-        (): Array<{ id: string; month: string; templateId?: string }>;
-      };
-      firebase: { mode: string };
-      loans: {
-        set: (records: unknown[]) => void;
-        (): Array<{
-          id: string;
-          endDate: string;
-          auditTrail?: Array<{ operation: string; effectiveEndDate?: string }>;
-        }>;
-      };
-    };
-    const loan = {
-      id: 'loan-home',
-      lender: 'Bank',
-      loanType: 'Home loan',
-      principal: 4000000,
-      outstanding: 3200000,
-      annualRate: 8.7,
-      emi: 38000,
-      startDate: '2024-01-01',
-      endDate: '2036-12-31',
-      notes: '',
-    };
-
-    app.firebase.mode = 'local';
-    app.loans.set([loan]);
-    const expenses = [
-      {
-        id: 'emi-jun',
-        month: '2026-06',
-        date: '2026-06-01',
-        name: 'Home loan EMI',
-        categoryId: '',
-        amount: 38000,
-        type: 'recurring',
-        note: '',
-        templateId: 'loan:loan-home',
-      },
-      {
-        id: 'emi-jul',
-        month: '2026-07',
-        date: '2026-07-01',
-        name: 'Home loan EMI',
-        categoryId: '',
-        amount: 38000,
-        type: 'recurring',
-        note: '',
-        templateId: 'loan:loan-home',
-      },
-    ];
-
-    app.expenses.set(expenses);
-
-    await app.applyBulkChanges({
-      scope: 'loans',
-      categories: [],
-      incomes: [],
-      templates: [],
-      expenses,
-      investments: [],
-      loans: [],
-      deleted: {
-        categories: [],
-        incomes: [],
-        templates: [],
-        expenses: [],
-        investments: [],
-        loans: ['loan-home'],
-      },
-    });
-
-    expect(app.loans()[0].endDate).toBe('2026-06-10');
-    expect(app.loans()[0].auditTrail?.at(-1)).toMatchObject({
-      operation: 'deleted',
-      effectiveEndDate: '2026-06-10',
-    });
-    expect(app.expenses().map((expense) => expense.id)).toContain('emi-jun');
-    expect(app.expenses().map((expense) => expense.id)).not.toContain('emi-jul');
-  });
-
-  it('should preserve the selected loan start date during updates', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 5, 11));
-    const fixture = TestBed.createComponent(App);
-    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
-      applyBulkChanges: (result: unknown) => Promise<void>;
-      firebase: { mode: string };
-      loans: {
-        set: (records: unknown[]) => void;
-        (): Array<{ id: string; startDate: string; emi: number }>;
-      };
-    };
-    const loan = {
-      id: 'loan-car',
-      lender: 'Bank',
-      loanType: 'Car loan',
-      principal: 800000,
-      outstanding: 500000,
-      annualRate: 9,
-      emi: 18000,
-      startDate: '2026-06-01',
-      endDate: '2030-05-31',
-      notes: '',
-    };
-
-    app.firebase.mode = 'local';
-    app.loans.set([loan]);
-
-    await app.applyBulkChanges({
-      scope: 'loans',
-      categories: [],
-      incomes: [],
-      templates: [],
-      expenses: [],
-      investments: [],
-      loans: [{ ...loan, emi: 19000, startDate: '2025-01-01' }],
-      deleted: {
-        categories: [],
-        incomes: [],
-        templates: [],
-        expenses: [],
-        investments: [],
-        loans: [],
-      },
-    });
-
-    expect(app.loans()[0]).toMatchObject({ startDate: '2025-01-01', emi: 19000 });
-  });
-
-  it('should show generated loan EMI expenses with the special display category', () => {
-    const fixture = TestBed.createComponent(App);
-    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
-      categoryName: (categoryId: string) => string;
-      buildDefaultMonthEntries: (month: string) => Array<{ categoryId: string; name: string }>;
-      loans: { set: (records: unknown[]) => void };
-    };
-
-    app.loans.set([
-      {
-        id: 'loan-home',
-        lender: 'Bank',
-        loanType: 'Home loan',
-        principal: 4000000,
-        outstanding: 3200000,
-        annualRate: 8.7,
-        emi: 38000,
-        startDate: '2026-01-01',
-        endDate: '2026-12-31',
-        notes: '',
-      },
-    ]);
-
-    const loanExpense = app
-      .buildDefaultMonthEntries('2026-06')
-      .find((expense) => expense.name.includes('Bank - Home loan'));
-
-    expect(loanExpense).toBeTruthy();
-    expect(loanExpense?.name).toBe('Bank - Home loan');
-    expect(loanExpense?.categoryId).toBe('category-loan-emi');
-    expect(app.categoryName(loanExpense?.categoryId ?? '')).toBe('Loan EMI');
-  });
-
-  it('should generate Loan V2 expenses from the engine schedule without snapshot fields', () => {
+  it('should generate loan expenses from the engine schedule', () => {
     const fixture = TestBed.createComponent(App);
     const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       buildDefaultMonthEntries: (month: string) => Array<{
@@ -2124,7 +1964,7 @@ describe('App', () => {
     app.selectedMonth.set('2026-06');
     app.loanAccounts.set([
       {
-        id: 'loan-v2-home',
+        id: 'loan-home',
         schemaVersion: 2,
         lender: 'Bank',
         loanType: 'Home loan',
@@ -2153,7 +1993,7 @@ describe('App', () => {
 
     const expense = app
       .buildDefaultMonthEntries('2026-06')
-      .find((entry) => entry.sourceLoanId === 'loan-v2-home');
+      .find((entry) => entry.sourceLoanId === 'loan-home');
 
     expect(expense).toMatchObject({ amount: 8792, date: '2026-06-28' });
   });
@@ -2230,7 +2070,7 @@ describe('App', () => {
     expect(calculation.schedule.every((row) => row.status === 'paid')).toBe(true);
   });
 
-  it('should archive and permanently delete Loan V2 dependencies while retaining historical expenses', async () => {
+  it('should archive and permanently delete loan dependencies while retaining historical expenses', async () => {
     const fixture = TestBed.createComponent(App);
     const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       archiveLoanAccount: (loanId: string) => Promise<boolean>;
@@ -2315,7 +2155,7 @@ describe('App', () => {
     expect(app.expenses().map((expense) => expense.id)).toEqual(['expense-historical']);
   });
 
-  it('should omit archived and deleted loan expenses from the dashboard', () => {
+  it('should omit archived and orphaned loan expenses from the dashboard', () => {
     const fixture = TestBed.createComponent(App);
     const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       activeExpenseEntries: () => Array<{ id: string }>;
@@ -2324,26 +2164,11 @@ describe('App', () => {
       expenses: { set: (records: unknown[]) => void };
       firebase: { mode: string };
       loanAccounts: { set: (records: unknown[]) => void };
-      loans: { set: (records: unknown[]) => void };
       selectedMonth: { set: (month: string) => void };
     };
 
     app.firebase.mode = 'local';
     app.selectedMonth.set('2026-08');
-    app.loans.set([
-      {
-        id: 'loan-legacy-closed',
-        lender: 'Closed Bank',
-        loanType: 'Home loan',
-        principal: 500000,
-        outstanding: 0,
-        annualRate: 8,
-        emi: 12000,
-        startDate: '2020-01-01',
-        endDate: '2026-07-31',
-        notes: '',
-      },
-    ]);
     app.loanAccounts.set([
       {
         id: 'loan-archived',
@@ -2395,17 +2220,6 @@ describe('App', () => {
         sourceLoanId: 'loan-archived',
       },
       {
-        id: 'expense-closed-legacy-loan',
-        month: '2026-08',
-        date: '2026-08-01',
-        name: 'Closed Bank - Home loan',
-        categoryId: 'category-loan-emi',
-        amount: 12000,
-        type: 'recurring',
-        note: '',
-        templateId: 'loan:loan-legacy-closed',
-      },
-      {
         id: 'expense-deleted-loan',
         month: '2026-08',
         date: '2026-08-01',
@@ -2447,82 +2261,6 @@ describe('App', () => {
     };
     const afterArchive = app.withDefaultCategories([archived]);
     expect(afterArchive.filter((category) => category.id === archived.id)).toEqual([archived]);
-  });
-
-  it('should clamp loan EMIs to the last valid day and restore the nominal day', () => {
-    const fixture = TestBed.createComponent(App);
-    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
-      buildDefaultMonthEntries: (month: string) => Array<{
-        date?: string;
-        templateId?: string;
-      }>;
-      loanCalendarDays: () => Array<{
-        date: string;
-        items: Array<{ id: string }>;
-      }>;
-      loans: { set: (records: unknown[]) => void };
-      selectedMonth: { set: (month: string) => void };
-    };
-    app.loans.set([
-      {
-        id: 'loan-day-31',
-        lender: 'Bank',
-        loanType: 'Home loan',
-        principal: 4000000,
-        outstanding: 3200000,
-        annualRate: 8.7,
-        emi: 38000,
-        startDate: '2026-01-31',
-        endDate: '2028-12-31',
-        notes: '',
-      },
-    ]);
-
-    const occurrenceDate = (month: string) =>
-      app
-        .buildDefaultMonthEntries(month)
-        .find((expense) => expense.templateId === 'loan:loan-day-31')?.date;
-
-    expect(occurrenceDate('2026-02')).toBe('2026-02-28');
-    expect(occurrenceDate('2028-02')).toBe('2028-02-29');
-    expect(occurrenceDate('2026-04')).toBe('2026-04-30');
-    expect(occurrenceDate('2026-05')).toBe('2026-05-31');
-
-    app.selectedMonth.set('2026-04');
-    expect(
-      app
-        .loanCalendarDays()
-        .find((day) => day.date === '2026-04-30')
-        ?.items.some((item) => item.id === 'loan-day-31'),
-    ).toBe(true);
-  });
-
-  it('should not generate a clamped EMI after the exact loan end date', () => {
-    const fixture = TestBed.createComponent(App);
-    const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
-      buildDefaultMonthEntries: (month: string) => Array<{ templateId?: string }>;
-      loans: { set: (records: unknown[]) => void };
-    };
-    app.loans.set([
-      {
-        id: 'loan-ended-mid-month',
-        lender: 'Bank',
-        loanType: 'Vehicle loan',
-        principal: 500000,
-        outstanding: 300000,
-        annualRate: 9,
-        emi: 15000,
-        startDate: '2026-01-31',
-        endDate: '2026-02-15',
-        notes: '',
-      },
-    ]);
-
-    expect(
-      app
-        .buildDefaultMonthEntries('2026-02')
-        .some((expense) => expense.templateId === 'loan:loan-ended-mid-month'),
-    ).toBe(false);
   });
 
   it('should resolve payment mode labels including archived modes', () => {
@@ -2598,12 +2336,11 @@ describe('App', () => {
     );
   });
 
-  it('should total selected-month payment mode usage across expenses investments and loan EMIs', () => {
+  it('should total selected-month payment mode usage across expenses and investments', () => {
     const fixture = TestBed.createComponent(App);
     const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
       expenses: { set: (records: unknown[]) => void };
       investments: { set: (records: unknown[]) => void };
-      loans: { set: (records: unknown[]) => void };
       paymentModeCards: () => Array<{ id: string; recordCount: number; usageAmount: number }>;
       paymentModes: { set: (records: PaymentMode[]) => void };
       selectedMonth: { set: (month: string) => void };
@@ -2638,22 +2375,6 @@ describe('App', () => {
         paymentModeId: 'pm-gpay',
       },
     ]);
-    app.loans.set([
-      {
-        id: 'loan-bike',
-        lender: 'Bank',
-        loanType: 'Bike',
-        principal: 100000,
-        outstanding: 90000,
-        annualRate: 9,
-        emi: 3000,
-        startDate: '2026-01-01',
-        endDate: '2026-12-31',
-        notes: '',
-        paymentModeId: 'pm-gpay',
-      },
-    ]);
-
     expect(app.paymentModeCards().find((paymentMode) => paymentMode.id === 'pm-gpay')).toEqual(
       expect.objectContaining({ recordCount: 2, usageAmount: 3000 }),
     );
@@ -2934,7 +2655,7 @@ describe('App', () => {
       expenseRows: () => Array<{ paymentModeMeta?: { iconSrc: string; label: string } | null }>;
       expenses: { set: (records: unknown[]) => void };
       investments: { set: (records: unknown[]) => void };
-      loans: { set: (records: unknown[]) => void };
+      loanAccounts: { set: (records: unknown[]) => void };
       loanRepaymentRows: () => Array<{
         paymentModeMeta?: { iconSrc: string; label: string } | null;
       }>;
@@ -2970,17 +2691,30 @@ describe('App', () => {
         paymentModeId: 'pm-paytm',
       },
     ]);
-    app.loans.set([
+    app.loanAccounts.set([
       {
         id: 'loan-bike',
+        schemaVersion: 2,
         lender: 'Bank',
         loanType: 'Bike',
-        principal: 100000,
-        outstanding: 90000,
-        annualRate: 9,
-        emi: 3000,
-        startDate: '2026-01-01',
-        endDate: '2026-12-31',
+        contract: {
+          disbursedAmount: 100000,
+          disbursementDate: '2026-01-01',
+          firstEmiDate: '2026-02-01',
+          initialEmi: 3000,
+          initialAnnualRate: 9,
+          interestType: 'fixed',
+          interestCalculationMethod: 'monthly-reducing',
+          dayCountConvention: 'actual-365',
+          compoundingFrequency: 'monthly',
+          postPrepaymentStrategy: 'keep-emi-reduce-tenure',
+          roundingPolicy: {
+            monetaryScale: 2,
+            interestRounding: 'half-up',
+            installmentRounding: 'half-up',
+            finalInstallmentAdjustment: true,
+          },
+        },
         notes: '',
         paymentModeId: 'pm-paytm',
       },
@@ -3511,21 +3245,6 @@ describe('BulkEditorDialog', () => {
         frequency: 'monthly',
         date: '2026-05-01',
         startDate: '2026-05-01',
-        notes: '',
-        paymentModeId: 'pm-gpay',
-      },
-    ],
-    loans: [
-      {
-        id: 'loan-home',
-        lender: 'Bank',
-        loanType: 'Home loan',
-        principal: 4000000,
-        outstanding: 3200000,
-        annualRate: 8.7,
-        emi: 38000,
-        startDate: '2024-01-01',
-        endDate: '2036-12-31',
         notes: '',
         paymentModeId: 'pm-gpay',
       },
@@ -4444,21 +4163,18 @@ describe('BulkEditorDialog', () => {
       apply: () => void;
       expenses: () => Array<{ paymentModeId?: string }>;
       investments: () => Array<{ paymentModeId?: string }>;
-      loans: () => Array<{ paymentModeId?: string }>;
       templates: () => Array<{ paymentModeId?: string }>;
     };
 
     dialog.expenses()[0].paymentModeId = 'pm-gpay';
     dialog.templates()[0].paymentModeId = 'pm-card';
     dialog.investments()[0].paymentModeId = 'pm-gpay';
-    dialog.loans()[0].paymentModeId = 'pm-card';
     dialog.apply();
 
     const result = dialogRef.close.mock.calls[0][0];
     expect(result.expenses[0]).toEqual(expect.objectContaining({ paymentModeId: 'pm-gpay' }));
     expect(result.templates[0]).toEqual(expect.objectContaining({ paymentModeId: 'pm-card' }));
     expect(result.investments[0]).toEqual(expect.objectContaining({ paymentModeId: 'pm-gpay' }));
-    expect(result.loans[0]).toEqual(expect.objectContaining({ paymentModeId: 'pm-card' }));
   });
 
   it('should resolve archived payment mode labels without offering archived modes in selectors', () => {
@@ -4688,7 +4404,7 @@ describe('BulkEditorDialog', () => {
     });
   });
 
-  it('should keep non-updatable income, investment, and loan fields unchanged from the modal', () => {
+  it('should keep non-updatable income and investment fields unchanged from the modal', () => {
     const fixture = TestBed.createComponent(BulkEditorDialog);
     const dialogRef = TestBed.inject(MatDialogRef) as unknown as {
       close: ReturnType<typeof vi.fn>;
@@ -4697,7 +4413,6 @@ describe('BulkEditorDialog', () => {
       apply: () => void;
       incomes: () => Array<{ source: string; cadence: string; amount: number }>;
       investments: () => Array<{ name: string; amount: number }>;
-      loans: () => Array<{ lender: string; loanType: string; emi: number }>;
     };
 
     dialog.incomes()[0].source = 'Changed salary';
@@ -4705,9 +4420,6 @@ describe('BulkEditorDialog', () => {
     dialog.incomes()[0].amount = 130000;
     dialog.investments()[0].name = 'Changed SIP';
     dialog.investments()[0].amount = 18000;
-    dialog.loans()[0].lender = 'Changed bank';
-    dialog.loans()[0].loanType = 'Changed loan';
-    dialog.loans()[0].emi = 39000;
     dialog.apply();
 
     const result = dialogRef.close.mock.calls[0][0];
@@ -4717,11 +4429,6 @@ describe('BulkEditorDialog', () => {
       amount: 130000,
     });
     expect(result.investments[0]).toMatchObject({ name: 'Index SIP', amount: 18000 });
-    expect(result.loans[0]).toMatchObject({
-      lender: 'Bank',
-      loanType: 'Home loan',
-      emi: 39000,
-    });
   });
 
   it('should allow unchanged recurring parents with historical starts', () => {

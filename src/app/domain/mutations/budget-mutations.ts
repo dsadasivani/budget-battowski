@@ -6,7 +6,6 @@ import type {
   ExpenseTemplate,
   IncomeSource,
   InvestmentEntry,
-  Loan,
   PaymentAccount,
   PaymentMode,
 } from '../../budget.models';
@@ -20,7 +19,6 @@ export interface BudgetMutationSet {
   templates?: EntityMutations<ExpenseTemplate>;
   expenses?: EntityMutations<ExpenseEntry>;
   investments?: EntityMutations<InvestmentEntry>;
-  loans?: EntityMutations<Loan>;
 }
 
 export function mutationEntries(mutationSet: BudgetMutationSet): Array<{

@@ -1,8 +1,8 @@
-# Loans V2 architecture
+# Loans architecture
 
 ## Source of truth
 
-Loans V2 calculates account balances and repayment schedules from four workspace collections:
+Loans calculates account balances and repayment schedules from four workspace collections:
 
 - `loanAccounts`: identity, ownership, payment mode, and contract terms.
 - `loanEvents`: effective-dated recorded facts and cash/contract changes.
@@ -71,10 +71,6 @@ Prepayments are dated ledger events and always regenerate the future schedule. T
 
 The scenario engine clones inputs, appends in-memory scenario events, and compares projections. Persistence occurs only through the explicit record action.
 
-## Legacy migration
-
-The existing `loans` collection remains readable. Its manually maintained outstanding amount is displayed as recorded/estimated until the user chooses an as-of date. Upgrade writes a V2 `loanAccounts` document and a `legacy-migration` balance-anchor event using the old outstanding value. The legacy document is retained during rolling migration and hidden when a same-ID V2 account exists. No destructive bulk migration is required.
-
 ## Existing-loan setup
 
 New accounts default to treating every scheduled EMI due through the setup date as paid. The app
@@ -90,22 +86,20 @@ Monthly expenses come from the engine schedule and retain `sourceLoanId` plus st
 
 ## Persistence, security, deletion, and export
 
-Firestore rules require workspace membership and same-owner relationships between a child ledger/reconciliation/document record and its parent loan account. Workspace deletion enumerates all four V2 collections. Workspace JSON schema 2 exports and imports all V2 collections; schema 1 snapshots import with empty V2 collections.
+Firestore rules require workspace membership and same-owner relationships between a child ledger/reconciliation/document record and its parent loan account. Workspace deletion enumerates all four loan collections. Workspace JSON exports and imports all loan collections.
 
 The product favors archive for historical loan accounts. Archiving retains the contract, ledger,
 reconciliations, document metadata, and historical materialized expenses, while removing generated
 EMI expenses dated today or later. Archived accounts can be restored; current-month generation is
 re-evaluated after restoration.
 
-Permanent deletion is only exposed for an already archived V2 account and requires a second
-explicit confirmation. It removes the V2 account, all events, reconciliations, document metadata,
-any same-ID legacy migration source, and future generated EMI expenses. Historical expenses remain
-as financial history. Unmigrated legacy loans have a separately confirmed delete action with the
-same historical-expense retention rule. Permanent workspace deletion removes all loan collections
-and expenses with the workspace.
+Permanent deletion is only exposed for an already archived account and requires a second explicit
+confirmation. It removes the account, all events, reconciliations, document metadata, and future
+generated EMI expenses. Historical expenses remain as financial history. Permanent workspace
+deletion removes all loan collections and expenses with the workspace.
 
 ## Supported limitations
 
 - Monthly-reducing mid-cycle handling follows the documented next-boundary policy and may differ from a lender's proprietary convention.
-- Binary statement storage and general lender PDF/XLS parsing are not implemented; document metadata exposes unsupported/import status explicitly.
+- Binary statement storage is not implemented. Text-based repayment-schedule PDFs are parsed in browser memory; scanned PDFs and unsupported spreadsheet formats are not parsed.
 - Generated FY summaries and CSV files are informational Budget Battowski reports, not official repayment or interest certificates.
