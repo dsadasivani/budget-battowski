@@ -135,6 +135,57 @@
   }
 </section>
 
+@if (
+  investmentBreakdown().recurring.length ||
+  investmentBreakdown().adhoc.length ||
+  investmentBreakdown().withdrawals.length
+) {
+  <section class="actual-investments" aria-labelledby="actual-investments-heading">
+    <h3 id="actual-investments-heading">Investments this month</h3>
+    @if (investmentBreakdown().recurring.length) {
+      <h4>Recurring</h4>
+      @for (row of investmentBreakdown().recurring; track row.investmentId + row.amount) {
+        <div>
+          <span>{{ row.name }}</span
+          ><strong>{{
+            investmentStore.display(row.amount) | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+          }}</strong>
+        </div>
+      }
+    }
+    @if (investmentBreakdown().adhoc.length) {
+      <h4>Ad-hoc</h4>
+      @for (row of investmentBreakdown().adhoc; track row.investmentId + row.amount) {
+        <div>
+          <span>{{ row.name }}</span
+          ><strong>{{
+            investmentStore.display(row.amount) | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+          }}</strong>
+        </div>
+      }
+    }
+    <div class="investment-review-total">
+      <span>Total invested</span
+      ><strong>{{
+        investmentStore.display(investmentBreakdown().totalContributions)
+          | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+      }}</strong>
+    </div>
+    @if (investmentBreakdown().withdrawals.length) {
+      <h4>Investment withdrawals</h4>
+      @for (row of investmentBreakdown().withdrawals; track row.investmentId + row.amount) {
+        <div>
+          <span>{{ row.name }}</span
+          ><strong>{{
+            investmentStore.display(row.amount) | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+          }}</strong>
+        </div>
+      }
+    }
+    <p>Returns and withdrawals are kept separate from Income.</p>
+  </section>
+}
+
 <footer class="review-actions">
   @if (validationError()) {
     <span class="dialog-error" role="alert">{{ validationError() }}</span>

@@ -1,5 +1,7 @@
 # Budget Battowski
 
+Developer documentation: [Investments V2](docs/investments-v2.md) and [Loans](docs/loans.md).
+
 Angular 22 + Angular Material expense tracker with Firebase persistence.
 
 ## Run Locally

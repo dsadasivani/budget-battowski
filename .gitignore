@@ -8,6 +8,8 @@
 
 # Node
 /node_modules
+/functions/node_modules
+/functions/lib
 npm-debug.log
 firebase-debug.log
 firestore-debug.log
@@ -46,6 +48,8 @@ __screenshots__/
 Thumbs.db
 
 .env
+/functions/.secret.local
+/functions/.env.local
 QA_FIREBASE_REGRESSION_REPORT.md
 PRODUCTION_SMOKE_REPORT.md
 RELEASE_EVIDENCE.md

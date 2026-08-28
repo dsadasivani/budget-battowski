@@ -9,6 +9,7 @@ import { RouterLink } from '@angular/router';
 import { BudgetStore } from '../budget.store';
 import { MonthMemberControls } from '../shared/month-member-controls';
 import { AppPageSkeletonComponent } from '../shared/page-skeleton';
+import { InvestmentStore } from '../stores/investment.store';
 
 @Component({
   selector: 'app-dashboard-page',
@@ -88,10 +89,22 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
           </article>
           <article class="stat-card investment-stat">
             <span class="icon-chip teal"><mat-icon aria-hidden="true">trending_up</mat-icon></span>
-            <p>Investments</p>
+            <p>Investment value</p>
             <strong>{{
-              store.investmentTotal() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+              investments.display(investments.portfolio().currentValue)
+                | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
             }}</strong>
+            <small
+              >{{
+                investments.display(investments.portfolio().overallReturnAmount)
+                  | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+              }}
+              •
+              {{
+                investments.display(investments.portfolio().overallReturnPercentage)
+                  | number: '1.2-2'
+              }}%</small
+            >
           </article>
           <article class="stat-card loan-stat">
             <span class="icon-chip orange"
@@ -105,9 +118,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
           <article class="stat-card success hero-runway">
             <span class="icon-chip green"><mat-icon aria-hidden="true">savings</mat-icon></span>
             <p>Remaining Runway</p>
-            <strong>{{
-              store.activeRemainingFunds() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
-            }}</strong>
+            <strong>{{ remainingCash() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</strong>
           </article>
         </section>
 
@@ -201,24 +212,28 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                 <a routerLink="/investments">View all</a>
               </header>
               <div class="soft-list compact">
-                @for (
-                  investment of store.confirmedInvestmentRows().slice(0, 4);
-                  track investment.id
-                ) {
+                @for (investment of investments.activeAccounts().slice(0, 4); track investment.id) {
                   <article class="list-row">
                     <span class="icon-chip teal"
                       ><mat-icon aria-hidden="true">show_chart</mat-icon></span
                     >
                     <div>
                       <strong>{{ investment.name }}</strong>
-                      <small>{{ store.investmentFrequencyLabel(investment) }}</small>
+                      <small
+                        >Overall return
+                        {{
+                          investments.display(investment.summary.overallReturnPercentage)
+                            | number: '1.2-2'
+                        }}%</small
+                      >
                     </div>
                     <b class="teal-text">{{
-                      investment.monthlyAmount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                      investments.display(investment.summary.currentValue)
+                        | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
                     }}</b>
                   </article>
                 } @empty {
-                  <div class="empty-state">No approved investments for this month</div>
+                  <div class="empty-state">No active investments yet</div>
                 }
               </div>
             </article>
@@ -264,4 +279,14 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 })
 export class DashboardPage {
   readonly store = inject(BudgetStore);
+  readonly investments = inject(InvestmentStore);
+
+  remainingCash(): number {
+    return (
+      this.store.monthlyIncome() -
+      this.store.activeOutflowTotal() -
+      this.investments.display(this.investments.portfolio().investedThisMonth) +
+      this.investments.display(this.investments.portfolio().withdrawnThisMonth)
+    );
+  }
 }

@@ -7,7 +7,7 @@ import { BudgetStore } from '../budget.store';
  * Explicit application-shell facade. Feature pages can continue to inject BudgetStore during the
  * incremental store decomposition, while the root shell depends only on this composed API.
  */
-@Injectable()
+@Injectable({ providedIn: 'root' })
 export class BudgetFacade {
   private readonly store = inject(BudgetStore);
 

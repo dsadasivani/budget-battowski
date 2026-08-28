@@ -8,6 +8,9 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { investmentMonthlyBreakdown } from './domain/investments/investment-monthly-review';
+import { InvestmentStore } from './stores/investment.store';
+import { BudgetStore } from './budget.store';
 
 export type MonthlyReviewSourceType = 'expense' | 'investment';
 
@@ -52,6 +55,8 @@ export interface MonthlyReviewResult {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MonthlyReviewDialog {
+  protected readonly investmentStore = inject(InvestmentStore);
+  private readonly budgetStore = inject(BudgetStore);
   private readonly dialogRef = inject<MatDialogRef<MonthlyReviewDialog, MonthlyReviewResult>>(
     MatDialogRef,
     {
@@ -74,6 +79,13 @@ export class MonthlyReviewDialog {
     () => this.rows().filter((row) => row.sourceType === 'investment').length,
   );
   protected readonly validationError = signal('');
+  protected readonly investmentBreakdown = computed(() =>
+    investmentMonthlyBreakdown(
+      this.investmentStore.accounts(),
+      this.investmentStore.transactions(),
+      this.budgetStore.selectedMonth(),
+    ),
+  );
 
   protected sourceLabel(row: MonthlyReviewRow): string {
     return row.sourceType === 'expense' ? 'Recurring expense' : 'Investment';

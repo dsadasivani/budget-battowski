@@ -427,7 +427,7 @@ const WORKSPACE_DATA_COLLECTIONS: BudgetCollectionName[] = [
   'loanDocuments',
 ];
 
-@Injectable()
+@Injectable({ providedIn: 'root' })
 export class BudgetStore implements OnDestroy {
   private readonly sessionState = inject(SessionStore);
   private readonly workspaceState = inject(WorkspaceStore);

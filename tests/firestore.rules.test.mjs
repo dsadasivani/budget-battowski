@@ -141,6 +141,68 @@ test('create ownership must match the authenticated member', async () => {
   );
 });
 
+test('investment V2 accounts and transactions stay workspace scoped and owner linked', async () => {
+  const ownerDb = authenticatedDatabase(ownerEmail);
+  const memberDb = authenticatedDatabase(memberEmail);
+  const otherDb = authenticatedDatabase(otherEmail);
+  const accountRef = workspaceRecord(ownerDb, 'investmentAccounts', 'investment-v2');
+  const account = {
+    schemaVersion: 2,
+    name: 'Reliance',
+    type: 'STOCK',
+    status: 'ACTIVE',
+    summary: {
+      totalContributions: '10000',
+      totalWithdrawals: '0',
+      remainingCostBasis: '10000',
+      currentQuantity: '10',
+      currentValue: '14000',
+      realizedReturn: '0',
+      unrealizedReturn: '4000',
+      overallReturnAmount: '4000',
+      overallReturnPercentage: '40',
+    },
+    ownerUid,
+    memberEmail: ownerEmail,
+    createdDate: '2026-08-01T00:00:00.000Z',
+    updatedDate: '2026-08-01T00:00:00.000Z',
+  };
+  await assertSucceeds(setDoc(accountRef, account));
+  await assertSucceeds(getDoc(workspaceRecord(memberDb, 'investmentAccounts', 'investment-v2')));
+  await assertFails(getDoc(workspaceRecord(otherDb, 'investmentAccounts', 'investment-v2')));
+
+  await assertSucceeds(
+    setDoc(workspaceRecord(ownerDb, 'investmentTransactions', 'investment-transaction-v2'), {
+      schemaVersion: 2,
+      investmentId: 'investment-v2',
+      type: 'BUY',
+      date: '2026-08-01',
+      amount: '10000',
+      quantity: '10',
+      price: '1000',
+      source: 'ADHOC',
+      ownerUid,
+      memberEmail: ownerEmail,
+      createdDate: '2026-08-01T00:00:00.000Z',
+      updatedDate: '2026-08-01T00:00:00.000Z',
+    }),
+  );
+  await assertFails(
+    setDoc(workspaceRecord(memberDb, 'investmentTransactions', 'spoofed-investment-transaction'), {
+      schemaVersion: 2,
+      investmentId: 'investment-v2',
+      type: 'BUY',
+      date: '2026-08-01',
+      amount: '10000',
+      source: 'ADHOC',
+      ownerUid: memberUid,
+      memberEmail,
+      createdDate: '2026-08-01T00:00:00.000Z',
+      updatedDate: '2026-08-01T00:00:00.000Z',
+    }),
+  );
+});
+
 test('payment modes can link only to an account with the same owner', async () => {
   const memberDb = authenticatedDatabase(memberEmail);
   await assertSucceeds(
