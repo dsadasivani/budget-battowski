@@ -5,6 +5,7 @@ export type PageSkeletonVariant =
   | 'expenses'
   | 'planning'
   | 'investments'
+  | 'investmentDetail'
   | 'loans'
   | 'categories'
   | 'paymentModes'
@@ -21,7 +22,8 @@ const CONFIG: Record<PageSkeletonVariant, PageSkeletonConfig> = {
   dashboard: { stats: 5, rows: 3, sidePanels: 2, mode: 'lists' },
   expenses: { stats: 3, rows: 6, sidePanels: 2, mode: 'table' },
   planning: { stats: 3, rows: 6, sidePanels: 2, mode: 'lists' },
-  investments: { stats: 3, rows: 6, sidePanels: 2, mode: 'table' },
+  investments: { stats: 4, rows: 6, sidePanels: 2, mode: 'table' },
+  investmentDetail: { stats: 4, rows: 6, sidePanels: 3, mode: 'lists' },
   loans: { stats: 4, rows: 3, sidePanels: 2, mode: 'lists' },
   categories: { stats: 3, rows: 10, sidePanels: 0, mode: 'cards' },
   paymentModes: { stats: 3, rows: 8, sidePanels: 0, mode: 'cards' },
@@ -421,22 +423,14 @@ function range(length: number): number[] {
 
         .mobile-skeleton {
           display: grid;
-          gap: 8px;
+          gap: 16px;
           width: 100%;
           overflow: hidden;
-          padding: 0 8px 10px;
+          padding: 6px 4px 28px;
         }
 
         .mobile-sk-hero {
-          display: flex;
-          align-items: center;
-          justify-content: flex-start;
-          gap: 8px;
-          min-height: 58px;
-          margin: 0 -8px;
-          overflow: hidden;
-          padding: 14px;
-          background: #10213f;
+          display: none;
         }
 
         .mobile-title {
@@ -459,64 +453,59 @@ function range(length: number): number[] {
 
         .mobile-control {
           display: block;
-          width: min(210px, 62vw);
-          height: 32px;
-          margin-top: 4px;
+          width: min(268px, 76vw);
+          height: 44px;
           border-radius: 999px;
         }
 
         .mobile-sk-stats {
           display: grid;
-          grid-auto-columns: minmax(132px, calc((100vw - 26px) / 2));
-          grid-auto-flow: column;
-          gap: 8px;
-          overflow-x: auto;
-          margin-right: -8px;
-          padding-right: 8px;
-          scrollbar-width: none;
-        }
-
-        .mobile-sk-stats::-webkit-scrollbar {
-          display: none;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 10px;
         }
 
         .mobile-sk-stat {
           display: grid;
-          min-height: 78px;
+          min-height: 112px;
           align-content: start;
-          gap: 6px;
-          padding: 10px;
+          gap: 8px;
+          padding: 14px;
+          border-radius: 18px;
+        }
+
+        .mobile-sk-stat:first-child:nth-last-child(odd) {
+          grid-column: 1 / -1;
         }
 
         .mobile-sk-panels {
           display: grid;
-          gap: 8px;
-          margin-top: 0;
+          gap: 14px;
         }
 
         .mobile-sk-panel {
           display: grid;
-          min-height: clamp(240px, 36vh, 340px);
+          min-height: clamp(220px, 32vh, 300px);
           align-content: start;
-          gap: 8px;
+          gap: 10px;
           overflow: hidden;
-          padding: 12px;
+          padding: 16px;
+          border-radius: 18px;
         }
 
         .sk-box.sk-icon {
-          width: 27px;
-          height: 27px;
-          border-radius: 8px;
+          width: 36px;
+          height: 36px;
+          border-radius: 12px;
         }
 
         .short {
           width: min(82px, 66%);
-          height: 10px;
+          height: 12px;
         }
 
         .value {
           width: min(104px, 80%);
-          height: 18px;
+          height: 24px;
         }
 
         .title-line {
@@ -542,9 +531,9 @@ function range(length: number): number[] {
         .mobile-sk-block {
           display: block;
           position: relative;
-          min-height: clamp(170px, 26vh, 250px);
+          min-height: clamp(150px, 23vh, 220px);
           overflow: hidden;
-          border-radius: 8px;
+          border-radius: 14px;
           background: linear-gradient(100deg, #e7edf5 8%, #f8fbff 20%, #e7edf5 36%);
           background-size: 220% 100%;
           animation: page-skeleton-shimmer 1.35s ease-in-out infinite;
@@ -598,5 +587,5 @@ export class AppPageSkeletonComponent {
   readonly statItems = computed(() => range(this.config().stats));
   readonly rowItems = computed(() => range(this.config().rows));
   readonly sideItems = computed(() => range(this.config().sidePanels));
-  readonly mobilePanelItems = computed(() => range(1));
+  readonly mobilePanelItems = computed(() => range(this.variant() === 'investmentDetail' ? 2 : 1));
 }

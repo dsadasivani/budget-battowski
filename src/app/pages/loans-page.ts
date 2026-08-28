@@ -31,7 +31,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
     @if (store.showPageSkeleton()) {
       <app-page-skeleton variant="loans" />
     } @else {
-      <section class="page loans-page">
+      <section class="page mobile-loans-page loans-page">
         <header class="page-header desktop-page-header">
           <div>
             <h1>Loans</h1>
@@ -284,11 +284,40 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
       }
     }
     @media (max-width: 560px) {
+      .accounts-panel {
+        margin-top: 0;
+      }
+      .account-card {
+        padding: 16px;
+        border-color: var(--bb-border);
+        border-radius: 20px;
+        background: var(--bb-surface-card);
+      }
       dl {
         grid-template-columns: 1fr 1fr;
+        gap: 14px 10px;
+        margin: 18px 0;
       }
       .account-card > header {
         flex-direction: column;
+      }
+      .accuracy {
+        text-align: left;
+      }
+      .account-card footer {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: stretch;
+        gap: 8px;
+      }
+      .account-card footer a,
+      .account-card footer button {
+        width: 100%;
+        min-height: 44px;
+      }
+      .account-card footer span {
+        grid-column: 1 / -1;
+        text-align: center;
       }
     }
   `,

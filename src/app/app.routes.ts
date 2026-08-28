@@ -28,12 +28,16 @@ export const routes: Routes = [
   {
     path: 'investments',
     loadComponent: () =>
-      import('./pages/investments-page').then((component) => component.InvestmentsPage),
+      import('./pages/investments-overview-page').then(
+        (component) => component.InvestmentsOverviewPage,
+      ),
   },
   {
     path: 'investments/:investmentId',
     loadComponent: () =>
-      import('./pages/investment-detail-page').then((component) => component.InvestmentDetailPage),
+      import('./pages/investment-account-detail-page').then(
+        (component) => component.InvestmentAccountDetailPage,
+      ),
   },
   {
     path: 'loans',

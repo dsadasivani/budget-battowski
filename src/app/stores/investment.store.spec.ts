@@ -46,12 +46,15 @@ const transaction: InvestmentTransaction = {
   updatedDate: '2026-08-28T00:00:00.000Z',
 };
 
-describe('InvestmentStore deletion', () => {
+describe('InvestmentStore', () => {
   const deleteAccountAndTransactions = vi.fn(async () => undefined);
+  const saveAccount = vi.fn(async () => undefined);
+  const selectedMonth = signal('2026-08');
   let store: InvestmentStore;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    selectedMonth.set('2026-08');
     TestBed.configureTestingModule({
       providers: [
         InvestmentStore,
@@ -60,7 +63,7 @@ describe('InvestmentStore deletion', () => {
           useValue: {
             workspaceId: signal(''),
             investments: signal([]),
-            selectedMonth: signal('2026-08'),
+            selectedMonth,
             userUid: signal('owner-1'),
             userEmail: signal('owner@example.com'),
             canWrite: signal(true),
@@ -72,6 +75,7 @@ describe('InvestmentStore deletion', () => {
           useValue: {
             deleteAccountAndTransactions,
             disconnect: vi.fn(),
+            saveAccount,
           },
         },
       ],
@@ -101,5 +105,74 @@ describe('InvestmentStore deletion', () => {
       'You do not have permission to delete this investment.',
     );
     expect(deleteAccountAndTransactions).not.toHaveBeenCalled();
+  });
+
+  it('projects a step-up SIP amount for the selected future month', () => {
+    selectedMonth.set('2027-01');
+    store.accounts.set([
+      {
+        ...account,
+        recurringPlan: {
+          enabled: true,
+          amount: '5000',
+          frequency: 'MONTHLY',
+          startDate: '2026-01-01',
+          sipType: 'STEP_UP',
+          stepUp: {
+            enabled: true,
+            type: 'FIXED_AMOUNT',
+            value: '500',
+            frequency: 'HALF_YEARLY',
+            effectiveFrom: '2026-07-01',
+          },
+        },
+      },
+    ]);
+
+    expect(store.effectiveRecurring(store.accounts()[0])).toBe('6000');
+  });
+
+  it('removes recurring plans from stock accounts and excludes them from commitments', async () => {
+    const stockAccount: InvestmentAccount = {
+      ...account,
+      id: 'stock-1',
+      name: 'Example stock',
+      type: 'STOCK',
+      recurringPlan: {
+        enabled: true,
+        amount: '5000',
+        frequency: 'MONTHLY',
+        startDate: '2026-01-01',
+      },
+    };
+    store.accounts.set([stockAccount]);
+    store.transactions.set([]);
+
+    expect(store.effectiveRecurring(stockAccount)).toBe('0');
+    expect(store.portfolio().recurringCommitmentMonthly).toBe('0');
+
+    await store.updateAccount(stockAccount);
+
+    expect(saveAccount).toHaveBeenCalledWith(
+      expect.objectContaining({ id: stockAccount.id, recurringPlan: undefined }),
+    );
+  });
+
+  it('does not create a recurring plan when adding a stock account', async () => {
+    const created = await store.addInvestment({
+      name: 'Example stock',
+      type: 'STOCK',
+      recurringPlan: {
+        enabled: true,
+        amount: '5000',
+        frequency: 'MONTHLY',
+        startDate: '2026-01-01',
+      },
+    });
+
+    expect(created.recurringPlan).toBeUndefined();
+    expect(saveAccount).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'STOCK', recurringPlan: undefined }),
+    );
   });
 });

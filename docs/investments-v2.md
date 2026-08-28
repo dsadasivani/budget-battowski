@@ -26,6 +26,7 @@ The supported P0 types are `STOCK`, `MUTUAL_FUND`, `NPS`, `PPF`, and `SSY`. Inst
 - Full liquidation derives `CLOSED`; a later acquisition derives `ACTIVE` again. Records are never deleted as part of liquidation.
 - Overall return is `realized return + unrealized return`. The P0 percentage divides lifetime return by lifetime contributions and safely handles zero.
 - A recurring plan is a commitment and prefill only. It never creates a transaction.
+- Mutual-fund recurring plans are either fixed SIPs or step-up SIPs. SIP contributions support monthly, quarterly, half-yearly, and annual cadences. A step-up SIP records a fixed increase amount, its cadence, and the upcoming step-up month so future commitment amounts can be projected.
 - Only recorded `BUY`, `SIP`, and `CONTRIBUTION` transactions appear as invested this month.
 - `SELL`, `REDEMPTION`, and `WITHDRAWAL` are investment withdrawals. They may increase remaining cash, but never Income.
 - Investment appreciation and investment returns are never Income.

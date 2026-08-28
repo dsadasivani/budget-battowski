@@ -15,8 +15,10 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { BudgetStore } from '../budget.store';
 import type {
   InvestmentAccount,
+  InvestmentFrequencyV2,
   InvestmentInstrument,
   InvestmentType,
+  MutualFundSipType,
   RecurringInvestmentPlan,
 } from '../domain/investments/investment.models';
 import {
@@ -235,59 +237,75 @@ const TYPE_LABELS: Record<InvestmentType, string> = {
           </div>
         </section>
 
-        <section class="form-section" aria-labelledby="recurring-heading">
-          <label class="check-row">
-            <input type="checkbox" formControlName="recurringEnabled" />
-            <span id="recurring-heading">Track a recurring plan</span>
-          </label>
-          @if (form.controls.recurringEnabled.value) {
-            <p class="accounting-note">
-              A plan is a commitment only. It never creates an actual investment transaction.
-            </p>
-            <div class="form-grid">
-              <mat-form-field appearance="outline">
-                <mat-label>Amount</mat-label>
-                <input matInput type="number" min="0" formControlName="recurringAmount" />
-              </mat-form-field>
-              <mat-form-field appearance="outline">
-                <mat-label>Frequency</mat-label>
-                <mat-select formControlName="frequency">
-                  <mat-option value="MONTHLY">Monthly</mat-option>
-                  <mat-option value="QUARTERLY">Quarterly</mat-option>
-                  <mat-option value="YEARLY">Yearly</mat-option>
-                </mat-select>
-              </mat-form-field>
-              <mat-form-field appearance="outline">
-                <mat-label>Start date</mat-label>
-                <input matInput type="date" formControlName="recurringStartDate" />
-              </mat-form-field>
-            </div>
-            @if (form.controls.type.value === 'MUTUAL_FUND') {
-              <label class="check-row">
-                <input type="checkbox" formControlName="stepUpEnabled" /> Annual SIP step-up
-              </label>
-              @if (form.controls.stepUpEnabled.value) {
-                <div class="form-grid">
-                  <mat-form-field appearance="outline">
-                    <mat-label>Step-up type</mat-label>
-                    <mat-select formControlName="stepUpType">
-                      <mat-option value="PERCENTAGE">Percentage</mat-option>
-                      <mat-option value="FIXED_AMOUNT">Fixed amount</mat-option>
-                    </mat-select>
-                  </mat-form-field>
-                  <mat-form-field appearance="outline">
-                    <mat-label>Step-up value</mat-label>
-                    <input matInput type="number" min="0" formControlName="stepUpValue" />
-                  </mat-form-field>
-                  <mat-form-field appearance="outline">
-                    <mat-label>Effective from</mat-label>
-                    <input matInput type="date" formControlName="stepUpDate" />
-                  </mat-form-field>
-                </div>
+        @if (form.controls.type.value !== 'STOCK') {
+          <section class="form-section" aria-labelledby="recurring-heading">
+            <label class="check-row">
+              <input type="checkbox" formControlName="recurringEnabled" />
+              <span id="recurring-heading">Track a recurring plan</span>
+            </label>
+            @if (form.controls.recurringEnabled.value) {
+              <p class="accounting-note">
+                A plan is a commitment only. It never creates an actual investment transaction.
+              </p>
+              <div class="form-grid">
+                <mat-form-field appearance="outline">
+                  <mat-label>Recurring amount</mat-label>
+                  <input matInput type="number" min="0" formControlName="recurringAmount" />
+                </mat-form-field>
+                <mat-form-field appearance="outline">
+                  <mat-label>Frequency</mat-label>
+                  <mat-select formControlName="frequency">
+                    <mat-option value="MONTHLY">Monthly</mat-option>
+                    <mat-option value="QUARTERLY">Quarterly</mat-option>
+                    <mat-option value="HALF_YEARLY">Half-yearly</mat-option>
+                    <mat-option value="YEARLY">Annual</mat-option>
+                  </mat-select>
+                </mat-form-field>
+                <mat-form-field appearance="outline">
+                  <mat-label>Start date</mat-label>
+                  <input matInput type="date" formControlName="recurringStartDate" />
+                </mat-form-field>
+              </div>
+              @if (form.controls.type.value === 'MUTUAL_FUND') {
+                <mat-form-field appearance="outline">
+                  <mat-label>SIP type</mat-label>
+                  <mat-select formControlName="sipType">
+                    <mat-option value="FIXED">Fixed SIP</mat-option>
+                    <mat-option value="STEP_UP">Step-up SIP</mat-option>
+                  </mat-select>
+                </mat-form-field>
+                @if (form.controls.sipType.value === 'STEP_UP') {
+                  <div class="form-grid">
+                    <mat-form-field appearance="outline">
+                      <mat-label>SIP increase amount</mat-label>
+                      <input
+                        matInput
+                        type="number"
+                        min="0"
+                        formControlName="stepUpValue"
+                        required
+                      />
+                    </mat-form-field>
+                    <mat-form-field appearance="outline">
+                      <mat-label>Step-up frequency</mat-label>
+                      <mat-select formControlName="stepUpFrequency">
+                        <mat-option value="MONTHLY">Monthly</mat-option>
+                        <mat-option value="QUARTERLY">Quarterly</mat-option>
+                        <mat-option value="HALF_YEARLY">Half-yearly</mat-option>
+                        <mat-option value="YEARLY">Annual</mat-option>
+                      </mat-select>
+                    </mat-form-field>
+                    <mat-form-field appearance="outline">
+                      <mat-label>Upcoming step-up month</mat-label>
+                      <input matInput type="month" formControlName="stepUpMonth" required />
+                      <mat-hint>The SIP increases at the start of this month.</mat-hint>
+                    </mat-form-field>
+                  </div>
+                }
               }
             }
-          }
-        </section>
+          </section>
+        }
         @if (error()) {
           <p class="form-error" role="alert">{{ error() }}</p>
         }
@@ -458,12 +476,12 @@ export class InvestmentAccountDialog {
     openingUnits: [''],
     recurringEnabled: [false],
     recurringAmount: [''],
-    frequency: this.fb.control<'MONTHLY' | 'QUARTERLY' | 'YEARLY'>('MONTHLY'),
+    frequency: this.fb.control<InvestmentFrequencyV2>('MONTHLY'),
     recurringStartDate: [this.today],
-    stepUpEnabled: [false],
-    stepUpType: this.fb.control<'PERCENTAGE' | 'FIXED_AMOUNT'>('PERCENTAGE'),
+    sipType: this.fb.control<MutualFundSipType>('FIXED'),
     stepUpValue: [''],
-    stepUpDate: [this.today],
+    stepUpFrequency: this.fb.control<InvestmentFrequencyV2>('HALF_YEARLY'),
+    stepUpMonth: [this.today.slice(0, 7)],
   });
 
   label(type: InvestmentType): string {
@@ -574,24 +592,31 @@ export class InvestmentAccountDialog {
           beneficiaryName: v.type === 'SSY' ? v.beneficiaryName.trim() || undefined : undefined,
         };
       let recurringPlan: RecurringInvestmentPlan | undefined;
-      if (v.recurringEnabled) {
+      if (v.type !== 'STOCK' && v.recurringEnabled) {
         if (Number(v.recurringAmount) <= 0)
           throw new Error('Recurring amount must be greater than zero.');
-        if (v.type === 'MUTUAL_FUND' && v.stepUpEnabled && Number(v.stepUpValue) <= 0)
-          throw new Error('Step-up value must be greater than zero.');
+        if (v.type === 'MUTUAL_FUND' && v.sipType === 'STEP_UP') {
+          if (Number(v.stepUpValue) <= 0)
+            throw new Error('SIP increase amount must be greater than zero.');
+          if (!/^\d{4}-\d{2}$/.test(v.stepUpMonth))
+            throw new Error('Choose the upcoming step-up month.');
+          if (v.stepUpMonth < v.recurringStartDate.slice(0, 7))
+            throw new Error('Upcoming step-up month cannot be before the SIP start month.');
+        }
         recurringPlan = {
           enabled: true,
           amount: v.recurringAmount,
           frequency: v.frequency,
           startDate: v.recurringStartDate,
+          sipType: v.type === 'MUTUAL_FUND' ? v.sipType : undefined,
           stepUp:
-            v.type === 'MUTUAL_FUND' && v.stepUpEnabled
+            v.type === 'MUTUAL_FUND' && v.sipType === 'STEP_UP'
               ? {
                   enabled: true,
-                  type: v.stepUpType,
+                  type: 'FIXED_AMOUNT',
                   value: v.stepUpValue,
-                  frequency: 'YEARLY',
-                  effectiveFrom: v.stepUpDate,
+                  frequency: v.stepUpFrequency,
+                  effectiveFrom: `${v.stepUpMonth}-01`,
                 }
               : undefined,
         };
@@ -805,7 +830,7 @@ export class InvestmentAccountDialog {
                       }}{{
                         account.recurringPlan?.stepUp?.type === 'PERCENTAGE' ? '%' : ' rupees'
                       }}
-                      yearly
+                      every {{ cadence(account.recurringPlan?.stepUp?.frequency) }}
                     }
                   </p>
                 }
@@ -1146,7 +1171,13 @@ export class InvestmentsPage {
     return TYPE_LABELS[type];
   }
   cadence(value: string | undefined): string {
-    return value === 'QUARTERLY' ? 'quarter' : value === 'YEARLY' ? 'year' : 'month';
+    return value === 'QUARTERLY'
+      ? 'quarter'
+      : value === 'HALF_YEARLY'
+        ? 'half-year'
+        : value === 'YEARLY'
+          ? 'year'
+          : 'month';
   }
   accountName(id: string): string {
     return this.investments.accounts().find((item) => item.id === id)?.name ?? 'Investment';

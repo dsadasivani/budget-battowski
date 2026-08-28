@@ -2,7 +2,8 @@ import type { OwnedRecord } from '../../budget.models';
 
 export type InvestmentType = 'STOCK' | 'MUTUAL_FUND' | 'NPS' | 'PPF' | 'SSY';
 export type InvestmentStatus = 'ACTIVE' | 'CLOSED';
-export type InvestmentFrequencyV2 = 'MONTHLY' | 'QUARTERLY' | 'YEARLY';
+export type InvestmentFrequencyV2 = 'MONTHLY' | 'QUARTERLY' | 'HALF_YEARLY' | 'YEARLY';
+export type MutualFundSipType = 'FIXED' | 'STEP_UP';
 export type InvestmentTransactionType =
   'BUY' | 'SIP' | 'CONTRIBUTION' | 'SELL' | 'REDEMPTION' | 'WITHDRAWAL';
 export type InvestmentTransactionSource = 'RECURRING' | 'ADHOC' | 'LIQUIDATION';
@@ -69,9 +70,11 @@ export interface InvestmentOpeningSnapshot {
 
 export interface StepUpPlan {
   enabled: boolean;
+  /** Kept as a union so existing percentage-based plans remain readable. New plans use FIXED_AMOUNT. */
   type: 'PERCENTAGE' | 'FIXED_AMOUNT';
   value: DecimalString;
-  frequency: 'YEARLY';
+  frequency: InvestmentFrequencyV2;
+  /** First scheduled increase date. New plans persist the selected month as its first day. */
   effectiveFrom: string;
 }
 
@@ -81,6 +84,7 @@ export interface RecurringInvestmentPlan {
   frequency: InvestmentFrequencyV2;
   startDate: string;
   endDate?: string;
+  sipType?: MutualFundSipType;
   stepUp?: StepUpPlan;
 }
 
@@ -174,4 +178,8 @@ export function isContributionType(type: InvestmentTransactionType): boolean {
 
 export function isWithdrawalType(type: InvestmentTransactionType): boolean {
   return type === 'SELL' || type === 'REDEMPTION' || type === 'WITHDRAWAL';
+}
+
+export function supportsRecurringPlan(type: InvestmentType): boolean {
+  return type !== 'STOCK';
 }

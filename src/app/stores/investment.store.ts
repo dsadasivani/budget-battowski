@@ -23,6 +23,7 @@ import {
   EMPTY_INVESTMENT_SUMMARY,
   isContributionType,
   isWithdrawalType,
+  supportsRecurringPlan,
   type InvestmentAccount,
   type InvestmentInstrument,
   type InvestmentOpeningSnapshot,
@@ -89,6 +90,11 @@ function now(): string {
 function month(): string {
   return today().slice(0, 7);
 }
+function dateInMonth(selectedMonth: string): string {
+  if (!/^\d{4}-\d{2}$/.test(selectedMonth)) return today();
+  const currentDate = today();
+  return currentDate.startsWith(`${selectedMonth}-`) ? currentDate : `${selectedMonth}-01`;
+}
 
 @Injectable({ providedIn: 'root' })
 export class InvestmentStore implements OnDestroy {
@@ -115,7 +121,7 @@ export class InvestmentStore implements OnDestroy {
       this.accounts(),
       this.transactions(),
       this.budget.selectedMonth(),
-      today(),
+      dateInMonth(this.budget.selectedMonth()),
     ),
   );
   readonly lastRefreshedAt = computed(() =>
@@ -155,7 +161,7 @@ export class InvestmentStore implements OnDestroy {
         app,
         workspaceId,
         (accounts) => {
-          this.accounts.set(accounts);
+          this.accounts.set(accounts.map((account) => this.withSupportedRecurringPlan(account)));
           this.loading.set(false);
           void this.migrateLegacy(workspaceId);
         },
@@ -186,7 +192,11 @@ export class InvestmentStore implements OnDestroy {
       .sort((a, b) => b.date.localeCompare(a.date));
   }
   effectiveRecurring(account: InvestmentAccount): string {
-    return effectiveRecurringAmount(account.recurringPlan, today());
+    if (!supportsRecurringPlan(account.type)) return '0';
+    return effectiveRecurringAmount(
+      account.recurringPlan,
+      dateInMonth(this.budget.selectedMonth()),
+    );
   }
 
   async addInvestment(input: NewInvestmentInput): Promise<InvestmentAccount> {
@@ -203,7 +213,7 @@ export class InvestmentStore implements OnDestroy {
       institution: input.institution?.trim() || undefined,
       instrument: input.instrument,
       openingSnapshot: input.openingSnapshot,
-      recurringPlan: input.recurringPlan,
+      recurringPlan: supportsRecurringPlan(input.type) ? input.recurringPlan : undefined,
       summary: { ...EMPTY_INVESTMENT_SUMMARY },
       needsInstrumentMapping:
         ['STOCK', 'MUTUAL_FUND', 'NPS'].includes(input.type) && !input.instrument,
@@ -222,9 +232,13 @@ export class InvestmentStore implements OnDestroy {
   }
 
   async updateAccount(account: InvestmentAccount): Promise<void> {
-    const summary = calculateInvestmentSummary(account, this.transactionsFor(account.id));
+    const normalizedAccount = this.withSupportedRecurringPlan(account);
+    const summary = calculateInvestmentSummary(
+      normalizedAccount,
+      this.transactionsFor(normalizedAccount.id),
+    );
     await this.repository.saveAccount({
-      ...account,
+      ...normalizedAccount,
       summary,
       status: this.deriveStatus(summary),
       updatedDate: now(),
@@ -631,6 +645,19 @@ export class InvestmentStore implements OnDestroy {
       throw new Error((value as { code?: string }).code ?? 'PROVIDER_UNAVAILABLE');
     }
     return response.json();
+  }
+
+  private withSupportedRecurringPlan(account: InvestmentAccount): InvestmentAccount {
+    if (supportsRecurringPlan(account.type) || !account.recurringPlan) return account;
+    return {
+      ...account,
+      recurringPlan: undefined,
+      summary: {
+        ...account.summary,
+        currentRecurringAmount: undefined,
+        recurringFrequency: undefined,
+      },
+    };
   }
 
   private deriveStatus(summary: InvestmentAccount['summary']): InvestmentAccount['status'] {

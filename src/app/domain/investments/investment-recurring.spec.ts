@@ -13,11 +13,14 @@ function plan(overrides: Partial<RecurringInvestmentPlan> = {}): RecurringInvest
 }
 
 describe('investment recurrence', () => {
-  it('normalizes monthly, quarterly, and yearly commitments', () => {
+  it('normalizes monthly, quarterly, half-yearly, and yearly commitments', () => {
     expect(monthlyRecurringCommitment(plan(), '2026-06-01')).toBe('10000');
     expect(
       monthlyRecurringCommitment(plan({ amount: '24000', frequency: 'QUARTERLY' }), '2026-06-01'),
     ).toBe('8000');
+    expect(
+      monthlyRecurringCommitment(plan({ amount: '60000', frequency: 'HALF_YEARLY' }), '2026-06-01'),
+    ).toBe('10000');
     expect(
       monthlyRecurringCommitment(plan({ amount: '120000', frequency: 'YEARLY' }), '2026-06-01'),
     ).toBe('10000');
@@ -48,5 +51,39 @@ describe('investment recurrence', () => {
     expect(effectiveRecurringAmount(fixed, '2027-03-31')).toBe('10000');
     expect(effectiveRecurringAmount(fixed, '2027-04-01')).toBe('12000');
     expect(effectiveRecurringAmount(fixed, '2028-04-01')).toBe('14000');
+  });
+
+  it('adds a fixed amount at each configured step-up frequency from the upcoming month', () => {
+    const fixed = plan({
+      amount: '5000',
+      sipType: 'STEP_UP',
+      stepUp: {
+        enabled: true,
+        type: 'FIXED_AMOUNT',
+        value: '500',
+        frequency: 'HALF_YEARLY',
+        effectiveFrom: '2026-07-01',
+      },
+    });
+
+    expect(effectiveRecurringAmount(fixed, '2026-06-30')).toBe('5000');
+    expect(effectiveRecurringAmount(fixed, '2026-07-01')).toBe('5500');
+    expect(effectiveRecurringAmount(fixed, '2026-12-31')).toBe('5500');
+    expect(effectiveRecurringAmount(fixed, '2027-01-01')).toBe('6000');
+  });
+
+  it('preserves the scheduled day for older step-up plans that stored a full date', () => {
+    const fixed = plan({
+      stepUp: {
+        enabled: true,
+        type: 'FIXED_AMOUNT',
+        value: '500',
+        frequency: 'HALF_YEARLY',
+        effectiveFrom: '2026-07-15',
+      },
+    });
+
+    expect(effectiveRecurringAmount(fixed, '2027-01-14')).toBe('10500');
+    expect(effectiveRecurringAmount(fixed, '2027-01-15')).toBe('11000');
   });
 });

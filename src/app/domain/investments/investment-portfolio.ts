@@ -3,6 +3,7 @@ import { effectiveRecurringAmount, monthlyRecurringCommitment } from './investme
 import {
   isContributionType,
   isWithdrawalType,
+  supportsRecurringPlan,
   type InvestmentAccount,
   type InvestmentTransaction,
   type PortfolioSummary,
@@ -37,7 +38,12 @@ export function calculatePortfolioSummary(
     .filter((transaction) => isWithdrawalType(transaction.type))
     .reduce((sum, transaction) => sum.plus(transaction.amount), investmentDecimal(0));
   const recurringCommitment = active.reduce(
-    (sum, account) => sum.plus(monthlyRecurringCommitment(account.recurringPlan, asOfDate)),
+    (sum, account) =>
+      sum.plus(
+        supportsRecurringPlan(account.type)
+          ? monthlyRecurringCommitment(account.recurringPlan, asOfDate)
+          : 0,
+      ),
     investmentDecimal(0),
   );
   const percentage = investedAmount.isZero()
@@ -56,5 +62,6 @@ export function calculatePortfolioSummary(
 }
 
 export function recurringAmountForAccount(account: InvestmentAccount, asOfDate: string): string {
+  if (!supportsRecurringPlan(account.type)) return '0';
   return effectiveRecurringAmount(account.recurringPlan, asOfDate);
 }

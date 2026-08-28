@@ -22,7 +22,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
     @if (store.showPageSkeleton()) {
       <app-page-skeleton variant="planning" />
     } @else {
-      <section class="page">
+      <section class="page mobile-income-page">
         <header class="page-header desktop-page-header">
           <div>
             <h1>Income</h1>
@@ -136,6 +136,38 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                 </tbody>
               </table>
             </div>
+            <div class="mobile-income-list" aria-label="Income sources">
+              @for (income of store.incomeRows(); track income.id) {
+                <article class="mobile-income-row">
+                  <span class="income-source-icon" aria-hidden="true">
+                    <mat-icon>payments</mat-icon>
+                  </span>
+                  <div class="income-source-copy">
+                    <strong>{{ income.source }}</strong>
+                    <small>{{ income.categoryName }} &middot; {{ income.memberName }}</small>
+                    @if (income.notes) {
+                      <small class="income-notes">{{ income.notes }}</small>
+                    }
+                  </div>
+                  <div class="income-row-value">
+                    <b>{{ income.amount | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</b>
+                    <span class="badge success">{{ income.cadence }}</span>
+                  </div>
+                  <button
+                    mat-icon-button
+                    type="button"
+                    [attr.aria-label]="'Edit income ' + income.source"
+                    matTooltip="Edit income"
+                    (click)="store.openIncomeEditor(income)"
+                    [disabled]="!store.canWrite()"
+                  >
+                    <mat-icon aria-hidden="true">edit</mat-icon>
+                  </button>
+                </article>
+              } @empty {
+                <div class="empty-state">No income sources for this month</div>
+              }
+            </div>
           </article>
 
           <article class="panel-card">
@@ -187,6 +219,105 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
     }
     td small {
       display: block;
+    }
+    .mobile-income-list {
+      display: none;
+    }
+    @media (max-width: 780px) {
+      .mobile-income-page .data-table-wrap {
+        display: none;
+      }
+      .mobile-income-list {
+        display: grid;
+        gap: 10px;
+      }
+      .mobile-income-row {
+        display: grid;
+        grid-template-columns: 42px minmax(0, 1fr) auto 44px;
+        align-items: center;
+        gap: 10px;
+        min-height: 74px;
+        padding: 11px 10px 11px 12px;
+        border: 1px solid var(--bb-border);
+        border-radius: 18px;
+        background: var(--bb-surface);
+      }
+      .income-source-icon {
+        display: grid;
+        width: 42px;
+        height: 42px;
+        place-items: center;
+        border-radius: 14px;
+        background: var(--bb-primary-soft);
+        color: var(--bb-primary);
+      }
+      .income-source-icon mat-icon {
+        width: 21px;
+        height: 21px;
+        font-size: 21px;
+      }
+      .income-source-copy,
+      .income-row-value {
+        min-width: 0;
+      }
+      .income-source-copy strong,
+      .income-source-copy small {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .income-source-copy strong {
+        color: var(--bb-ink);
+        font-size: 0.9rem;
+      }
+      .income-source-copy small {
+        margin-top: 3px;
+        color: var(--bb-muted);
+        font-size: 0.72rem;
+      }
+      .income-source-copy .income-notes {
+        margin-top: 2px;
+        font-weight: 400;
+      }
+      .income-row-value {
+        display: grid;
+        justify-items: end;
+        gap: 5px;
+      }
+      .income-row-value b {
+        color: var(--bb-ink);
+        font-size: 0.86rem;
+        white-space: nowrap;
+      }
+      .income-row-value .badge {
+        max-width: 92px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .income-chart {
+        min-height: 230px;
+        scroll-snap-type: x proximity;
+      }
+      .income-chart > div {
+        height: 194px;
+        scroll-snap-align: start;
+      }
+    }
+    @media (max-width: 390px) {
+      .mobile-income-row {
+        grid-template-columns: 38px minmax(0, 1fr) auto;
+      }
+      .mobile-income-row > button {
+        grid-column: 3;
+        grid-row: 2;
+        justify-self: end;
+      }
+      .income-row-value {
+        grid-column: 3;
+        grid-row: 1;
+      }
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,

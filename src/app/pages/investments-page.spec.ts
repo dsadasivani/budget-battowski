@@ -34,6 +34,15 @@ describe('InvestmentAccountDialog', () => {
     expect(fixture.nativeElement.querySelector('form')).not.toBeNull();
     expect(fixture.nativeElement.textContent).toContain('Find stock');
     expect(fixture.nativeElement.textContent).not.toContain('Upstox');
+    expect(fixture.nativeElement.textContent).not.toContain('Track a recurring plan');
+
+    const typeButtons = fixture.nativeElement.querySelectorAll(
+      '.type-picker button',
+    ) as NodeListOf<HTMLButtonElement>;
+    typeButtons[1].click();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Track a recurring plan');
   });
 
   it('renders through the Material dialog overlay', async () => {
@@ -90,5 +99,61 @@ describe('InvestmentAccountDialog', () => {
       'Add investment',
     );
     reference.close();
+  });
+
+  it('saves a half-yearly fixed-amount step-up SIP with its upcoming month', async () => {
+    const addInvestment = vi.fn(async () => ({ id: 'investment-1' }));
+    const close = vi.fn();
+    await TestBed.configureTestingModule({
+      imports: [InvestmentAccountDialog],
+      providers: [
+        provideNoopAnimations(),
+        { provide: MatDialogRef, useValue: { close } },
+        {
+          provide: InvestmentStore,
+          useValue: {
+            addInvestment,
+            searchStocks: vi.fn(),
+            searchMutualFunds: vi.fn(),
+          },
+        },
+      ],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(InvestmentAccountDialog);
+    const dialog = fixture.componentInstance;
+    dialog.form.patchValue({
+      type: 'MUTUAL_FUND',
+      name: 'Index fund',
+      recurringEnabled: true,
+      recurringAmount: '5000',
+      frequency: 'MONTHLY',
+      recurringStartDate: '2026-01-01',
+      sipType: 'STEP_UP',
+      stepUpValue: '500',
+      stepUpFrequency: 'HALF_YEARLY',
+      stepUpMonth: '2026-07',
+    });
+
+    await dialog.save();
+
+    expect(addInvestment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recurringPlan: {
+          enabled: true,
+          amount: '5000',
+          frequency: 'MONTHLY',
+          startDate: '2026-01-01',
+          sipType: 'STEP_UP',
+          stepUp: {
+            enabled: true,
+            type: 'FIXED_AMOUNT',
+            value: '500',
+            frequency: 'HALF_YEARLY',
+            effectiveFrom: '2026-07-01',
+          },
+        },
+      }),
+    );
+    expect(close).toHaveBeenCalledWith({ id: 'investment-1' });
   });
 });

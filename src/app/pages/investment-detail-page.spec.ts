@@ -10,8 +10,9 @@ import type {
   InvestmentAccount,
   InvestmentTransaction,
 } from '../domain/investments/investment.models';
+import { BudgetStore } from '../budget.store';
 import { InvestmentStore } from '../stores/investment.store';
-import { InvestmentDetailPage } from './investment-detail-page';
+import { InvestmentAccountDetailPage } from './investment-account-detail-page';
 
 const account: InvestmentAccount = {
   id: 'investment-1',
@@ -48,7 +49,7 @@ const transaction: InvestmentTransaction = {
   updatedDate: '2026-08-28T00:00:00.000Z',
 };
 
-describe('InvestmentDetailPage deletion', () => {
+describe('InvestmentAccountDetailPage deletion', () => {
   it('confirms the destructive action, deletes the investment, and returns to the portfolio', async () => {
     const deleteInvestment = vi.fn(async () => undefined);
     const dialogOpen = vi.fn(() => ({ afterClosed: () => of(true) }));
@@ -61,11 +62,16 @@ describe('InvestmentDetailPage deletion', () => {
           provide: InvestmentStore,
           useValue: {
             accounts: signal([account]),
+            loading: signal(false),
             transactionsFor: vi.fn(() => [transaction]),
             deletingAccountId: signal(null),
             canDelete: vi.fn(() => true),
             deleteInvestment,
           },
+        },
+        {
+          provide: BudgetStore,
+          useValue: { showPageSkeleton: signal(false) },
         },
         {
           provide: ActivatedRoute,
@@ -76,7 +82,7 @@ describe('InvestmentDetailPage deletion', () => {
         { provide: MatSnackBar, useValue: { open: snackOpen } },
       ],
     });
-    const page = TestBed.runInInjectionContext(() => new InvestmentDetailPage());
+    const page = TestBed.runInInjectionContext(() => new InvestmentAccountDetailPage());
 
     await page.deleteInvestment(account);
 

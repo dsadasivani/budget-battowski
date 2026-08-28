@@ -19,8 +19,10 @@ import { firstValueFrom } from 'rxjs';
 import { investmentDecimal, moneyString } from '../domain/investments/investment-decimal';
 import type {
   InvestmentAccount,
+  InvestmentFrequencyV2,
   InvestmentTransactionSource,
   InvestmentTransactionType,
+  MutualFundSipType,
 } from '../domain/investments/investment.models';
 import { InvestmentStore } from '../stores/investment.store';
 import type { WorkspaceConfirmData, WorkspaceConfirmDialog } from '../workspace-form-dialog';
@@ -227,7 +229,8 @@ export class InvestmentEditDialog {
             ><mat-select formControlName="frequency"
               ><mat-option value="MONTHLY">Monthly</mat-option
               ><mat-option value="QUARTERLY">Quarterly</mat-option
-              ><mat-option value="YEARLY">Yearly</mat-option></mat-select
+              ><mat-option value="HALF_YEARLY">Half-yearly</mat-option
+              ><mat-option value="YEARLY">Annual</mat-option></mat-select
             ></mat-form-field
           >
           <mat-form-field appearance="outline"
@@ -239,27 +242,44 @@ export class InvestmentEditDialog {
             ><input matInput type="date" formControlName="endDate"
           /></mat-form-field>
           @if (data.type === 'MUTUAL_FUND') {
-            <label class="enabled-row"
-              ><input type="checkbox" formControlName="stepUpEnabled" /> Annual step-up</label
+            <mat-form-field appearance="outline"
+              ><mat-label>SIP type</mat-label
+              ><mat-select formControlName="sipType"
+                ><mat-option value="FIXED">Fixed SIP</mat-option
+                ><mat-option value="STEP_UP">Step-up SIP</mat-option></mat-select
+              ></mat-form-field
             >
-            @if (form.controls.stepUpEnabled.value) {
+            @if (form.controls.sipType.value === 'STEP_UP') {
+              @if (legacyPercentageStepUp) {
+                <p class="plan-hint">
+                  This saved plan uses the earlier percentage format. It will remain
+                  percentage-based when saved.
+                </p>
+              }
               <mat-form-field appearance="outline"
-                ><mat-label>Type</mat-label
-                ><mat-select formControlName="stepUpType"
-                  ><mat-option value="PERCENTAGE">Percentage</mat-option
-                  ><mat-option value="FIXED_AMOUNT">Fixed amount</mat-option></mat-select
-                ></mat-form-field
-              ><mat-form-field appearance="outline"
-                ><mat-label>Value</mat-label
+                ><mat-label>{{
+                  legacyPercentageStepUp ? 'SIP increase percentage' : 'SIP increase amount'
+                }}</mat-label
                 ><input
                   matInput
                   type="number"
                   min="0"
-                  formControlName="stepUpValue" /></mat-form-field
+                  formControlName="stepUpValue"
+                  required /></mat-form-field
               ><mat-form-field appearance="outline"
-                ><mat-label>Effective from</mat-label
-                ><input matInput type="date" formControlName="stepUpDate"
-              /></mat-form-field>
+                ><mat-label>Step-up frequency</mat-label
+                ><mat-select formControlName="stepUpFrequency"
+                  ><mat-option value="MONTHLY">Monthly</mat-option
+                  ><mat-option value="QUARTERLY">Quarterly</mat-option
+                  ><mat-option value="HALF_YEARLY">Half-yearly</mat-option
+                  ><mat-option value="YEARLY">Annual</mat-option></mat-select
+                ></mat-form-field
+              ><mat-form-field appearance="outline"
+                ><mat-label>Upcoming step-up month</mat-label
+                ><input matInput type="month" formControlName="stepUpMonth" required /><mat-hint
+                  >The SIP increases at the start of this month.</mat-hint
+                ></mat-form-field
+              >
             }
           }
         }
@@ -307,28 +327,40 @@ export class RecurringPlanDialog {
   private readonly fb = inject(FormBuilder).nonNullable;
   readonly error = signal('');
   private readonly plan = this.data.recurringPlan;
+  readonly legacyPercentageStepUp = this.plan?.stepUp?.type === 'PERCENTAGE';
   readonly form = this.fb.group({
     enabled: [this.plan?.enabled ?? true],
     amount: [this.plan?.amount ?? ''],
-    frequency: this.fb.control<'MONTHLY' | 'QUARTERLY' | 'YEARLY'>(
-      this.plan?.frequency ?? 'MONTHLY',
-    ),
+    frequency: this.fb.control<InvestmentFrequencyV2>(this.plan?.frequency ?? 'MONTHLY'),
     startDate: [this.plan?.startDate ?? new Date().toISOString().slice(0, 10)],
     endDate: [this.plan?.endDate ?? ''],
-    stepUpEnabled: [this.plan?.stepUp?.enabled ?? false],
-    stepUpType: this.fb.control<'PERCENTAGE' | 'FIXED_AMOUNT'>(
-      this.plan?.stepUp?.type ?? 'PERCENTAGE',
+    sipType: this.fb.control<MutualFundSipType>(
+      this.plan?.sipType ?? (this.plan?.stepUp?.enabled ? 'STEP_UP' : 'FIXED'),
     ),
     stepUpValue: [this.plan?.stepUp?.value ?? ''],
-    stepUpDate: [this.plan?.stepUp?.effectiveFrom ?? new Date().toISOString().slice(0, 10)],
+    stepUpFrequency: this.fb.control<InvestmentFrequencyV2>(
+      this.plan?.stepUp?.frequency ?? 'HALF_YEARLY',
+    ),
+    stepUpMonth: [
+      this.plan?.stepUp?.effectiveFrom.slice(0, 7) ?? new Date().toISOString().slice(0, 7),
+    ],
   });
   async save(): Promise<void> {
     try {
+      if (this.data.type === 'STOCK') {
+        throw new Error('Recurring plans are not available for stocks.');
+      }
       const value = this.form.getRawValue();
       if (value.enabled && Number(value.amount) <= 0)
         throw new Error('Recurring amount must be greater than zero.');
-      if (value.stepUpEnabled && Number(value.stepUpValue) <= 0)
-        throw new Error('Step-up value must be greater than zero.');
+      if (value.enabled && this.data.type === 'MUTUAL_FUND' && value.sipType === 'STEP_UP') {
+        if (Number(value.stepUpValue) <= 0)
+          throw new Error('SIP increase amount must be greater than zero.');
+        if (!/^\d{4}-\d{2}$/.test(value.stepUpMonth))
+          throw new Error('Choose the upcoming step-up month.');
+        if (value.stepUpMonth < value.startDate.slice(0, 7))
+          throw new Error('Upcoming step-up month cannot be before the SIP start month.');
+      }
       const recurringPlan = value.enabled
         ? {
             enabled: true,
@@ -336,14 +368,17 @@ export class RecurringPlanDialog {
             frequency: value.frequency,
             startDate: value.startDate,
             endDate: value.endDate || undefined,
+            sipType: this.data.type === 'MUTUAL_FUND' ? value.sipType : undefined,
             stepUp:
-              this.data.type === 'MUTUAL_FUND' && value.stepUpEnabled
+              this.data.type === 'MUTUAL_FUND' && value.sipType === 'STEP_UP'
                 ? {
                     enabled: true,
-                    type: value.stepUpType,
+                    type: this.legacyPercentageStepUp
+                      ? ('PERCENTAGE' as const)
+                      : ('FIXED_AMOUNT' as const),
                     value: value.stepUpValue,
-                    frequency: 'YEARLY' as const,
-                    effectiveFrom: value.stepUpDate,
+                    frequency: value.stepUpFrequency,
+                    effectiveFrom: `${value.stepUpMonth}-01`,
                   }
                 : undefined,
           }
@@ -434,7 +469,7 @@ function transactionLabels(
             >
           }
         }
-        @if (!data.liquidation) {
+        @if (!data.liquidation && data.account.type !== 'STOCK') {
           <mat-form-field appearance="outline"
             ><mat-label>Source</mat-label
             ><mat-select formControlName="source"
@@ -533,7 +568,11 @@ export class InvestmentTransactionDialog {
         price: this.data.account.type === 'STOCK' ? value.unitPrice : undefined,
         nav: this.data.account.type === 'MUTUAL_FUND' ? value.unitPrice || undefined : undefined,
         schemeAllocations: this.data.account.type === 'NPS' ? schemeAllocations : undefined,
-        source: this.data.liquidation ? 'LIQUIDATION' : value.source,
+        source: this.data.liquidation
+          ? 'LIQUIDATION'
+          : this.data.account.type === 'STOCK'
+            ? 'ADHOC'
+            : value.source,
         notes: value.notes,
       });
       this.dialogRef.close(true);
