@@ -1,5 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import { MatChipsModule } from '@angular/material/chips';
 import { MatIconModule } from '@angular/material/icon';
 import { RouterLink } from '@angular/router';
 
@@ -18,7 +19,7 @@ export type InvestmentViewMode = 'grid' | 'list';
 
 @Component({
   selector: 'app-investment-type-section',
-  imports: [CommonModule, RouterLink, MatIconModule],
+  imports: [CommonModule, RouterLink, MatIconModule, MatChipsModule],
   template: `
     <section
       class="type-section panel-card"
@@ -81,6 +82,14 @@ export type InvestmentViewMode = 'grid' | 'list';
                 <div>
                   <h4>{{ account.name }}</h4>
                   <p>{{ accountDetail(account) }}</p>
+                  @if (showInstitutionChip(account)) {
+                    <mat-chip-set
+                      class="institution-chip-set"
+                      [attr.aria-label]="institutionChipLabel(account)"
+                    >
+                      <mat-chip>{{ account.institution }}</mat-chip>
+                    </mat-chip-set>
+                  }
                 </div>
               </div>
               <span class="open-icon" aria-hidden="true">
@@ -394,6 +403,18 @@ export type InvestmentViewMode = 'grid' | 'list';
       line-height: 1.3;
     }
 
+    .institution-chip-set {
+      display: block;
+      margin-top: 6px;
+    }
+
+    .institution-chip-set mat-chip {
+      --mdc-chip-container-height: 24px;
+      --mdc-chip-label-text-size: 0.7rem;
+      --mdc-chip-label-text-color: var(--type-color);
+      --mdc-chip-elevated-container-color: var(--type-soft);
+    }
+
     .open-icon {
       color: #94a3b8;
     }
@@ -693,15 +714,21 @@ export class InvestmentTypeSection {
     return account.type !== 'STOCK' && account.recurringPlan?.enabled === true;
   }
 
+  showInstitutionChip(account: InvestmentAccount): boolean {
+    return !!account.institution && (account.type === 'STOCK' || account.type === 'MUTUAL_FUND');
+  }
+
+  institutionChipLabel(account: InvestmentAccount): string {
+    return `${account.type === 'STOCK' ? 'Broker' : 'AMC or investment platform'}: ${account.institution}`;
+  }
+
   accountDetail(account: InvestmentAccount): string {
     const instrument = account.instrument;
     if (instrument?.kind === 'STOCK') {
-      return [instrument.exchange, instrument.tradingSymbol, account.institution]
-        .filter(Boolean)
-        .join(' · ');
+      return [instrument.exchange, instrument.tradingSymbol].filter(Boolean).join(' · ');
     }
     if (instrument?.kind === 'MUTUAL_FUND') {
-      return [account.institution, instrument.plan, instrument.option].filter(Boolean).join(' · ');
+      return [instrument.plan, instrument.option].filter(Boolean).join(' · ');
     }
     if (instrument?.kind === 'NPS') {
       const schemes = instrument.schemeHoldings.length;

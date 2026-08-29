@@ -1,9 +1,13 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { COMMA, ENTER } from '@angular/cdk/keycodes';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { MatAutocompleteModule } from '@angular/material/autocomplete';
 import { MatDialog, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
+import { MatChipInputEvent, MatChipsModule } from '@angular/material/chips';
 import { MatExpansionModule } from '@angular/material/expansion';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
@@ -42,7 +46,9 @@ const TYPE_LABELS: Record<InvestmentType, string> = {
     CommonModule,
     ReactiveFormsModule,
     MatDialogModule,
+    MatAutocompleteModule,
     MatButtonModule,
+    MatChipsModule,
     MatFormFieldModule,
     MatInputModule,
     MatSelectModule,
@@ -58,7 +64,7 @@ const TYPE_LABELS: Record<InvestmentType, string> = {
             <button
               type="button"
               [class.selected]="form.controls.type.value === type"
-              (click)="form.controls.type.setValue(type)"
+              (click)="selectType(type)"
             >
               <mat-icon aria-hidden="true">{{ icon(type) }}</mat-icon>
               <span>{{ label(type) }}</span>
@@ -66,31 +72,30 @@ const TYPE_LABELS: Record<InvestmentType, string> = {
           }
         </fieldset>
 
-        <mat-form-field appearance="outline">
-          <mat-label>Name</mat-label>
-          <input matInput formControlName="name" required />
-        </mat-form-field>
-        <mat-form-field appearance="outline">
-          <mat-label>Institution (optional)</mat-label>
-          <input matInput formControlName="institution" />
-        </mat-form-field>
-
-        @switch (form.controls.type.value) {
-          @case ('STOCK') {
-            <div class="catalog-search">
-              <button
-                mat-stroked-button
-                type="button"
-                (click)="searchCatalog()"
-                [disabled]="catalogSearching()"
-              >
-                <mat-icon aria-hidden="true">search</mat-icon
-                >{{ catalogSearching() ? 'Searching…' : 'Find stock' }}
-              </button>
-              <span>Enter a company name above, then select the exact NSE/BSE instrument.</span>
-            </div>
+        @if (form.controls.type.value === 'STOCK') {
+          <div class="instrument-search-row stock-search-row">
+            <mat-form-field appearance="outline">
+              <mat-label>Stock name</mat-label>
+              <input
+                matInput
+                formControlName="name"
+                autocomplete="off"
+                required
+                (input)="onStockNameInput()"
+              />
+              <mat-hint>Enter a company name or trading symbol.</mat-hint>
+            </mat-form-field>
+            <button
+              mat-stroked-button
+              type="button"
+              (click)="searchCatalog()"
+              [disabled]="catalogSearching()"
+            >
+              <mat-icon aria-hidden="true">search</mat-icon>
+              {{ catalogSearching() ? 'Searching…' : 'Find stock' }}
+            </button>
             @if (stockResults().length) {
-              <div class="catalog-results" aria-label="Stock search results">
+              <div class="catalog-results instrument-results" aria-label="Stock search results">
                 @for (result of stockResults(); track result.instrumentKey) {
                   <button type="button" (click)="selectStock(result)">
                     <strong>{{ result.name }}</strong
@@ -102,47 +107,34 @@ const TYPE_LABELS: Record<InvestmentType, string> = {
                 }
               </div>
             }
-            <div class="form-grid">
-              <mat-form-field appearance="outline">
-                <mat-label>Trading symbol</mat-label>
-                <input matInput formControlName="tradingSymbol" />
-              </mat-form-field>
-              <mat-form-field appearance="outline">
-                <mat-label>Exchange</mat-label>
-                <mat-select formControlName="exchange">
-                  <mat-option value="NSE">NSE</mat-option>
-                  <mat-option value="BSE">BSE</mat-option>
-                </mat-select>
-              </mat-form-field>
-              <mat-form-field appearance="outline" class="wide">
-                <mat-label>Market instrument key</mat-label>
-                <input matInput formControlName="providerKey" placeholder="NSE_EQ|INE002A01018" />
-                <mat-hint>Use the key returned by stock search.</mat-hint>
-              </mat-form-field>
-              <mat-form-field appearance="outline" class="wide">
-                <mat-label>ISIN (optional)</mat-label>
-                <input matInput formControlName="isin" />
-              </mat-form-field>
-            </div>
-          }
-          @case ('MUTUAL_FUND') {
-            <div class="catalog-search">
-              <button
-                mat-stroked-button
-                type="button"
-                (click)="searchCatalog()"
-                [disabled]="catalogSearching()"
-              >
-                <mat-icon aria-hidden="true">search</mat-icon
-                >{{ catalogSearching() ? 'Searching…' : 'Find scheme' }}
-              </button>
-              <span
-                >Search via MFAPI, then verify the exact Direct/Regular and Growth/IDCW
-                scheme.</span
-              >
-            </div>
+          </div>
+        } @else if (form.controls.type.value === 'MUTUAL_FUND') {
+          <div class="instrument-search-row fund-search-row">
+            <mat-form-field appearance="outline">
+              <mat-label>Scheme name</mat-label>
+              <input
+                matInput
+                formControlName="name"
+                autocomplete="off"
+                required
+                (input)="onFundNameInput()"
+              />
+              <mat-hint>Enter a mutual fund or scheme name.</mat-hint>
+            </mat-form-field>
+            <button
+              mat-stroked-button
+              type="button"
+              (click)="searchCatalog()"
+              [disabled]="catalogSearching()"
+            >
+              <mat-icon aria-hidden="true">search</mat-icon>
+              {{ catalogSearching() ? 'Searching…' : 'Find scheme' }}
+            </button>
             @if (fundResults().length) {
-              <div class="catalog-results" aria-label="Mutual fund scheme search results">
+              <div
+                class="catalog-results instrument-results"
+                aria-label="Mutual fund scheme search results"
+              >
                 @for (result of fundResults(); track result.schemeCode) {
                   <button type="button" (click)="selectFund(result)">
                     <strong>{{ result.schemeName }}</strong
@@ -151,26 +143,108 @@ const TYPE_LABELS: Record<InvestmentType, string> = {
                 }
               </div>
             }
+          </div>
+        } @else {
+          <mat-form-field appearance="outline">
+            <mat-label>Name</mat-label>
+            <input matInput formControlName="name" required />
+          </mat-form-field>
+        }
+
+        <mat-form-field appearance="outline">
+          <mat-label>
+            {{
+              form.controls.type.value === 'STOCK'
+                ? 'Broker / demat account (optional)'
+                : form.controls.type.value === 'MUTUAL_FUND'
+                  ? 'AMC / investment platform (optional)'
+                  : 'Institution (optional)'
+            }}
+          </mat-label>
+          <mat-chip-grid #institutionChipGrid [attr.aria-label]="institutionFieldLabel()">
+            @if (form.controls.institution.value) {
+              <mat-chip-row (removed)="removeInstitution()">
+                {{ form.controls.institution.value }}
+                <button
+                  matChipRemove
+                  type="button"
+                  [attr.aria-label]="'Remove ' + form.controls.institution.value"
+                >
+                  <mat-icon aria-hidden="true">cancel</mat-icon>
+                </button>
+              </mat-chip-row>
+            } @else {
+              <input
+                placeholder="Type to search or add"
+                autocomplete="off"
+                [formControl]="institutionInput"
+                [matAutocomplete]="institutionAutocomplete"
+                [matChipInputFor]="institutionChipGrid"
+                [matChipInputSeparatorKeyCodes]="separatorKeysCodes"
+                [matChipInputAddOnBlur]="true"
+                (matChipInputTokenEnd)="addInstitution($event)"
+              />
+            }
+          </mat-chip-grid>
+          <mat-autocomplete
+            #institutionAutocomplete="matAutocomplete"
+            (optionSelected)="selectInstitution($event.option.value)"
+          >
+            @for (tag of institutionOptions(); track tag) {
+              <mat-option [value]="tag">{{ tag }}</mat-option>
+            }
+          </mat-autocomplete>
+          @if (form.controls.type.value === 'STOCK') {
+            <mat-hint>Choose a saved broker or type a new one. New values save on add.</mat-hint>
+          } @else if (form.controls.type.value === 'MUTUAL_FUND') {
+            <mat-hint
+              >Choose a saved AMC/platform or type a new one. New values save on add.</mat-hint
+            >
+          }
+        </mat-form-field>
+
+        @switch (form.controls.type.value) {
+          @case ('STOCK') {
+            <div class="form-grid">
+              <mat-form-field appearance="outline">
+                <mat-label>Trading symbol</mat-label>
+                <input matInput formControlName="tradingSymbol" readonly />
+              </mat-form-field>
+              <mat-form-field appearance="outline">
+                <mat-label>Exchange</mat-label>
+                <input matInput formControlName="exchange" readonly />
+              </mat-form-field>
+              <mat-form-field appearance="outline" class="wide">
+                <mat-label>Market instrument key</mat-label>
+                <input matInput formControlName="providerKey" readonly />
+              </mat-form-field>
+              <mat-form-field appearance="outline" class="wide">
+                <mat-label>ISIN</mat-label>
+                <input matInput formControlName="isin" readonly />
+              </mat-form-field>
+            </div>
+            @if (!form.controls.providerKey.value) {
+              <p class="selection-note">Find and select a stock to fill its market details.</p>
+            }
+          }
+          @case ('MUTUAL_FUND') {
             <div class="form-grid">
               <mat-form-field appearance="outline">
                 <mat-label>AMFI scheme code</mat-label>
-                <input matInput formControlName="schemeCode" />
+                <input matInput formControlName="schemeCode" readonly />
               </mat-form-field>
               <mat-form-field appearance="outline">
                 <mat-label>Plan</mat-label>
-                <mat-select formControlName="plan">
-                  <mat-option value="Direct">Direct</mat-option>
-                  <mat-option value="Regular">Regular</mat-option>
-                </mat-select>
+                <input matInput formControlName="plan" readonly />
               </mat-form-field>
               <mat-form-field appearance="outline">
                 <mat-label>Option</mat-label>
-                <mat-select formControlName="option">
-                  <mat-option value="Growth">Growth</mat-option>
-                  <mat-option value="IDCW">IDCW</mat-option>
-                </mat-select>
+                <input matInput formControlName="option" readonly />
               </mat-form-field>
             </div>
+            @if (!form.controls.schemeCode.value) {
+              <p class="selection-note">Find and select a scheme to fill its fund details.</p>
+            }
           }
           @case ('NPS') {
             <div class="form-grid">
@@ -353,14 +427,18 @@ const TYPE_LABELS: Record<InvestmentType, string> = {
         background: #eeeeff;
         color: #0000cc;
       }
-      .catalog-search {
-        display: flex;
-        align-items: center;
+      .instrument-search-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
         gap: 12px;
       }
-      .catalog-search span {
-        color: #667085;
-        font-size: 0.76rem;
+      .instrument-search-row > button {
+        min-height: 56px;
+        white-space: nowrap;
+      }
+      .instrument-results {
+        grid-column: 1;
       }
       .catalog-results {
         display: grid;
@@ -424,6 +502,11 @@ const TYPE_LABELS: Record<InvestmentType, string> = {
       .form-error {
         color: #b42318;
       }
+      .selection-note {
+        margin: -6px 0 0;
+        color: #667085;
+        font-size: 0.82rem;
+      }
       @media (max-width: 700px) {
         .type-picker {
           grid-template-columns: repeat(2, 1fr);
@@ -433,10 +516,6 @@ const TYPE_LABELS: Record<InvestmentType, string> = {
         }
         .wide {
           grid-column: auto;
-        }
-        .catalog-search {
-          align-items: start;
-          flex-direction: column;
         }
       }
     `,
@@ -454,6 +533,8 @@ export class InvestmentAccountDialog {
   readonly catalogSearching = signal(false);
   readonly stockResults = signal<StockSearchResult[]>([]);
   readonly fundResults = signal<MutualFundSearchResult[]>([]);
+  private catalogRequestId = 0;
+  readonly separatorKeysCodes = [ENTER, COMMA] as const;
   readonly types: InvestmentType[] = ['STOCK', 'MUTUAL_FUND', 'NPS', 'PPF', 'SSY'];
   readonly form = this.fb.group({
     type: this.fb.control<InvestmentType>('STOCK'),
@@ -464,8 +545,8 @@ export class InvestmentAccountDialog {
     providerKey: [''],
     isin: [''],
     schemeCode: [''],
-    plan: ['Direct'],
-    option: ['Growth'],
+    plan: [''],
+    option: [''],
     pfmName: [''],
     npsHoldings: [''],
     beneficiaryName: [''],
@@ -483,6 +564,27 @@ export class InvestmentAccountDialog {
     stepUpFrequency: this.fb.control<InvestmentFrequencyV2>('HALF_YEARLY'),
     stepUpMonth: [this.today.slice(0, 7)],
   });
+  readonly institutionInput = this.fb.control('');
+  private readonly selectedType = toSignal(this.form.controls.type.valueChanges, {
+    initialValue: this.form.controls.type.value,
+  });
+  private readonly institutionQuery = toSignal(this.institutionInput.valueChanges, {
+    initialValue: this.institutionInput.value,
+  });
+  readonly institutionOptions = computed(() => {
+    const type = this.selectedType();
+    if (type !== 'STOCK' && type !== 'MUTUAL_FUND') return [];
+
+    const query = this.institutionQuery().trim().toLocaleLowerCase();
+    const uniqueTags = new Map<string, string>();
+    for (const account of this.investments.accounts()) {
+      const tag = account.institution?.trim();
+      if (account.type === type && tag) uniqueTags.set(tag.toLocaleLowerCase(), tag);
+    }
+    return [...uniqueTags.values()]
+      .filter((tag) => !query || tag.toLocaleLowerCase().includes(query))
+      .sort((a, b) => a.localeCompare(b));
+  });
 
   label(type: InvestmentType): string {
     return TYPE_LABELS[type];
@@ -497,25 +599,75 @@ export class InvestmentAccountDialog {
     }[type];
   }
 
+  institutionFieldLabel(): string {
+    return this.form.controls.type.value === 'STOCK'
+      ? 'Broker or demat account'
+      : 'AMC or investment platform';
+  }
+
+  addInstitution(event: MatChipInputEvent): void {
+    this.selectInstitution(event.value);
+    event.chipInput.clear();
+  }
+
+  selectInstitution(value: string): void {
+    const tag = value.trim();
+    if (!tag) return;
+    this.form.controls.institution.setValue(tag);
+    this.institutionInput.setValue('');
+  }
+
+  removeInstitution(): void {
+    this.form.controls.institution.setValue('');
+    this.institutionInput.setValue('');
+  }
+
+  private commitPendingInstitution(): void {
+    this.selectInstitution(this.institutionInput.value);
+  }
+
+  selectType(type: InvestmentType): void {
+    if (this.form.controls.type.value === type) return;
+
+    this.catalogRequestId += 1;
+    this.form.reset({ type });
+    this.institutionInput.reset();
+    this.stockResults.set([]);
+    this.fundResults.set([]);
+    this.catalogSearching.set(false);
+    this.error.set('');
+  }
+
   async searchCatalog(): Promise<void> {
     const query = this.form.controls.name.value.trim();
     if (query.length < 2) {
       this.error.set('Enter at least two characters in the investment name.');
       return;
     }
+    const type = this.form.controls.type.value;
+    const requestId = ++this.catalogRequestId;
     this.catalogSearching.set(true);
     this.error.set('');
     try {
-      if (this.form.controls.type.value === 'STOCK')
-        this.stockResults.set(await this.investments.searchStocks(query));
-      if (this.form.controls.type.value === 'MUTUAL_FUND')
-        this.fundResults.set(await this.investments.searchMutualFunds(query));
+      if (type === 'STOCK') {
+        const results = await this.investments.searchStocks(query);
+        if (requestId === this.catalogRequestId && this.form.controls.type.value === type)
+          this.stockResults.set(results);
+      }
+      if (type === 'MUTUAL_FUND') {
+        const results = await this.investments.searchMutualFunds(query);
+        if (requestId === this.catalogRequestId && this.form.controls.type.value === type)
+          this.fundResults.set(results);
+      }
     } catch {
-      this.error.set(
-        'Instrument search is temporarily unavailable. You can enter the provider identifier manually.',
-      );
+      if (requestId === this.catalogRequestId)
+        this.error.set(
+          type === 'STOCK'
+            ? 'Stock search is temporarily unavailable. Try again.'
+            : 'Mutual fund search is temporarily unavailable. Try again.',
+        );
     } finally {
-      this.catalogSearching.set(false);
+      if (requestId === this.catalogRequestId) this.catalogSearching.set(false);
     }
   }
 
@@ -530,15 +682,58 @@ export class InvestmentAccountDialog {
     this.stockResults.set([]);
   }
 
+  onStockNameInput(): void {
+    this.stockResults.set([]);
+    this.form.patchValue(
+      {
+        tradingSymbol: '',
+        exchange: 'NSE',
+        providerKey: '',
+        isin: '',
+      },
+      { emitEvent: false },
+    );
+  }
+
+  onFundNameInput(): void {
+    this.fundResults.set([]);
+    this.form.patchValue(
+      {
+        schemeCode: '',
+        plan: '',
+        option: '',
+      },
+      { emitEvent: false },
+    );
+  }
+
   selectFund(result: MutualFundSearchResult): void {
-    this.form.patchValue({ name: result.schemeName, schemeCode: result.schemeCode });
+    const schemeName = result.schemeName;
+    this.form.patchValue({
+      name: schemeName,
+      schemeCode: result.schemeCode,
+      plan: /\bdirect\b/i.test(schemeName) ? 'Direct' : 'Regular',
+      option: /\b(?:idcw|dividend)\b/i.test(schemeName) ? 'IDCW' : 'Growth',
+    });
     this.fundResults.set([]);
   }
 
   async save(): Promise<void> {
+    this.commitPendingInstitution();
     if (this.form.invalid || !this.form.controls.name.value.trim()) {
       this.form.markAllAsTouched();
       this.error.set('Enter a name for this investment.');
+      return;
+    }
+    if (this.form.controls.type.value === 'STOCK' && !this.form.controls.providerKey.value.trim()) {
+      this.error.set('Find and select a stock before adding the investment.');
+      return;
+    }
+    if (
+      this.form.controls.type.value === 'MUTUAL_FUND' &&
+      !this.form.controls.schemeCode.value.trim()
+    ) {
+      this.error.set('Find and select a mutual fund scheme before adding the investment.');
       return;
     }
     this.saving.set(true);

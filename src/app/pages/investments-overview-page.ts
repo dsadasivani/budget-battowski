@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
+import { MatChipsModule } from '@angular/material/chips';
 import { MatDialog } from '@angular/material/dialog';
 import { MatExpansionModule } from '@angular/material/expansion';
 import { MatIconModule } from '@angular/material/icon';
@@ -61,6 +62,7 @@ const TYPE_PRESENTATION: Record<InvestmentType, InvestmentTypePresentation> = {
     CommonModule,
     RouterLink,
     MatButtonModule,
+    MatChipsModule,
     MatIconModule,
     MatExpansionModule,
     MonthMemberControls,
@@ -346,7 +348,22 @@ const TYPE_PRESENTATION: Record<InvestmentType, InvestmentTypePresentation> = {
                           <a [routerLink]="['/investments', account.id]">
                             <span>
                               <strong>{{ account.name }}</strong>
-                              <small>{{ account.institution || 'Closed account' }}</small>
+                              @if (
+                                account.institution &&
+                                (account.type === 'STOCK' || account.type === 'MUTUAL_FUND')
+                              ) {
+                                <mat-chip-set
+                                  class="closed-institution-chip-set"
+                                  [attr.aria-label]="
+                                    (account.type === 'STOCK' ? 'Broker: ' : 'AMC or platform: ') +
+                                    account.institution
+                                  "
+                                >
+                                  <mat-chip>{{ account.institution }}</mat-chip>
+                                </mat-chip-set>
+                              } @else {
+                                <small>{{ account.institution || 'Closed account' }}</small>
+                              }
                             </span>
                             <span>
                               <small>Lifetime return</small>
@@ -722,6 +739,18 @@ const TYPE_PRESENTATION: Record<InvestmentType, InvestmentTypePresentation> = {
       margin-top: 2px;
       color: #66748a;
       font-size: 0.7rem;
+    }
+
+    .closed-institution-chip-set {
+      display: block;
+      margin-top: 5px;
+    }
+
+    .closed-institution-chip-set mat-chip {
+      --mdc-chip-container-height: 24px;
+      --mdc-chip-label-text-size: 0.7rem;
+      --mdc-chip-label-text-color: #475569;
+      --mdc-chip-elevated-container-color: #eef2f7;
     }
 
     .closed-list b {

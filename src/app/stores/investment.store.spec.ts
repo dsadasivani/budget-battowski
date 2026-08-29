@@ -236,4 +236,16 @@ describe('InvestmentStore', () => {
       expect.objectContaining({ type: 'STOCK', recurringPlan: undefined }),
     );
   });
+
+  it('trims and persists a new investment institution tag', async () => {
+    await store.addInvestment({
+      name: 'Example stock',
+      type: 'STOCK',
+      institution: '  Dhan  ',
+    });
+
+    expect(saveAccount).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'STOCK', institution: 'Dhan' }),
+    );
+  });
 });
