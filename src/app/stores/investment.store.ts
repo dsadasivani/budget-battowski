@@ -3,6 +3,7 @@ import { getAuth } from 'firebase/auth';
 
 import { BudgetStore } from '../budget.store';
 import { InvestmentRepository } from '../data/investment.repository';
+import { matchesMember, normalizeEmail } from '../domain/identity/identity';
 import { calculateGovernmentSavings } from '../domain/investments/government-savings-calculator';
 import {
   calculateInvestmentSummary,
@@ -90,10 +91,12 @@ function now(): string {
 function month(): string {
   return today().slice(0, 7);
 }
-function dateInMonth(selectedMonth: string): string {
+function lastDateInMonth(selectedMonth: string): string {
   if (!/^\d{4}-\d{2}$/.test(selectedMonth)) return today();
-  const currentDate = today();
-  return currentDate.startsWith(`${selectedMonth}-`) ? currentDate : `${selectedMonth}-01`;
+  const year = Number(selectedMonth.slice(0, 4));
+  const monthNumber = Number(selectedMonth.slice(5, 7));
+  const day = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  return `${selectedMonth}-${day.toString().padStart(2, '0')}`;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -110,22 +113,36 @@ export class InvestmentStore implements OnDestroy {
   readonly deletingAccountId = signal<string | null>(null);
   readonly error = signal<string | null>(null);
   readonly refreshResults = signal<ProviderRefreshResult[]>([]);
+  readonly visibleAccounts = computed(() => {
+    const selectedMemberEmail = this.budget.selectedMemberEmail();
+    if (selectedMemberEmail === 'ALL') return this.accounts();
+    const member = this.budget
+      .activeMembers()
+      .find((candidate) => normalizeEmail(candidate.email) === normalizeEmail(selectedMemberEmail));
+    return member ? this.accounts().filter((account) => matchesMember(account, member)) : [];
+  });
+  readonly visibleTransactions = computed(() => {
+    const visibleAccountIds = new Set(this.visibleAccounts().map((account) => account.id));
+    return this.transactions().filter((transaction) =>
+      visibleAccountIds.has(transaction.investmentId),
+    );
+  });
   readonly activeAccounts = computed(() =>
-    this.accounts().filter((account) => account.status === 'ACTIVE'),
+    this.visibleAccounts().filter((account) => account.status === 'ACTIVE'),
   );
   readonly closedAccounts = computed(() =>
-    this.accounts().filter((account) => account.status === 'CLOSED'),
+    this.visibleAccounts().filter((account) => account.status === 'CLOSED'),
   );
   readonly portfolio = computed(() =>
     calculatePortfolioSummary(
-      this.accounts(),
-      this.transactions(),
+      this.visibleAccounts(),
+      this.visibleTransactions(),
       this.budget.selectedMonth(),
-      dateInMonth(this.budget.selectedMonth()),
+      lastDateInMonth(this.budget.selectedMonth()),
     ),
   );
   readonly lastRefreshedAt = computed(() =>
-    this.accounts()
+    this.visibleAccounts()
       .map((item) => item.summary.lastRefreshedAt)
       .filter((value): value is string => !!value)
       .sort()
@@ -133,7 +150,9 @@ export class InvestmentStore implements OnDestroy {
   );
   readonly partialRefresh = computed(() => this.refreshResults().some((result) => !result.success));
   readonly monthlyTransactions = computed(() =>
-    this.transactions().filter((item) => item.date.startsWith(`${this.budget.selectedMonth()}-`)),
+    this.visibleTransactions().filter((item) =>
+      item.date.startsWith(`${this.budget.selectedMonth()}-`),
+    ),
   );
   readonly monthlyContributions = computed(() =>
     this.monthlyTransactions().filter((item) => isContributionType(item.type)),
@@ -195,8 +214,21 @@ export class InvestmentStore implements OnDestroy {
     if (!supportsRecurringPlan(account.type)) return '0';
     return effectiveRecurringAmount(
       account.recurringPlan,
-      dateInMonth(this.budget.selectedMonth()),
+      lastDateInMonth(this.budget.selectedMonth()),
     );
+  }
+  recurringPlanIsUpcoming(account: InvestmentAccount): boolean {
+    const plan = account.recurringPlan;
+    return (
+      supportsRecurringPlan(account.type) &&
+      !!plan?.enabled &&
+      lastDateInMonth(this.budget.selectedMonth()) < plan.startDate
+    );
+  }
+  recurringPlanDisplayAmount(account: InvestmentAccount): string {
+    return this.recurringPlanIsUpcoming(account)
+      ? (account.recurringPlan?.amount ?? '0')
+      : this.effectiveRecurring(account);
   }
 
   async addInvestment(input: NewInvestmentInput): Promise<InvestmentAccount> {

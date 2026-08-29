@@ -50,11 +50,17 @@ describe('InvestmentStore', () => {
   const deleteAccountAndTransactions = vi.fn(async () => undefined);
   const saveAccount = vi.fn(async () => undefined);
   const selectedMonth = signal('2026-08');
+  const selectedMemberEmail = signal('ALL');
+  const activeMembers = signal([
+    { uid: 'owner-1', email: 'owner@example.com', displayName: 'Owner' },
+    { uid: 'owner-2', email: 'member@example.com', displayName: 'Member' },
+  ]);
   let store: InvestmentStore;
 
   beforeEach(() => {
     vi.clearAllMocks();
     selectedMonth.set('2026-08');
+    selectedMemberEmail.set('ALL');
     TestBed.configureTestingModule({
       providers: [
         InvestmentStore,
@@ -64,6 +70,8 @@ describe('InvestmentStore', () => {
             workspaceId: signal(''),
             investments: signal([]),
             selectedMonth,
+            selectedMemberEmail,
+            activeMembers,
             userUid: signal('owner-1'),
             userEmail: signal('owner@example.com'),
             canWrite: signal(true),
@@ -107,6 +115,34 @@ describe('InvestmentStore', () => {
     expect(deleteAccountAndTransactions).not.toHaveBeenCalled();
   });
 
+  it('filters accounts, transactions, and portfolio totals by the selected workspace member', () => {
+    const memberAccount: InvestmentAccount = {
+      ...account,
+      id: 'investment-2',
+      name: 'Member fund',
+      ownerUid: 'owner-2',
+      memberEmail: 'member@example.com',
+      summary: { ...account.summary, currentValue: '2200' },
+    };
+    const memberTransaction: InvestmentTransaction = {
+      ...transaction,
+      id: 'transaction-2',
+      investmentId: memberAccount.id,
+      ownerUid: memberAccount.ownerUid,
+      memberEmail: memberAccount.memberEmail,
+      amount: '2000',
+    };
+    store.accounts.set([account, memberAccount]);
+    store.transactions.set([transaction, memberTransaction]);
+
+    selectedMemberEmail.set('member@example.com');
+
+    expect(store.visibleAccounts()).toEqual([memberAccount]);
+    expect(store.visibleTransactions()).toEqual([memberTransaction]);
+    expect(store.portfolio().currentValue).toBe('2200');
+    expect(store.monthlyContributions()).toEqual([memberTransaction]);
+  });
+
   it('projects a step-up SIP amount for the selected future month', () => {
     selectedMonth.set('2027-01');
     store.accounts.set([
@@ -130,6 +166,31 @@ describe('InvestmentStore', () => {
     ]);
 
     expect(store.effectiveRecurring(store.accounts()[0])).toBe('6000');
+  });
+
+  it('shows the configured amount for an upcoming plan and activates it within its start month', () => {
+    store.accounts.set([
+      {
+        ...account,
+        recurringPlan: {
+          enabled: true,
+          amount: '4000',
+          frequency: 'MONTHLY',
+          startDate: '2026-09-02',
+          sipType: 'FIXED',
+        },
+      },
+    ]);
+    const upcomingAccount = store.accounts()[0];
+
+    expect(store.effectiveRecurring(upcomingAccount)).toBe('0');
+    expect(store.recurringPlanIsUpcoming(upcomingAccount)).toBe(true);
+    expect(store.recurringPlanDisplayAmount(upcomingAccount)).toBe('4000');
+
+    selectedMonth.set('2026-09');
+
+    expect(store.effectiveRecurring(upcomingAccount)).toBe('4000');
+    expect(store.recurringPlanIsUpcoming(upcomingAccount)).toBe(false);
   });
 
   it('removes recurring plans from stock accounts and excludes them from commitments', async () => {

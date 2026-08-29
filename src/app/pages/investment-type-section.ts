@@ -38,10 +38,7 @@ export type InvestmentViewMode = 'grid' | 'list';
           <div>
             <div class="title-line">
               <h3 [id]="headingId()">{{ group().label }}</h3>
-              <span class="account-count"
-                >{{ group().accounts.length }}
-                {{ group().accounts.length === 1 ? 'account' : 'accounts' }}</span
-              >
+              <span class="account-count">{{ group().accounts.length }} </span>
             </div>
             <p>{{ group().description }}</p>
           </div>
@@ -74,6 +71,7 @@ export type InvestmentViewMode = 'grid' | 'list';
         @for (account of group().accounts; track account.id) {
           <a
             class="account-row"
+            [class.has-recurring-plan]="hasRecurringPlan(account)"
             [routerLink]="['/investments', account.id]"
             [attr.aria-label]="'Open ' + account.name + ' investment'"
           >
@@ -151,15 +149,19 @@ export type InvestmentViewMode = 'grid' | 'list';
               </div>
             </dl>
 
-            @if (account.type !== 'STOCK' && account.recurringPlan?.enabled) {
+            @if (hasRecurringPlan(account)) {
               <footer>
                 <mat-icon aria-hidden="true">autorenew</mat-icon>
                 <span>
                   {{
-                    investments.display(investments.effectiveRecurring(account))
+                    investments.display(investments.recurringPlanDisplayAmount(account))
                       | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
                   }}
-                  every {{ cadence(account.recurringPlan?.frequency) }}
+                  @if (investments.recurringPlanIsUpcoming(account)) {
+                    starting {{ account.recurringPlan?.startDate | date: 'mediumDate' }}
+                  } @else {
+                    every {{ cadence(account.recurringPlan?.frequency) }}
+                  }
                 </span>
                 @if (account.recurringPlan?.stepUp?.enabled) {
                   <span class="step-up"
@@ -505,9 +507,7 @@ export type InvestmentViewMode = 'grid' | 'list';
     }
 
     .list-view .account-row {
-      grid-template-columns:
-        minmax(220px, 1.25fr) minmax(145px, 0.65fr) minmax(230px, 1fr)
-        minmax(160px, 0.7fr);
+      grid-template-columns: minmax(220px, 1.25fr) minmax(145px, 0.65fr) minmax(230px, 1fr);
       align-items: center;
       gap: 14px;
       min-height: 72px;
@@ -545,6 +545,14 @@ export type InvestmentViewMode = 'grid' | 'list';
     .list-view .mapping-notice {
       grid-column: 1 / -1;
       margin-top: -4px;
+    }
+
+    @media (min-width: 1001px) {
+      .list-view .account-row.has-recurring-plan {
+        grid-template-columns:
+          minmax(220px, 1.25fr) minmax(145px, 0.65fr) minmax(230px, 1fr)
+          minmax(160px, 0.7fr);
+      }
     }
 
     .step-up {
@@ -679,6 +687,10 @@ export class InvestmentTypeSection {
 
   initial(name: string): string {
     return name.trim().charAt(0).toUpperCase() || 'I';
+  }
+
+  hasRecurringPlan(account: InvestmentAccount): boolean {
+    return account.type !== 'STOCK' && account.recurringPlan?.enabled === true;
   }
 
   accountDetail(account: InvestmentAccount): string {

@@ -9,6 +9,7 @@ import { RouterLink } from '@angular/router';
 
 import { BudgetStore } from '../budget.store';
 import type { InvestmentType } from '../domain/investments/investment.models';
+import { MonthMemberControls } from '../shared/month-member-controls';
 import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 import { InvestmentStore } from '../stores/investment.store';
 import { InvestmentAccountDialog } from './investments-page';
@@ -62,6 +63,7 @@ const TYPE_PRESENTATION: Record<InvestmentType, InvestmentTypePresentation> = {
     MatButtonModule,
     MatIconModule,
     MatExpansionModule,
+    MonthMemberControls,
     AppPageSkeletonComponent,
     InvestmentTypeSection,
   ],
@@ -76,6 +78,7 @@ const TYPE_PRESENTATION: Record<InvestmentType, InvestmentTypePresentation> = {
             <p>See your portfolio by asset type, returns, and recurring commitments.</p>
           </div>
           <div class="header-actions">
+            <app-month-member-controls />
             <button
               mat-stroked-button
               type="button"
@@ -92,6 +95,10 @@ const TYPE_PRESENTATION: Record<InvestmentType, InvestmentTypePresentation> = {
           </div>
         </header>
 
+        <div class="mobile-page-controls mobile-filter-strip">
+          <app-month-member-controls />
+        </div>
+
         @if (investments.error()) {
           <div class="status-message" role="status">
             <mat-icon aria-hidden="true">info</mat-icon>
@@ -99,7 +106,7 @@ const TYPE_PRESENTATION: Record<InvestmentType, InvestmentTypePresentation> = {
           </div>
         }
 
-        @if (!investments.accounts().length) {
+        @if (!investments.visibleAccounts().length) {
           <section class="panel-card investment-empty" aria-labelledby="empty-investments-title">
             <span class="empty-icon" aria-hidden="true"><mat-icon>savings</mat-icon></span>
             <h2 id="empty-investments-title">Build your investment portfolio</h2>
@@ -223,7 +230,7 @@ const TYPE_PRESENTATION: Record<InvestmentType, InvestmentTypePresentation> = {
               <div class="portfolio-view-controls">
                 <span class="account-total">
                   {{ investments.activeAccounts().length }} active
-                  {{ investments.activeAccounts().length === 1 ? 'account' : 'accounts' }}
+                  {{ investments.activeAccounts().length === 1 ? 'investment' : 'investments' }}
                 </span>
                 <div class="view-toggle" role="group" aria-label="Investment record layout">
                   <button

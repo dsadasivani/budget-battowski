@@ -821,7 +821,7 @@ export class InvestmentAccountDialog {
                 @if (account.recurringPlan?.enabled) {
                   <p class="recurring-line">
                     {{
-                      investments.display(investments.effectiveRecurring(account))
+                      investments.display(investments.recurringPlanDisplayAmount(account))
                         | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
                     }}
                     / {{ cadence(account.recurringPlan?.frequency) }}

@@ -5819,7 +5819,15 @@ a {
   }
 
   body {
-    overscroll-behavior-y: none;
+    overscroll-behavior-y: auto;
+  }
+
+  html,
+  body,
+  .app-layout,
+  .content-shell {
+    overflow-x: clip;
+    overflow-y: visible;
   }
 
   .page,

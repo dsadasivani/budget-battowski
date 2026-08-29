@@ -242,10 +242,17 @@ import {
                   @if (item.recurringPlan?.enabled) {
                     <div class="plan-value">
                       <strong>{{
-                        investments.display(investments.effectiveRecurring(item))
+                        investments.display(investments.recurringPlanDisplayAmount(item))
                           | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
                       }}</strong>
-                      <span>every {{ cadence(item.recurringPlan?.frequency) }}</span>
+                      @if (investments.recurringPlanIsUpcoming(item)) {
+                        <span>
+                          Starts {{ item.recurringPlan?.startDate | date: 'mediumDate' }} · then
+                          every {{ cadence(item.recurringPlan?.frequency) }}
+                        </span>
+                      } @else {
+                        <span>every {{ cadence(item.recurringPlan?.frequency) }}</span>
+                      }
                     </div>
                     @if (item.recurringPlan?.stepUp?.enabled) {
                       <span class="plan-badge"
