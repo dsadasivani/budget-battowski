@@ -517,7 +517,7 @@ const TYPE_PRESENTATION: Record<InvestmentType, InvestmentTypePresentation> = {
 
     .portfolio-content,
     .type-stack {
-      gap: 18px;
+      gap: 12px;
     }
 
     .secondary-content {
@@ -533,25 +533,25 @@ const TYPE_PRESENTATION: Record<InvestmentType, InvestmentTypePresentation> = {
 
     .section-heading h2 {
       color: #111827;
-      font-size: 1.35rem;
+      font-size: 1.18rem;
       line-height: 1.2;
     }
 
     .section-heading p {
-      margin-top: 5px;
+      margin-top: 3px;
       color: #4b5563;
-      font-size: 0.88rem;
+      font-size: 0.8rem;
     }
 
     .account-total {
       display: inline-flex;
-      min-height: 32px;
+      min-height: 28px;
       align-items: center;
-      padding: 0 12px;
+      padding: 0 10px;
       border-radius: 999px;
       background: #eef2f7;
       color: #45556c;
-      font-size: 0.76rem;
+      font-size: 0.7rem;
       font-weight: 650;
       white-space: nowrap;
     }
@@ -563,11 +563,11 @@ const TYPE_PRESENTATION: Record<InvestmentType, InvestmentTypePresentation> = {
     }
 
     .portfolio-view-controls {
-      gap: 10px;
+      gap: 7px;
     }
 
     .view-toggle {
-      padding: 3px;
+      padding: 2px;
       border: 1px solid #dce4ef;
       border-radius: 8px;
       background: #fff;
@@ -575,16 +575,16 @@ const TYPE_PRESENTATION: Record<InvestmentType, InvestmentTypePresentation> = {
 
     .view-toggle button {
       display: inline-flex;
-      min-height: 34px;
+      min-height: 32px;
       align-items: center;
       gap: 6px;
-      padding: 0 10px;
+      padding: 0 9px;
       border: 0;
       border-radius: 6px;
       background: transparent;
       color: #64748b;
       cursor: pointer;
-      font-size: 0.76rem;
+      font-size: 0.72rem;
       font-weight: 650;
     }
 
@@ -821,14 +821,14 @@ const TYPE_PRESENTATION: Record<InvestmentType, InvestmentTypePresentation> = {
       }
 
       .portfolio-view-controls {
-        align-items: flex-end;
-        flex-direction: column;
-        gap: 7px;
+        align-items: center;
+        flex-direction: row;
+        gap: 6px;
       }
 
       .view-toggle button {
-        width: 36px;
-        min-height: 32px;
+        width: 44px;
+        min-height: 44px;
         justify-content: center;
         padding: 0;
       }
@@ -868,10 +868,12 @@ const TYPE_PRESENTATION: Record<InvestmentType, InvestmentTypePresentation> = {
 
       .section-heading {
         display: grid;
+        gap: 10px;
       }
 
-      .account-total {
-        justify-self: start;
+      .portfolio-view-controls {
+        width: 100%;
+        justify-content: space-between;
       }
 
       .activity-row {
@@ -904,7 +906,7 @@ export class InvestmentsOverviewPage {
   readonly showSkeleton = computed(
     () => this.budget.showPageSkeleton() || this.investments.loading(),
   );
-  readonly viewMode = signal<InvestmentViewMode>('grid');
+  readonly viewMode = signal<InvestmentViewMode>('list');
   readonly portfolioValue = computed(() =>
     this.investments.display(this.investments.portfolio().currentValue),
   );

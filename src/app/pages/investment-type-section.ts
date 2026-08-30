@@ -39,7 +39,10 @@ export type InvestmentViewMode = 'grid' | 'list';
           <div>
             <div class="title-line">
               <h3 [id]="headingId()">{{ group().label }}</h3>
-              <span class="account-count">{{ group().accounts.length }} </span>
+              <span class="account-count">
+                {{ group().accounts.length }}
+                {{ group().accounts.length === 1 ? 'account' : 'accounts' }}
+              </span>
             </div>
             <p>{{ group().description }}</p>
           </div>
@@ -51,7 +54,7 @@ export type InvestmentViewMode = 'grid' | 'list';
             <dd>{{ groupValue() | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</dd>
           </div>
           <div>
-            <dt>Portfolio share</dt>
+            <dt>Allocation</dt>
             <dd>{{ allocation() | number: '1.0-1' }}%</dd>
           </div>
         </dl>
@@ -193,8 +196,8 @@ export type InvestmentViewMode = 'grid' | 'list';
       --type-color: #2f80ed;
       --type-soft: #eaf4ff;
       display: grid;
-      gap: 15px;
-      padding: 20px;
+      gap: 10px;
+      padding: 14px;
       overflow: hidden;
     }
 
@@ -222,7 +225,7 @@ export type InvestmentViewMode = 'grid' | 'list';
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 24px;
+      gap: 16px;
     }
 
     .type-identity,
@@ -234,23 +237,29 @@ export type InvestmentViewMode = 'grid' | 'list';
     }
 
     .type-identity {
-      gap: 14px;
+      gap: 10px;
     }
 
     .title-line {
       flex-wrap: wrap;
-      gap: 8px;
+      gap: 6px;
     }
 
     .type-icon {
       display: grid;
-      width: 48px;
-      height: 48px;
-      flex: 0 0 48px;
+      width: 40px;
+      height: 40px;
+      flex: 0 0 40px;
       place-items: center;
       border-radius: 8px;
       background: var(--type-soft);
       color: var(--type-color);
+    }
+
+    .type-icon mat-icon {
+      width: 21px;
+      height: 21px;
+      font-size: 21px;
     }
 
     .type-heading h3,
@@ -262,14 +271,14 @@ export type InvestmentViewMode = 'grid' | 'list';
 
     .type-heading h3 {
       color: #111827;
-      font-size: 1.22rem;
+      font-size: 1.05rem;
       line-height: 1.2;
     }
 
     .type-heading p {
-      margin-top: 4px;
+      margin-top: 2px;
       color: #4b5563;
-      font-size: 0.86rem;
+      font-size: 0.76rem;
     }
 
     .account-count,
@@ -284,42 +293,47 @@ export type InvestmentViewMode = 'grid' | 'list';
     }
 
     .account-count {
-      min-height: 25px;
-      padding: 0 9px;
+      min-height: 23px;
+      padding: 0 8px;
       background: var(--type-soft);
       color: var(--type-color);
+      font-size: 0.68rem;
     }
 
     .type-summary {
       display: grid;
-      min-width: 250px;
+      min-width: 226px;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 24px;
+      gap: 7px;
       margin: 0;
     }
 
     .type-summary div {
       display: grid;
-      gap: 3px;
+      gap: 2px;
+      padding: 7px 10px;
+      border: 1px solid #edf1f5;
+      border-radius: 10px;
+      background: #f8fafc;
     }
 
     .type-summary dt,
     .account-metrics dt,
     .account-value-row span {
       color: #66748a;
-      font-size: 0.74rem;
+      font-size: 0.68rem;
       font-weight: 550;
     }
 
     .type-summary dd {
       margin: 0;
       color: #111827;
-      font-size: 1.02rem;
+      font-size: 0.9rem;
       font-weight: 700;
     }
 
     .allocation-track {
-      height: 5px;
+      height: 4px;
       overflow: hidden;
       border-radius: 999px;
       background: #edf1f5;
@@ -335,17 +349,17 @@ export type InvestmentViewMode = 'grid' | 'list';
     .account-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 10px;
+      gap: 8px;
     }
 
     .account-row {
       display: grid;
       min-width: 0;
-      gap: 11px;
-      padding: 14px;
+      gap: 8px;
+      padding: 11px;
       border: 1px solid #e5ebf3;
-      border-radius: 8px;
-      background: #fbfcfe;
+      border-radius: 12px;
+      background: #fff;
       color: #111827;
       text-decoration: none;
       transition:
@@ -370,47 +384,47 @@ export type InvestmentViewMode = 'grid' | 'list';
       display: flex;
       align-items: flex-start;
       justify-content: space-between;
-      gap: 12px;
+      gap: 9px;
     }
 
     .account-identity {
-      gap: 10px;
+      gap: 8px;
     }
 
     .account-monogram {
       display: grid;
-      width: 34px;
-      height: 34px;
-      flex: 0 0 34px;
+      width: 32px;
+      height: 32px;
+      flex: 0 0 32px;
       place-items: center;
       border-radius: 50%;
       background: var(--type-soft);
       color: var(--type-color);
-      font-size: 0.82rem;
+      font-size: 0.76rem;
       font-weight: 750;
     }
 
     .account-row h4 {
       overflow-wrap: anywhere;
-      font-size: 0.9rem;
+      font-size: 0.84rem;
       line-height: 1.25;
     }
 
     .account-row header p {
-      margin-top: 3px;
+      margin-top: 2px;
       color: #66748a;
-      font-size: 0.74rem;
+      font-size: 0.7rem;
       line-height: 1.3;
     }
 
     .institution-chip-set {
       display: block;
-      margin-top: 6px;
+      margin-top: 4px;
     }
 
     .institution-chip-set mat-chip {
-      --mdc-chip-container-height: 24px;
-      --mdc-chip-label-text-size: 0.7rem;
+      --mdc-chip-container-height: 22px;
+      --mdc-chip-label-text-size: 0.66rem;
       --mdc-chip-label-text-color: var(--type-color);
       --mdc-chip-elevated-container-color: var(--type-soft);
     }
@@ -420,21 +434,21 @@ export type InvestmentViewMode = 'grid' | 'list';
     }
 
     .open-icon mat-icon {
-      width: 19px;
-      height: 19px;
-      font-size: 19px;
+      width: 17px;
+      height: 17px;
+      font-size: 17px;
     }
 
     .mapping-notice {
       display: flex;
       align-items: center;
       gap: 6px;
-      padding: 8px 10px;
+      padding: 6px 8px;
       border: 1px solid #fed7aa;
       border-radius: 6px;
       background: #fff7ed;
       color: #9a3412;
-      font-size: 0.72rem;
+      font-size: 0.68rem;
       font-weight: 600;
     }
 
@@ -451,15 +465,15 @@ export type InvestmentViewMode = 'grid' | 'list';
 
     .account-value-row strong {
       color: #0b1426;
-      font-size: 1.3rem;
+      font-size: 1.1rem;
       letter-spacing: -0.035em;
       line-height: 1.1;
     }
 
     .valuation-status {
-      min-height: 27px;
+      min-height: 24px;
       gap: 5px;
-      padding: 0 9px;
+      padding: 0 7px;
       background: #eef2f7;
       color: #4b5563;
     }
@@ -473,21 +487,21 @@ export type InvestmentViewMode = 'grid' | 'list';
     .account-metrics {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(74px, 1fr));
-      gap: 9px;
+      gap: 6px;
       margin: 0;
-      padding-top: 10px;
+      padding-top: 8px;
       border-top: 1px solid #e5ebf3;
     }
 
     .account-metrics div {
       display: grid;
-      gap: 4px;
+      gap: 2px;
     }
 
     .account-metrics dd {
       margin: 0;
       color: #334155;
-      font-size: 0.86rem;
+      font-size: 0.8rem;
       font-weight: 700;
     }
 
@@ -511,7 +525,7 @@ export type InvestmentViewMode = 'grid' | 'list';
       align-items: center;
       gap: 6px;
       color: #4b5563;
-      font-size: 0.74rem;
+      font-size: 0.7rem;
       font-weight: 550;
     }
 
@@ -524,15 +538,33 @@ export type InvestmentViewMode = 'grid' | 'list';
 
     .list-view .account-grid {
       grid-template-columns: 1fr;
-      gap: 8px;
+      gap: 0;
+      overflow: hidden;
+      border: 1px solid #e5ebf3;
+      border-radius: 12px;
+      background: #fff;
     }
 
     .list-view .account-row {
       grid-template-columns: minmax(220px, 1.25fr) minmax(145px, 0.65fr) minmax(230px, 1fr);
       align-items: center;
-      gap: 14px;
-      min-height: 72px;
-      padding: 11px 14px;
+      gap: 10px;
+      min-height: 60px;
+      padding: 8px 10px;
+      border: 0;
+      border-bottom: 1px solid #edf1f5;
+      border-radius: 0;
+      background: transparent;
+    }
+
+    .list-view .account-row:last-child {
+      border-bottom: 0;
+    }
+
+    .list-view .account-row:hover {
+      background: color-mix(in srgb, var(--type-soft) 42%, #fff);
+      box-shadow: none;
+      transform: none;
     }
 
     .list-view .account-value-row {
@@ -545,7 +577,7 @@ export type InvestmentViewMode = 'grid' | 'list';
     }
 
     .list-view .account-value-row strong {
-      font-size: 1.08rem;
+      font-size: 1rem;
     }
 
     .list-view .valuation-status {
@@ -624,20 +656,24 @@ export type InvestmentViewMode = 'grid' | 'list';
 
     @media (max-width: 600px) {
       .type-section {
-        gap: 15px;
-        padding: 18px;
-        border-radius: 24px;
+        gap: 7px;
+        padding: 12px;
+        border-radius: 18px;
       }
 
       .type-heading {
         display: grid;
-        gap: 16px;
+        gap: 7px;
+      }
+
+      .type-heading p {
+        display: none;
       }
 
       .type-icon {
-        width: 42px;
-        height: 42px;
-        flex-basis: 42px;
+        width: 36px;
+        height: 36px;
+        flex-basis: 36px;
         border-radius: 50%;
       }
 
@@ -650,26 +686,43 @@ export type InvestmentViewMode = 'grid' | 'list';
       .type-summary {
         width: 100%;
         min-width: 0;
+        gap: 6px;
+      }
+
+      .type-summary div {
+        padding: 5px 8px;
+      }
+
+      .type-summary dd {
+        font-size: 0.84rem;
       }
 
       .account-row {
-        gap: 11px;
-        padding: 13px;
-        border-radius: 18px;
+        gap: 8px;
+        padding: 10px;
+        border-radius: 14px;
         background: #faf7f7;
       }
 
       .account-value-row strong {
-        font-size: 1.22rem;
+        font-size: 1.05rem;
       }
 
       .list-view .account-row {
         grid-template-columns: minmax(0, 1fr) auto;
-        padding-block: 11px;
+        padding-block: 9px;
       }
 
       .list-view .account-value-row {
         text-align: right;
+      }
+
+      .list-view .account-value-row span {
+        display: none;
+      }
+
+      .list-view .open-icon {
+        display: none;
       }
 
       .list-view .account-metrics,

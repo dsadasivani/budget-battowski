@@ -57,6 +57,7 @@ describe('InvestmentsOverviewPage', () => {
     const fixture = TestBed.createComponent(InvestmentsOverviewPage);
     fixture.detectChanges();
 
+    expect(fixture.componentInstance.viewMode()).toBe('list');
     const controls = fixture.nativeElement.querySelectorAll('app-month-member-controls');
     expect(controls).toHaveLength(2);
     expect(fixture.nativeElement.textContent).toContain('August 2026');
