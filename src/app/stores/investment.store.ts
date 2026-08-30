@@ -15,6 +15,7 @@ import {
   moneyString,
 } from '../domain/investments/investment-decimal';
 import { calculatePortfolioSummary } from '../domain/investments/investment-portfolio';
+import { calculateNpsSchemeHoldings } from '../domain/investments/investment-nps';
 import { effectiveRecurringAmount } from '../domain/investments/investment-recurring';
 import {
   settleProviderRefreshes,
@@ -33,6 +34,7 @@ import {
   type InvestmentTransactionType,
   type InvestmentType,
   type NpsSchemeHolding,
+  type NpsSchemeTransactionAllocation,
   type ProviderRefreshResult,
   type RecurringInvestmentPlan,
   type ValuationSource,
@@ -57,7 +59,7 @@ export interface NewTransactionInput {
   nav?: string;
   source: InvestmentTransactionSource;
   notes?: string;
-  schemeAllocations?: NpsSchemeHolding[];
+  schemeAllocations?: NpsSchemeTransactionAllocation[];
 }
 
 interface ProviderPayload {
@@ -76,6 +78,17 @@ export interface StockSearchResult {
 export interface MutualFundSearchResult {
   schemeCode: string;
   schemeName: string;
+}
+
+export interface NpsSearchResult {
+  schemeCode: string;
+  schemeName: string;
+  pfmName: string;
+  nav: string;
+  navDate: string;
+  tier?: 'I' | 'II';
+  assetClass?: string;
+  channel: 'POP' | 'DIRECT' | 'GS';
 }
 
 function uid(prefix: string): string {
@@ -111,6 +124,7 @@ export class InvestmentStore implements OnDestroy {
   readonly loading = signal(true);
   readonly refreshing = signal(false);
   readonly deletingAccountId = signal<string | null>(null);
+  readonly deletingTransactionId = signal<string | null>(null);
   readonly error = signal<string | null>(null);
   readonly refreshResults = signal<ProviderRefreshResult[]>([]);
   readonly visibleAccounts = computed(() => {
@@ -231,6 +245,24 @@ export class InvestmentStore implements OnDestroy {
       : this.effectiveRecurring(account);
   }
 
+  npsHoldingsFor(account: InvestmentAccount): NpsSchemeHolding[] {
+    if (account.instrument?.kind !== 'NPS') return [];
+    const openingHoldings =
+      account.openingSnapshot?.schemeHoldings ?? account.instrument.schemeHoldings;
+    return calculateNpsSchemeHoldings(
+      openingHoldings,
+      this.transactionsFor(account.id),
+      account.instrument.schemeHoldings,
+    );
+  }
+
+  npsHoldingValue(holding: NpsSchemeHolding): string {
+    return investmentDecimal(holding.units)
+      .mul(holding.nav ?? 0)
+      .toDecimalPlaces(2)
+      .toString();
+  }
+
   async addInvestment(input: NewInvestmentInput): Promise<InvestmentAccount> {
     this.validateOpening(input.openingSnapshot);
     const timestamp = now();
@@ -309,6 +341,46 @@ export class InvestmentStore implements OnDestroy {
       throw new Error(message, { cause: error });
     } finally {
       this.deletingAccountId.set(null);
+    }
+  }
+
+  canDeleteTransaction(account: InvestmentAccount, transaction: InvestmentTransaction): boolean {
+    return transaction.investmentId === account.id && this.canDelete(account);
+  }
+
+  async deleteTransaction(
+    account: InvestmentAccount,
+    transaction: InvestmentTransaction,
+  ): Promise<void> {
+    if (this.deletingTransactionId()) return;
+    if (!this.canDeleteTransaction(account, transaction))
+      throw new Error('You do not have permission to delete this transaction.');
+
+    this.deletingTransactionId.set(transaction.id);
+    this.error.set(null);
+    try {
+      const remainingTransactions = this.transactionsFor(account.id).filter(
+        (item) => item.id !== transaction.id,
+      );
+      const updatedAccount = this.accountAfterTransactionChange(account, remainingTransactions);
+      await this.repository.deleteTransactionAndSummary(transaction.id, updatedAccount);
+      this.transactions.update((transactions) =>
+        transactions.filter((item) => item.id !== transaction.id),
+      );
+      this.accounts.update((accounts) =>
+        accounts.map((item) => (item.id === account.id ? updatedAccount : item)),
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message === 'DISPOSAL_EXCEEDS_HOLDING'
+          ? 'This transaction cannot be deleted because a later withdrawal depends on its units.'
+          : error instanceof Error && error.message
+            ? error.message
+            : 'Transaction could not be deleted.';
+      this.error.set(message);
+      throw new Error(message, { cause: error });
+    } finally {
+      this.deletingTransactionId.set(null);
     }
   }
 
@@ -395,6 +467,60 @@ export class InvestmentStore implements OnDestroy {
         : typeof item.schemeCode === 'string' && typeof item.schemeName === 'string'
           ? [{ schemeCode: item.schemeCode, schemeName: item.schemeName }]
           : [];
+    });
+  }
+
+  async searchNps(query: string): Promise<NpsSearchResult[]> {
+    const payload = (await this.providerRequest('nps-search', { query })) as {
+      results?: unknown;
+    };
+    if (!Array.isArray(payload.results)) return [];
+    return payload.results.flatMap((value): NpsSearchResult[] => {
+      if (!value || typeof value !== 'object') return [];
+      const item = value as Record<string, unknown>;
+      if (
+        typeof item['schemeCode'] !== 'string' ||
+        typeof item['schemeName'] !== 'string' ||
+        typeof item['pfmName'] !== 'string' ||
+        typeof item['nav'] !== 'string' ||
+        typeof item['navDate'] !== 'string' ||
+        !['POP', 'DIRECT', 'GS'].includes(String(item['channel']))
+      )
+        return [];
+      const tier = ['I', 'II'].includes(String(item['tier']))
+        ? (item['tier'] as 'I' | 'II')
+        : undefined;
+      return [
+        {
+          schemeCode: item['schemeCode'],
+          schemeName: item['schemeName'],
+          pfmName: item['pfmName'],
+          nav: item['nav'],
+          navDate: item['navDate'],
+          tier,
+          assetClass: typeof item['assetClass'] === 'string' ? item['assetClass'] : undefined,
+          channel: item['channel'] as 'POP' | 'DIRECT' | 'GS',
+        },
+      ];
+    });
+  }
+
+  async fetchLatestNpsHoldings(account: InvestmentAccount): Promise<NpsSchemeHolding[]> {
+    if (account.instrument?.kind !== 'NPS')
+      throw new Error('This investment does not have mapped NPS schemes.');
+    const holdings = this.npsHoldingsFor(account);
+    const response = (await this.providerRequest('nps-nav', {
+      schemeCodes: holdings.map((holding) => holding.schemeCode),
+    })) as ProviderPayload;
+    const missingScheme = holdings.find((holding) => !response.navs?.[holding.schemeCode]);
+    if (missingScheme) {
+      throw new Error(
+        `Latest NAV is unavailable for ${missingScheme.schemeName ?? missingScheme.schemeCode}.`,
+      );
+    }
+    return holdings.map((holding) => {
+      const quote = response.navs?.[holding.schemeCode];
+      return quote ? { ...holding, nav: quote.nav, navDate: quote.date } : holding;
     });
   }
 
@@ -501,26 +627,7 @@ export class InvestmentStore implements OnDestroy {
         let value = investmentDecimal(0);
         let valuationDate = '';
         let complete = true;
-        const holdingMap = new Map(
-          account.instrument.schemeHoldings.map((holding) => [holding.schemeCode, { ...holding }]),
-        );
-        for (const transaction of this.transactionsFor(account.id).sort((a, b) =>
-          a.date.localeCompare(b.date),
-        )) {
-          for (const allocation of transaction.schemeAllocations ?? []) {
-            const current = holdingMap.get(allocation.schemeCode) ?? { ...allocation, units: '0' };
-            const units = isContributionType(transaction.type)
-              ? investmentDecimal(current.units).plus(allocation.units)
-              : investmentDecimal(current.units).minus(allocation.units);
-            if (units.lt(0)) throw new Error('NPS_ALLOCATION_EXCEEDS_HOLDING');
-            holdingMap.set(allocation.schemeCode, {
-              ...current,
-              ...allocation,
-              units: units.toString(),
-            });
-          }
-        }
-        const holdings = [...holdingMap.values()].map((holding) => {
+        const holdings = this.npsHoldingsFor(account).map((holding) => {
           const quote = response.navs?.[holding.schemeCode];
           if (!quote) {
             complete = false;
@@ -699,6 +806,54 @@ export class InvestmentStore implements OnDestroy {
       ? 'CLOSED'
       : 'ACTIVE';
   }
+
+  private accountAfterTransactionChange(
+    account: InvestmentAccount,
+    transactions: readonly InvestmentTransaction[],
+  ): InvestmentAccount {
+    const timestamp = now();
+    let instrument = account.instrument;
+    let summary: InvestmentAccount['summary'];
+
+    if (account.type === 'NPS' && account.instrument?.kind === 'NPS') {
+      const openingHoldings =
+        account.openingSnapshot?.schemeHoldings ?? account.instrument.schemeHoldings;
+      const schemeHoldings = calculateNpsSchemeHoldings(
+        openingHoldings,
+        transactions,
+        account.instrument.schemeHoldings,
+      );
+      const currentValue = schemeHoldings
+        .reduce(
+          (total, holding) => total.plus(investmentDecimal(holding.units).mul(holding.nav ?? 0)),
+          investmentDecimal(0),
+        )
+        .toString();
+      instrument = { ...account.instrument, schemeHoldings };
+      summary = calculateInvestmentSummary(account, transactions, { currentValue });
+    } else if ((account.type === 'PPF' || account.type === 'SSY') && account.openingSnapshot) {
+      const valuation = calculateGovernmentSavings(
+        account.type,
+        account.openingSnapshot,
+        transactions,
+        today(),
+      );
+      summary = calculateInvestmentSummary(account, transactions, {
+        currentValue: valuation.currentValue,
+        valuationDate: valuation.valuationDate,
+      });
+    } else {
+      summary = calculateInvestmentSummary(account, transactions);
+    }
+
+    return {
+      ...account,
+      instrument,
+      summary,
+      status: this.deriveStatus(summary),
+      updatedDate: timestamp,
+    };
+  }
   private validateOpening(opening?: InvestmentOpeningSnapshot): void {
     if (!opening) return;
     if (opening.asOfDate > today()) throw new Error('Opening date cannot be in the future.');
@@ -721,6 +876,36 @@ export class InvestmentStore implements OnDestroy {
       );
       if (investmentDecimal(units).gt(available))
         throw new Error(`You can dispose of at most ${available} units on this date.`);
+    }
+    if (account.type !== 'NPS') return;
+    if (!input.schemeAllocations?.length)
+      throw new Error('Enter at least one NPS scheme allocation.');
+
+    const knownCodes = new Set(this.npsHoldingsFor(account).map((holding) => holding.schemeCode));
+    const allocatedTotal = input.schemeAllocations.reduce((total, allocation) => {
+      if (!knownCodes.has(allocation.schemeCode))
+        throw new Error(`Scheme ${allocation.schemeCode} is not part of this NPS account.`);
+      if (investmentDecimal(allocation.units).lte(0))
+        throw new Error('Allotted scheme units must be greater than zero.');
+      if (!allocation.amount || investmentDecimal(allocation.amount).lte(0))
+        throw new Error('Allocated scheme amounts must be greater than zero.');
+      return total.plus(allocation.amount);
+    }, investmentDecimal(0));
+    if (!allocatedTotal.eq(moneyString(input.amount)))
+      throw new Error('Scheme allocation amounts must equal the transaction amount.');
+
+    if (isWithdrawalType(input.type)) {
+      const availableByCode = new Map(
+        this.npsHoldingsFor(account).map((holding) => [holding.schemeCode, holding.units]),
+      );
+      for (const allocation of input.schemeAllocations) {
+        const available = availableByCode.get(allocation.schemeCode) ?? '0';
+        if (investmentDecimal(allocation.units).gt(available)) {
+          throw new Error(
+            `You can withdraw at most ${available} units from ${allocation.schemeCode}.`,
+          );
+        }
+      }
     }
   }
 

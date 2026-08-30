@@ -38,13 +38,33 @@ export interface NpsSchemeHolding {
   schemeName?: string;
   pfmCode?: string;
   pfmName?: string;
+  assetClass?: string;
+  tier?: 'I' | 'II';
+  channel?: 'POP' | 'DIRECT' | 'GS';
+  /** Target share of future account contributions. New NPS accounts require all schemes to total 100%. */
+  allocationPercentage?: DecimalString;
   units: DecimalString;
+  freeUnits?: DecimalString;
+  blockedUnits?: DecimalString;
   nav?: DecimalString;
   navDate?: string;
 }
 
+export interface NpsSchemeTransactionAllocation {
+  schemeCode: string;
+  schemeName?: string;
+  amount?: DecimalString;
+  units: DecimalString;
+  nav?: DecimalString;
+  navDate?: string;
+  unitsSource?: 'STATEMENT' | 'CALCULATED';
+}
+
 export interface NpsInstrument {
   kind: 'NPS';
+  accountType?: 'TIER_I' | 'TIER_I_MSF' | 'TIER_II' | 'TIER_II_TAX_SAVER';
+  cra?: 'PROTEAN' | 'KFINTECH' | 'CAMS';
+  investmentChoice?: 'ACTIVE' | 'AUTO' | 'MSF' | 'OTHER';
   schemeHoldings: NpsSchemeHolding[];
   provider: 'NPS_TRUST';
 }
@@ -136,7 +156,7 @@ export interface InvestmentTransaction extends OwnedRecord {
   unitsSource?: 'STATEMENT' | 'CALCULATED';
   source: InvestmentTransactionSource;
   notes?: string;
-  schemeAllocations?: NpsSchemeHolding[];
+  schemeAllocations?: NpsSchemeTransactionAllocation[];
   createdDate: string;
   updatedDate: string;
 }

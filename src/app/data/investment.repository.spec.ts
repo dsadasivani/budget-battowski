@@ -95,6 +95,19 @@ describe('InvestmentRepository', () => {
     expect(firestore.batchCommit).toHaveBeenCalledOnce();
   });
 
+  it('deletes a transaction and saves its recalculated account atomically', async () => {
+    await repository.deleteTransactionAndSummary(transaction.id, account);
+
+    expect(firestore.batchDelete).toHaveBeenCalledWith(
+      expect.stringContaining('investmentTransactions/transaction-1'),
+    );
+    expect(firestore.batchSet).toHaveBeenCalledWith(
+      expect.stringContaining('investmentAccounts/investment-1'),
+      expect.not.objectContaining({ id: expect.anything() }),
+    );
+    expect(firestore.batchCommit).toHaveBeenCalledOnce();
+  });
+
   it('deletes an account, its transaction ledger, and its migrated source together', async () => {
     await repository.deleteAccountAndTransactions(
       account.id,

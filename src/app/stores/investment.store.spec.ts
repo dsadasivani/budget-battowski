@@ -48,6 +48,9 @@ const transaction: InvestmentTransaction = {
 
 describe('InvestmentStore', () => {
   const deleteAccountAndTransactions = vi.fn(async () => undefined);
+  const deleteTransactionAndSummary = vi.fn(
+    async (_transactionId: string, _account: InvestmentAccount) => undefined,
+  );
   const saveAccount = vi.fn(async () => undefined);
   const selectedMonth = signal('2026-08');
   const selectedMemberEmail = signal('ALL');
@@ -82,6 +85,7 @@ describe('InvestmentStore', () => {
           provide: InvestmentRepository,
           useValue: {
             deleteAccountAndTransactions,
+            deleteTransactionAndSummary,
             disconnect: vi.fn(),
             saveAccount,
           },
@@ -113,6 +117,71 @@ describe('InvestmentStore', () => {
       'You do not have permission to delete this investment.',
     );
     expect(deleteAccountAndTransactions).not.toHaveBeenCalled();
+  });
+
+  it('deletes a transaction and replaces the account with recalculated totals', async () => {
+    await store.deleteTransaction(account, transaction);
+
+    expect(deleteTransactionAndSummary).toHaveBeenCalledWith(
+      transaction.id,
+      expect.objectContaining({
+        id: account.id,
+        summary: expect.objectContaining({ totalContributions: '0' }),
+      }),
+    );
+    expect(store.transactions()).toEqual([]);
+    expect(store.accounts()[0].summary.totalContributions).toBe('0');
+    expect(store.deletingTransactionId()).toBeNull();
+  });
+
+  it('reverses NPS scheme units when deleting an allocated contribution', async () => {
+    const openingHolding = {
+      schemeCode: 'SCHEME_E',
+      schemeName: 'Pension Fund Scheme E',
+      allocationPercentage: '100',
+      units: '100',
+      nav: '50',
+      navDate: '2026-08-01',
+    };
+    const npsAccount: InvestmentAccount = {
+      ...account,
+      id: 'nps-1',
+      name: 'NPS',
+      type: 'NPS',
+      instrument: {
+        kind: 'NPS',
+        provider: 'NPS_TRUST',
+        schemeHoldings: [{ ...openingHolding, units: '120' }],
+      },
+      openingSnapshot: {
+        asOfDate: '2026-08-01',
+        investedAmount: '5000',
+        currentValue: '5000',
+        schemeHoldings: [openingHolding],
+      },
+    };
+    const npsContribution: InvestmentTransaction = {
+      ...transaction,
+      id: 'nps-contribution-1',
+      investmentId: npsAccount.id,
+      type: 'CONTRIBUTION',
+      amount: '1000',
+      schemeAllocations: [{ schemeCode: 'SCHEME_E', amount: '1000', units: '20', nav: '50' }],
+    };
+    store.accounts.set([npsAccount]);
+    store.transactions.set([npsContribution]);
+
+    await store.deleteTransaction(npsAccount, npsContribution);
+
+    const persistedAccount = deleteTransactionAndSummary.mock.calls.at(-1)?.[1];
+    expect(persistedAccount?.instrument).toMatchObject({
+      kind: 'NPS',
+      schemeHoldings: [expect.objectContaining({ schemeCode: 'SCHEME_E', units: '100' })],
+    });
+    expect(persistedAccount?.summary).toMatchObject({
+      totalContributions: '5000',
+      currentValue: '5000',
+    });
   });
 
   it('filters accounts, transactions, and portfolio totals by the selected workspace member', () => {

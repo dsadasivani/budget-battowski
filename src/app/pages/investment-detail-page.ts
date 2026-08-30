@@ -1,5 +1,12 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  type OnInit,
+  signal,
+} from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
@@ -16,10 +23,15 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { firstValueFrom } from 'rxjs';
 
-import { investmentDecimal, moneyString } from '../domain/investments/investment-decimal';
+import {
+  decimalString,
+  investmentDecimal,
+  moneyString,
+} from '../domain/investments/investment-decimal';
 import type {
   InvestmentAccount,
   InvestmentFrequencyV2,
+  NpsSchemeHolding,
   InvestmentTransactionSource,
   InvestmentTransactionType,
   MutualFundSipType,
@@ -32,9 +44,24 @@ interface TransactionDialogData {
   liquidation: boolean;
 }
 
+interface NpsTransactionAllocationDraft {
+  schemeCode: string;
+  schemeName: string;
+  allocationPercentage?: string;
+  amount: string;
+  units: string;
+  nav?: string;
+  navDate?: string;
+}
+
+interface NpsHoldingEditDraft extends NpsSchemeHolding {
+  allocationPercentage: string;
+}
+
 @Component({
   selector: 'app-investment-edit-dialog',
   imports: [
+    CommonModule,
     ReactiveFormsModule,
     MatDialogModule,
     MatButtonModule,
@@ -91,16 +118,56 @@ interface TransactionDialogData {
           >
         }
         @if (data.type === 'NPS') {
-          <mat-form-field appearance="outline"
-            ><mat-label>Scheme holdings</mat-label
-            ><textarea
-              matInput
-              rows="4"
-              formControlName="npsHoldings"
-              placeholder="SM001, 125.5, PFM name"
-            ></textarea
-            ><mat-hint>One per line: scheme code, units, optional PFM.</mat-hint></mat-form-field
-          >
+          <section class="nps-edit-holdings" aria-labelledby="nps-edit-holdings-heading">
+            <div>
+              <h3 id="nps-edit-holdings-heading">Opening scheme holdings</h3>
+              <p>Allocation percentages must be greater than zero and total exactly 100%.</p>
+            </div>
+            @for (holding of npsHoldings(); track holding.schemeCode) {
+              <article>
+                <header>
+                  <strong>{{ holding.schemeName || holding.schemeCode }}</strong>
+                  <span>{{ holding.schemeCode }}</span>
+                </header>
+                <div>
+                  <mat-form-field appearance="outline">
+                    <mat-label>Opening units</mat-label>
+                    <input
+                      matInput
+                      type="number"
+                      min="0"
+                      step="any"
+                      [value]="holding.units"
+                      [attr.aria-label]="
+                        'Opening units for ' + (holding.schemeName || holding.schemeCode)
+                      "
+                      (input)="updateNpsHolding(holding.schemeCode, 'units', $event)"
+                    />
+                  </mat-form-field>
+                  <mat-form-field appearance="outline">
+                    <mat-label>Recurring contribution split</mat-label>
+                    <input
+                      matInput
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="any"
+                      [value]="holding.allocationPercentage"
+                      [attr.aria-label]="
+                        'Recurring contribution split percentage for ' +
+                        (holding.schemeName || holding.schemeCode)
+                      "
+                      (input)="updateNpsHolding(holding.schemeCode, 'allocationPercentage', $event)"
+                    />
+                    <span matTextSuffix>%</span>
+                  </mat-form-field>
+                </div>
+              </article>
+            }
+            <p class="allocation-total" [class.complete]="npsAllocationComplete()" role="status">
+              Allocation total: {{ npsAllocationTotal() | number: '1.0-4' }}% of 100%
+            </p>
+          </section>
         }
         @if (error()) {
           <p class="form-error" role="alert">{{ error() }}</p>
@@ -122,6 +189,56 @@ interface TransactionDialogData {
       .form-error {
         color: #b42318;
       }
+      .nps-edit-holdings {
+        display: grid;
+        gap: 12px;
+        padding: 14px;
+        border: 1px solid #dfe5ee;
+        border-radius: 12px;
+      }
+      .nps-edit-holdings h3,
+      .nps-edit-holdings p {
+        margin: 0;
+      }
+      .nps-edit-holdings p,
+      .nps-edit-holdings header span {
+        color: #667085;
+        font-size: 0.76rem;
+      }
+      .nps-edit-holdings article {
+        display: grid;
+        gap: 10px;
+        padding: 12px;
+        border-radius: 10px;
+        background: #f8fafc;
+      }
+      .nps-edit-holdings article header {
+        display: grid;
+        gap: 3px;
+      }
+      .nps-edit-holdings article > div {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .allocation-total {
+        padding: 9px 11px;
+        border: 1px solid #f5c2c7;
+        border-radius: 9px;
+        background: #fff5f5;
+        color: #b42318 !important;
+        font-weight: 700;
+      }
+      .allocation-total.complete {
+        border-color: #a7e2c3;
+        background: #effbf4;
+        color: #047857 !important;
+      }
+      @media (max-width: 480px) {
+        .nps-edit-holdings article > div {
+          grid-template-columns: 1fr;
+        }
+      }
     `,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -136,7 +253,48 @@ export class InvestmentEditDialog {
   private readonly fund =
     this.data.instrument?.kind === 'MUTUAL_FUND' ? this.data.instrument : undefined;
   private readonly nps = this.data.instrument?.kind === 'NPS' ? this.data.instrument : undefined;
+  private readonly npsOpeningHoldings = (
+    this.data.openingSnapshot?.schemeHoldings ??
+    this.nps?.schemeHoldings ??
+    []
+  ).map((openingHolding) => {
+    const currentHolding = this.nps?.schemeHoldings.find(
+      (holding) => holding.schemeCode === openingHolding.schemeCode,
+    );
+    return {
+      ...currentHolding,
+      ...openingHolding,
+      allocationPercentage:
+        openingHolding.allocationPercentage ?? currentHolding?.allocationPercentage,
+      units: openingHolding.units,
+    };
+  });
   readonly error = signal('');
+  readonly npsHoldings = signal<NpsHoldingEditDraft[]>(
+    this.npsOpeningHoldings.map((holding) => ({
+      ...holding,
+      allocationPercentage: holding.allocationPercentage ?? '',
+    })),
+  );
+  readonly npsAllocationTotal = computed(() =>
+    this.npsHoldings()
+      .reduce(
+        (total, holding) => total.plus(holding.allocationPercentage || 0),
+        investmentDecimal(0),
+      )
+      .toDecimalPlaces(4)
+      .toNumber(),
+  );
+  readonly npsAllocationComplete = computed(() => {
+    const holdings = this.npsHoldings();
+    return (
+      holdings.length > 0 &&
+      holdings.every(
+        (holding) => Number(holding.units) >= 0 && Number(holding.allocationPercentage) > 0,
+      ) &&
+      investmentDecimal(this.npsAllocationTotal()).eq(100)
+    );
+  });
   readonly form = this.fb.group({
     name: [this.data.name, Validators.required],
     institution: [this.data.institution ?? ''],
@@ -147,12 +305,21 @@ export class InvestmentEditDialog {
     schemeCode: [this.fund?.schemeCode ?? ''],
     plan: [this.fund?.plan ?? 'Direct'],
     option: [this.fund?.option ?? 'Growth'],
-    npsHoldings: [
-      this.nps?.schemeHoldings
-        .map((item) => `${item.schemeCode}, ${item.units}, ${item.pfmName ?? ''}`)
-        .join('\n') ?? '',
-    ],
   });
+
+  updateNpsHolding(
+    schemeCode: string,
+    field: 'units' | 'allocationPercentage',
+    event: Event,
+  ): void {
+    const value = (event.target as HTMLInputElement).value;
+    this.npsHoldings.update((holdings) =>
+      holdings.map((holding) =>
+        holding.schemeCode === schemeCode ? { ...holding, [field]: value } : holding,
+      ),
+    );
+  }
+
   async save(): Promise<void> {
     try {
       const value = this.form.getRawValue();
@@ -178,20 +345,23 @@ export class InvestmentEditDialog {
           option: value.option,
         };
       if (this.data.type === 'NPS') {
-        const schemeHoldings = value.npsHoldings.split(/\r?\n/).flatMap((line) => {
-          const [schemeCode, units, pfmName] = line.split(',').map((part) => part.trim());
-          return schemeCode && Number(units) >= 0
-            ? [{ schemeCode, units, pfmName: pfmName || undefined }]
-            : [];
-        });
+        const schemeHoldings = this.npsHoldings();
+        if (!this.npsAllocationComplete()) {
+          throw new Error('NPS scheme allocations must be greater than zero and total 100%.');
+        }
         if (schemeHoldings.length)
           instrument = { kind: 'NPS', provider: 'NPS_TRUST', schemeHoldings };
       }
+      const openingSnapshot =
+        this.data.type === 'NPS' && instrument?.kind === 'NPS' && this.data.openingSnapshot
+          ? { ...this.data.openingSnapshot, schemeHoldings: instrument.schemeHoldings }
+          : this.data.openingSnapshot;
       await this.investments.updateAccount({
         ...this.data,
         name: value.name.trim(),
         institution: value.institution.trim() || undefined,
         instrument,
+        openingSnapshot,
         needsInstrumentMapping: !instrument,
       });
       this.dialogRef.close(true);
@@ -353,6 +523,22 @@ export class RecurringPlanDialog {
       const value = this.form.getRawValue();
       if (value.enabled && Number(value.amount) <= 0)
         throw new Error('Recurring amount must be greater than zero.');
+      if (value.enabled && this.data.type === 'NPS') {
+        const holdings = this.investments.npsHoldingsFor(this.data);
+        const allocationTotal = holdings.reduce(
+          (total, holding) => total.plus(holding.allocationPercentage ?? 0),
+          investmentDecimal(0),
+        );
+        if (
+          !holdings.length ||
+          holdings.some((holding) => Number(holding.allocationPercentage) <= 0) ||
+          !allocationTotal.eq(100)
+        ) {
+          throw new Error(
+            'Set a recurring contribution split for every NPS scheme in Edit investment before enabling this plan.',
+          );
+        }
+      }
       if (value.enabled && this.data.type === 'MUTUAL_FUND' && value.sipType === 'STEP_UP') {
         if (Number(value.stepUpValue) <= 0)
           throw new Error('SIP increase amount must be greater than zero.');
@@ -408,6 +594,7 @@ function transactionLabels(
 @Component({
   selector: 'app-investment-transaction-dialog',
   imports: [
+    CommonModule,
     ReactiveFormsModule,
     MatDialogModule,
     MatButtonModule,
@@ -444,7 +631,14 @@ function transactionLabels(
         } @else {
           <mat-form-field appearance="outline"
             ><mat-label>Amount</mat-label
-            ><input matInput type="number" min="0" step="any" formControlName="amount" required
+            ><input
+              matInput
+              type="number"
+              min="0"
+              step="any"
+              formControlName="amount"
+              required
+              (input)="updateNpsTransactionTotal($event)"
           /></mat-form-field>
           @if (data.account.type === 'MUTUAL_FUND') {
             <mat-form-field appearance="outline"
@@ -457,22 +651,139 @@ function transactionLabels(
             /></mat-form-field>
           }
           @if (data.account.type === 'NPS') {
-            <mat-form-field appearance="outline"
-              ><mat-label>Scheme allocations (optional)</mat-label
-              ><textarea
-                matInput
-                rows="3"
-                formControlName="schemeAllocations"
-                placeholder="SM001, 25.5&#10;SM002, 12.75"
-              ></textarea
-              ><mat-hint>One scheme per line: scheme code, units.</mat-hint></mat-form-field
-            >
+            <section class="nps-transaction-allocations" aria-labelledby="nps-allocation-heading">
+              <header class="nps-allocation-heading">
+                <div>
+                  <h3 id="nps-allocation-heading">Scheme allocations</h3>
+                  @if (data.liquidation) {
+                    <p>Enter the amount and actual units withdrawn from each scheme.</p>
+                  } @else {
+                    <p>
+                      Amounts follow the recurring split. Units are calculated using each scheme's
+                      latest NAV.
+                    </p>
+                  }
+                </div>
+                @if (!data.liquidation && form.controls.source.value === 'ADHOC') {
+                  <button
+                    mat-stroked-button
+                    type="button"
+                    aria-label="Fetch latest NAVs for all NPS schemes"
+                    (click)="refreshNpsNavs()"
+                    [disabled]="npsNavRefreshing()"
+                  >
+                    <mat-icon aria-hidden="true">refresh</mat-icon>
+                    {{ npsNavRefreshing() ? 'Fetchingâ€¦' : 'Fetch latest NAVs' }}
+                  </button>
+                }
+              </header>
+              @if (!data.liquidation && form.controls.source.value === 'RECURRING') {
+                <p class="automatic-nav-note">
+                  <mat-icon aria-hidden="true">autorenew</mat-icon>
+                  Latest NAVs are fetched automatically for recurring contributions.
+                </p>
+              }
+              @if (npsNavMessage()) {
+                <p class="nav-refresh-message" role="status">{{ npsNavMessage() }}</p>
+              }
+              @if (npsNavError()) {
+                <p class="nav-refresh-error" role="alert">{{ npsNavError() }}</p>
+              }
+              @for (allocation of npsSchemeAllocations(); track allocation.schemeCode) {
+                <article class="nps-transaction-allocation">
+                  <header>
+                    <div>
+                      <strong>{{ allocation.schemeName }}</strong>
+                      <span>{{ allocation.schemeCode }}</span>
+                    </div>
+                    @if (allocation.allocationPercentage) {
+                      <span class="allocation-badge"
+                        >{{ allocation.allocationPercentage }}% recurring split</span
+                      >
+                    }
+                  </header>
+                  @if (data.liquidation) {
+                    <div class="nps-allocation-inputs">
+                      <mat-form-field appearance="outline">
+                        <mat-label>Withdrawn amount</mat-label>
+                        <input
+                          matInput
+                          type="number"
+                          min="0"
+                          step="any"
+                          [value]="allocation.amount"
+                          [attr.aria-label]="'Withdrawn amount for ' + allocation.schemeName"
+                          (input)="updateNpsAllocationAmount(allocation.schemeCode, $event)"
+                        />
+                      </mat-form-field>
+                      <mat-form-field appearance="outline">
+                        <mat-label>Withdrawn units</mat-label>
+                        <input
+                          matInput
+                          type="number"
+                          min="0"
+                          step="any"
+                          [value]="allocation.units"
+                          [attr.aria-label]="'Withdrawn units for ' + allocation.schemeName"
+                          (input)="updateNpsAllocationUnits(allocation.schemeCode, $event)"
+                        />
+                      </mat-form-field>
+                    </div>
+                    @if (npsAllocationNav(allocation); as nav) {
+                      <small>
+                        Implied NAV:
+                        {{ nav | currency: 'INR' : 'symbol' : '1.2-4' : 'en-IN' }}
+                      </small>
+                    }
+                  } @else {
+                    <dl class="nps-calculated-allocation">
+                      <div>
+                        <dt>Allocated amount</dt>
+                        <dd>
+                          @if (allocation.amount) {
+                            {{
+                              investments.display(allocation.amount)
+                                | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                            }}
+                          } @else {
+                            Not allocated
+                          }
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Latest NAV</dt>
+                        <dd>
+                          @if (allocation.nav) {
+                            {{
+                              investments.display(allocation.nav)
+                                | currency: 'INR' : 'symbol' : '1.2-4' : 'en-IN'
+                            }}
+                          } @else {
+                            Not available
+                          }
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Calculated units</dt>
+                        <dd>{{ allocation.units || 'Not available' }}</dd>
+                      </div>
+                    </dl>
+                    <small>
+                      @if (allocation.navDate) {
+                        Using NAV dated {{ allocation.navDate | date: 'mediumDate' }}.
+                      }
+                      CRA allotment may differ if another NAV is applied.
+                    </small>
+                  }
+                </article>
+              }
+            </section>
           }
         }
         @if (!data.liquidation && data.account.type !== 'STOCK') {
           <mat-form-field appearance="outline"
             ><mat-label>Source</mat-label
-            ><mat-select formControlName="source"
+            ><mat-select formControlName="source" (valueChange)="onTransactionSourceChange($event)"
               ><mat-option value="ADHOC">Ad-hoc</mat-option
               ><mat-option value="RECURRING">Recurring</mat-option></mat-select
             ></mat-form-field
@@ -495,7 +806,12 @@ function transactionLabels(
     </mat-dialog-content>
     <mat-dialog-actions align="end"
       ><button mat-button type="button" (click)="dialogRef.close()">Cancel</button
-      ><button mat-flat-button type="button" (click)="save()" [disabled]="saving()">
+      ><button
+        mat-flat-button
+        type="button"
+        (click)="save()"
+        [disabled]="saving() || npsNavRefreshing()"
+      >
         {{ saving() ? 'Saving…' : labels.title }}
       </button></mat-dialog-actions
     >
@@ -522,29 +838,237 @@ function transactionLabels(
       .form-error {
         color: #b42318;
       }
+      .nps-transaction-allocations {
+        display: grid;
+        gap: 12px;
+        padding: 14px;
+        border: 1px solid #dfe5ee;
+        border-radius: 12px;
+      }
+      .nps-transaction-allocations h3,
+      .nps-transaction-allocations p,
+      .nps-transaction-allocation small {
+        margin: 0;
+      }
+      .nps-transaction-allocations p,
+      .nps-transaction-allocation span,
+      .nps-transaction-allocation small {
+        color: #667085;
+        font-size: 0.76rem;
+      }
+      .nps-allocation-heading {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .nps-allocation-heading > div {
+        display: grid;
+        gap: 3px;
+      }
+      .nps-allocation-heading button {
+        flex: 0 0 auto;
+        white-space: nowrap;
+      }
+      .automatic-nav-note,
+      .nav-refresh-message,
+      .nav-refresh-error {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 10px;
+        border-radius: 8px;
+      }
+      .automatic-nav-note,
+      .nav-refresh-message {
+        background: #effbf4;
+        color: #047857 !important;
+      }
+      .nav-refresh-error {
+        background: #fff1f0;
+        color: #b42318 !important;
+      }
+      .automatic-nav-note mat-icon {
+        width: 16px;
+        height: 16px;
+        font-size: 16px;
+      }
+      .nps-transaction-allocation {
+        display: grid;
+        gap: 10px;
+        padding: 12px;
+        border-radius: 10px;
+        background: #f8fafc;
+      }
+      .nps-transaction-allocation header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .nps-transaction-allocation header > div {
+        display: grid;
+        gap: 3px;
+      }
+      .allocation-badge {
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: #e6fbf7;
+        color: #0f766e !important;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+      .nps-allocation-inputs {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .nps-calculated-allocation {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 7px;
+        margin: 0;
+      }
+      .nps-calculated-allocation div {
+        display: grid;
+        gap: 3px;
+        padding: 8px;
+        border-radius: 8px;
+        background: #fff;
+      }
+      .nps-calculated-allocation dt {
+        color: #667085;
+        font-size: 0.68rem;
+      }
+      .nps-calculated-allocation dd {
+        margin: 0;
+        color: #344054;
+        font-size: 0.8rem;
+        font-weight: 700;
+        overflow-wrap: anywhere;
+      }
+      @media (max-width: 480px) {
+        .nps-allocation-heading {
+          flex-direction: column;
+        }
+        .nps-allocation-inputs,
+        .nps-calculated-allocation {
+          grid-template-columns: 1fr;
+        }
+      }
     `,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class InvestmentTransactionDialog {
+export class InvestmentTransactionDialog implements OnInit {
   readonly data = inject<TransactionDialogData>(MAT_DIALOG_DATA);
   readonly dialogRef = inject<MatDialogRef<InvestmentTransactionDialog>>(MatDialogRef);
-  private readonly investments = inject(InvestmentStore);
+  readonly investments = inject(InvestmentStore);
   private readonly fb = inject(FormBuilder).nonNullable;
   readonly today = new Date().toISOString().slice(0, 10);
   readonly labels = transactionLabels(this.data.account, this.data.liquidation);
   readonly saving = signal(false);
   readonly error = signal('');
+  readonly npsNavRefreshing = signal(false);
+  readonly npsNavFetched = signal(false);
+  readonly npsNavMessage = signal('');
+  readonly npsNavError = signal('');
+  private readonly initialAmount = this.data.liquidation
+    ? ''
+    : this.investments.effectiveRecurring(this.data.account);
+  readonly npsSchemeAllocations = signal<NpsTransactionAllocationDraft[]>(
+    this.data.account.type === 'NPS'
+      ? this.createNpsAllocationDrafts(
+          this.investments.npsHoldingsFor(this.data.account),
+          this.initialAmount,
+        )
+      : [],
+  );
   readonly form = this.fb.group({
     date: [this.today, Validators.required],
-    amount: [this.data.liquidation ? '' : this.investments.effectiveRecurring(this.data.account)],
+    amount: [this.initialAmount],
     quantity: [''],
     units: [''],
     unitPrice: [''],
-    schemeAllocations: [''],
-    source: this.fb.control<InvestmentTransactionSource>('ADHOC'),
+    source: this.fb.control<InvestmentTransactionSource>(
+      this.data.account.recurringPlan?.enabled ? 'RECURRING' : 'ADHOC',
+    ),
     notes: [''],
   });
+
+  ngOnInit(): void {
+    if (
+      this.data.account.type === 'NPS' &&
+      !this.data.liquidation &&
+      this.form.controls.source.value === 'RECURRING'
+    ) {
+      void this.refreshNpsNavs();
+    }
+  }
+
+  onTransactionSourceChange(source: InvestmentTransactionSource): void {
+    if (source === 'RECURRING' && this.data.account.type === 'NPS' && !this.data.liquidation) {
+      void this.refreshNpsNavs();
+    }
+  }
+
+  async refreshNpsNavs(): Promise<boolean> {
+    if (this.data.account.type !== 'NPS' || this.data.liquidation) return false;
+    if (this.npsNavRefreshing()) return false;
+    this.npsNavRefreshing.set(true);
+    this.npsNavMessage.set('');
+    this.npsNavError.set('');
+    try {
+      const holdings = await this.investments.fetchLatestNpsHoldings(this.data.account);
+      const latestByCode = new Map(holdings.map((holding) => [holding.schemeCode, holding]));
+      this.npsSchemeAllocations.update((allocations) =>
+        this.withAllocatedAmounts(
+          allocations.map((allocation) => {
+            const latest = latestByCode.get(allocation.schemeCode);
+            return latest
+              ? { ...allocation, nav: latest.nav, navDate: latest.navDate }
+              : allocation;
+          }),
+          this.form.controls.amount.value,
+        ),
+      );
+      this.npsNavFetched.set(true);
+      this.npsNavMessage.set('Latest NAVs fetched for all schemes.');
+      return true;
+    } catch (error) {
+      this.npsNavFetched.set(false);
+      this.npsNavError.set(
+        error instanceof Error ? error.message : 'Latest NPS NAVs could not be fetched.',
+      );
+      return false;
+    } finally {
+      this.npsNavRefreshing.set(false);
+    }
+  }
+
+  updateNpsTransactionTotal(event: Event): void {
+    if (this.data.account.type !== 'NPS' || this.data.liquidation) return;
+    this.setNpsTransactionTotal((event.target as HTMLInputElement).value);
+  }
+
+  setNpsTransactionTotal(amount: string): void {
+    this.npsSchemeAllocations.update((allocations) =>
+      this.withAllocatedAmounts(allocations, amount),
+    );
+  }
+
+  updateNpsAllocationAmount(schemeCode: string, event: Event): void {
+    this.updateNpsAllocation(schemeCode, 'amount', (event.target as HTMLInputElement).value);
+  }
+
+  updateNpsAllocationUnits(schemeCode: string, event: Event): void {
+    this.updateNpsAllocation(schemeCode, 'units', (event.target as HTMLInputElement).value);
+  }
+
+  npsAllocationNav(allocation: NpsTransactionAllocationDraft): number | null {
+    if (Number(allocation.amount) <= 0 || Number(allocation.units) <= 0) return null;
+    return investmentDecimal(allocation.amount).div(allocation.units).toNumber();
+  }
 
   async save(): Promise<void> {
     this.saving.set(true);
@@ -555,10 +1079,63 @@ export class InvestmentTransactionDialog {
         this.data.account.type === 'STOCK'
           ? moneyString(investmentDecimal(value.quantity).mul(value.unitPrice))
           : value.amount;
-      const schemeAllocations = value.schemeAllocations.split(/\r?\n/).flatMap((line) => {
-        const [schemeCode, units] = line.split(',').map((part) => part.trim());
-        return schemeCode && Number(units) > 0 ? [{ schemeCode, units }] : [];
-      });
+      if (
+        this.data.account.type === 'NPS' &&
+        !this.data.liquidation &&
+        value.source === 'RECURRING' &&
+        !this.npsNavFetched()
+      ) {
+        const fetched = await this.refreshNpsNavs();
+        if (!fetched) {
+          throw new Error('Latest NAVs are required before recording a recurring contribution.');
+        }
+      }
+      const schemeAllocations = this.npsSchemeAllocations()
+        .filter((allocation) => Number(allocation.amount) > 0 || Number(allocation.units) > 0)
+        .map((allocation) => {
+          if (Number(allocation.amount) <= 0 || Number(allocation.units) <= 0) {
+            if (!this.data.liquidation && Number(allocation.nav) <= 0) {
+              throw new Error(
+                `Latest NAV is unavailable for ${allocation.schemeName}. Refresh values before recording this contribution.`,
+              );
+            }
+            throw new Error(
+              this.data.liquidation
+                ? 'Enter both withdrawn amount and withdrawn units for each selected NPS scheme.'
+                : `Units could not be calculated for ${allocation.schemeName}.`,
+            );
+          }
+          const nav = this.data.liquidation
+            ? decimalString(investmentDecimal(allocation.amount).div(allocation.units))
+            : allocation.nav;
+          return {
+            schemeCode: allocation.schemeCode,
+            schemeName: allocation.schemeName,
+            amount: moneyString(allocation.amount),
+            units: decimalString(allocation.units),
+            nav,
+            navDate: this.data.liquidation ? value.date : allocation.navDate,
+            unitsSource: this.data.liquidation ? ('STATEMENT' as const) : ('CALCULATED' as const),
+          };
+        });
+      if (this.data.account.type === 'NPS') {
+        if (!schemeAllocations.length) {
+          throw new Error('Enter at least one NPS scheme allocation.');
+        }
+        if (
+          !this.data.liquidation &&
+          schemeAllocations.length !== this.npsSchemeAllocations().length
+        ) {
+          throw new Error('Distribute this NPS contribution across every scheme.');
+        }
+        const allocatedTotal = schemeAllocations.reduce(
+          (total, allocation) => total.plus(allocation.amount),
+          investmentDecimal(0),
+        );
+        if (!allocatedTotal.eq(moneyString(amount))) {
+          throw new Error('Scheme allocation amounts must equal the transaction amount.');
+        }
+      }
       await this.investments.addTransaction(this.data.account, {
         type: this.labels.type,
         date: value.date,
@@ -581,6 +1158,69 @@ export class InvestmentTransactionDialog {
     } finally {
       this.saving.set(false);
     }
+  }
+
+  private createNpsAllocationDrafts(
+    holdings: NpsSchemeHolding[],
+    amount: string,
+  ): NpsTransactionAllocationDraft[] {
+    return this.withAllocatedAmounts(
+      holdings.map((holding) => ({
+        schemeCode: holding.schemeCode,
+        schemeName: holding.schemeName ?? holding.schemeCode,
+        allocationPercentage: holding.allocationPercentage,
+        amount: '',
+        units: '',
+        nav: holding.nav,
+        navDate: holding.navDate,
+      })),
+      amount,
+    );
+  }
+
+  private withAllocatedAmounts(
+    allocations: NpsTransactionAllocationDraft[],
+    amount: string,
+  ): NpsTransactionAllocationDraft[] {
+    if (
+      Number(amount) <= 0 ||
+      !allocations.length ||
+      allocations.some((allocation) => Number(allocation.allocationPercentage) <= 0) ||
+      !allocations
+        .reduce(
+          (total, allocation) => total.plus(allocation.allocationPercentage ?? 0),
+          investmentDecimal(0),
+        )
+        .eq(100)
+    ) {
+      return allocations.map((allocation) => ({ ...allocation, amount: '', units: '' }));
+    }
+
+    const total = investmentDecimal(amount);
+    let assigned = investmentDecimal(0);
+    return allocations.map((allocation, index) => {
+      const allocatedAmount =
+        index === allocations.length - 1
+          ? total.minus(assigned)
+          : investmentDecimal(
+              moneyString(total.mul(allocation.allocationPercentage ?? 0).div(100)),
+            );
+      assigned = assigned.plus(allocatedAmount);
+      const nav = Number(allocation.nav);
+      const units =
+        Number.isFinite(nav) && nav > 0
+          ? decimalString(allocatedAmount.div(allocation.nav ?? 0), 4)
+          : '';
+      return { ...allocation, amount: moneyString(allocatedAmount), units };
+    });
+  }
+
+  private updateNpsAllocation(schemeCode: string, field: 'amount' | 'units', value: string): void {
+    this.npsSchemeAllocations.update((allocations) =>
+      allocations.map((allocation) =>
+        allocation.schemeCode === schemeCode ? { ...allocation, [field]: value } : allocation,
+      ),
+    );
   }
 }
 
@@ -741,7 +1381,7 @@ export class InvestmentTransactionDialog {
   styles: [
     `
       .investment-detail-page {
-        max-width: 1050px;
+        width: min(1420px, 100%);
         margin: auto;
       }
       .back-link {

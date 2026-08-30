@@ -25,12 +25,19 @@ import type {
   MutualFundSipType,
   RecurringInvestmentPlan,
 } from '../domain/investments/investment.models';
+import { investmentDecimal } from '../domain/investments/investment-decimal';
 import {
   InvestmentStore,
   type MutualFundSearchResult,
   type NewInvestmentInput,
+  type NpsSearchResult,
   type StockSearchResult,
 } from '../stores/investment.store';
+
+interface NpsHoldingDraft extends NpsSearchResult {
+  allocationPercentage: string;
+  units: string;
+}
 
 const TYPE_LABELS: Record<InvestmentType, string> = {
   STOCK: 'Stock',
@@ -151,57 +158,62 @@ const TYPE_LABELS: Record<InvestmentType, string> = {
           </mat-form-field>
         }
 
-        <mat-form-field appearance="outline">
-          <mat-label>
-            {{
-              form.controls.type.value === 'STOCK'
-                ? 'Broker / demat account (optional)'
-                : form.controls.type.value === 'MUTUAL_FUND'
-                  ? 'AMC / investment platform (optional)'
-                  : 'Institution (optional)'
-            }}
-          </mat-label>
-          <mat-chip-grid #institutionChipGrid [attr.aria-label]="institutionFieldLabel()">
-            @if (form.controls.institution.value) {
-              <mat-chip-row (removed)="removeInstitution()">
-                {{ form.controls.institution.value }}
-                <button
-                  matChipRemove
-                  type="button"
-                  [attr.aria-label]="'Remove ' + form.controls.institution.value"
-                >
-                  <mat-icon aria-hidden="true">cancel</mat-icon>
-                </button>
-              </mat-chip-row>
-            } @else {
-              <input
-                placeholder="Type to search or add"
-                autocomplete="off"
-                [formControl]="institutionInput"
-                [matAutocomplete]="institutionAutocomplete"
-                [matChipInputFor]="institutionChipGrid"
-                [matChipInputSeparatorKeyCodes]="separatorKeysCodes"
-                [matChipInputAddOnBlur]="true"
-                (matChipInputTokenEnd)="addInstitution($event)"
-              />
-            }
-          </mat-chip-grid>
-          <mat-autocomplete
-            #institutionAutocomplete="matAutocomplete"
-            (optionSelected)="selectInstitution($event.option.value)"
-          >
-            @for (tag of institutionOptions(); track tag) {
-              <mat-option [value]="tag">{{ tag }}</mat-option>
-            }
-          </mat-autocomplete>
-          @if (form.controls.type.value === 'STOCK') {
-            <mat-hint>Choose a saved broker or type a new one. New values save on add.</mat-hint>
-          } @else if (form.controls.type.value === 'MUTUAL_FUND') {
-            <mat-hint
-              >Choose a saved AMC/platform or type a new one. New values save on add.</mat-hint
+        @if (form.controls.type.value === 'STOCK' || form.controls.type.value === 'MUTUAL_FUND') {
+          <mat-form-field appearance="outline">
+            <mat-label>
+              {{
+                form.controls.type.value === 'STOCK'
+                  ? 'Broker / demat account (optional)'
+                  : 'AMC / investment platform (optional)'
+              }}
+            </mat-label>
+            <mat-chip-grid #institutionChipGrid [attr.aria-label]="institutionFieldLabel()">
+              @if (form.controls.institution.value) {
+                <mat-chip-row (removed)="removeInstitution()">
+                  {{ form.controls.institution.value }}
+                  <button
+                    matChipRemove
+                    type="button"
+                    [attr.aria-label]="'Remove ' + form.controls.institution.value"
+                  >
+                    <mat-icon aria-hidden="true">cancel</mat-icon>
+                  </button>
+                </mat-chip-row>
+              } @else {
+                <input
+                  placeholder="Type to search or add"
+                  autocomplete="off"
+                  [formControl]="institutionInput"
+                  [matAutocomplete]="institutionAutocomplete"
+                  [matChipInputFor]="institutionChipGrid"
+                  [matChipInputSeparatorKeyCodes]="separatorKeysCodes"
+                  [matChipInputAddOnBlur]="true"
+                  (matChipInputTokenEnd)="addInstitution($event)"
+                />
+              }
+            </mat-chip-grid>
+            <mat-autocomplete
+              #institutionAutocomplete="matAutocomplete"
+              (optionSelected)="selectInstitution($event.option.value)"
             >
-          }
-        </mat-form-field>
+              @for (tag of institutionOptions(); track tag) {
+                <mat-option [value]="tag">{{ tag }}</mat-option>
+              }
+            </mat-autocomplete>
+            <mat-hint>
+              {{
+                form.controls.type.value === 'STOCK'
+                  ? 'Choose a saved broker or type a new one. New values save on add.'
+                  : 'Choose a saved AMC/platform or type a new one. New values save on add.'
+              }}
+            </mat-hint>
+          </mat-form-field>
+        } @else if (form.controls.type.value !== 'NPS') {
+          <mat-form-field appearance="outline">
+            <mat-label>Institution (optional)</mat-label>
+            <input matInput formControlName="institution" />
+          </mat-form-field>
+        }
 
         @switch (form.controls.type.value) {
           @case ('STOCK') {
@@ -247,30 +259,160 @@ const TYPE_LABELS: Record<InvestmentType, string> = {
             }
           }
           @case ('NPS') {
-            <div class="form-grid">
-              <mat-form-field appearance="outline">
-                <mat-label>Scheme code</mat-label>
-                <input matInput formControlName="schemeCode" />
-              </mat-form-field>
-              <mat-form-field appearance="outline">
-                <mat-label>PFM name (optional)</mat-label>
-                <input matInput formControlName="pfmName" />
-              </mat-form-field>
-              <mat-form-field appearance="outline">
-                <mat-label>Opening scheme units</mat-label>
-                <input matInput type="number" min="0" formControlName="openingUnits" />
-              </mat-form-field>
-              <mat-form-field appearance="outline" class="wide">
-                <mat-label>Additional scheme holdings</mat-label>
-                <textarea
-                  matInput
-                  formControlName="npsHoldings"
-                  rows="3"
-                  placeholder="SM002, 125.45, PFM name&#10;SM003, 80.1, PFM name"
-                ></textarea>
-                <mat-hint>One scheme per line: scheme code, units, optional PFM.</mat-hint>
-              </mat-form-field>
-            </div>
+            <section class="nps-scheme-section" aria-labelledby="nps-schemes-heading">
+              <div>
+                <h3 id="nps-schemes-heading">Scheme holdings</h3>
+                <p>Search using the scheme name shown on your CRA statement.</p>
+              </div>
+              <div class="instrument-search-row nps-search-row">
+                <mat-form-field appearance="outline">
+                  <mat-label>NPS scheme name or ID</mat-label>
+                  <input
+                    matInput
+                    autocomplete="off"
+                    [formControl]="npsSearchInput"
+                    (input)="npsResults.set([])"
+                  />
+                  <mat-hint>Include POP, DIRECT, or GS when shown on the statement.</mat-hint>
+                </mat-form-field>
+                <button
+                  mat-stroked-button
+                  type="button"
+                  (click)="searchNpsCatalog()"
+                  [disabled]="catalogSearching()"
+                >
+                  <mat-icon aria-hidden="true">search</mat-icon>
+                  {{ catalogSearching() ? 'Searching…' : 'Find scheme' }}
+                </button>
+                @if (npsResults().length) {
+                  <div
+                    class="catalog-results instrument-results"
+                    aria-label="NPS scheme search results"
+                  >
+                    @for (result of npsResults(); track result.schemeCode) {
+                      <button
+                        type="button"
+                        (click)="selectNpsScheme(result)"
+                        [disabled]="hasNpsHolding(result.schemeCode)"
+                      >
+                        <strong>{{ result.schemeName }}</strong>
+                        <span>
+                          {{ result.pfmName }} • {{ result.schemeCode }} • {{ result.channel }}
+                          @if (result.tier) {
+                            • Tier {{ result.tier }}
+                          }
+                        </span>
+                      </button>
+                    }
+                  </div>
+                }
+              </div>
+
+              @if (!npsHoldings().length) {
+                <p class="selection-note">Find and select every scheme shown on your statement.</p>
+              } @else {
+                <div class="nps-holdings" aria-label="Selected NPS scheme holdings">
+                  @for (holding of npsHoldings(); track holding.schemeCode) {
+                    <article class="nps-holding">
+                      <header>
+                        <div>
+                          <strong>{{ holding.schemeName }}</strong>
+                          <span>
+                            {{ holding.pfmName }} • {{ holding.schemeCode }} •
+                            {{ holding.channel }}
+                          </span>
+                        </div>
+                        <button
+                          mat-icon-button
+                          type="button"
+                          (click)="removeNpsHolding(holding.schemeCode)"
+                          [attr.aria-label]="'Remove ' + holding.schemeName"
+                        >
+                          <mat-icon aria-hidden="true">close</mat-icon>
+                        </button>
+                      </header>
+                      <div class="nps-holding-values">
+                        <div class="nps-input-fields">
+                          <mat-form-field appearance="outline">
+                            <mat-label>Total units</mat-label>
+                            <input
+                              matInput
+                              type="number"
+                              min="0"
+                              step="any"
+                              required
+                              [value]="holding.units"
+                              [attr.aria-label]="'Total units for ' + holding.schemeName"
+                              (input)="updateNpsUnits(holding.schemeCode, $event)"
+                            />
+                          </mat-form-field>
+                          <mat-form-field appearance="outline">
+                            <mat-label>Contribution percentage</mat-label>
+                            <input
+                              matInput
+                              type="number"
+                              min="0"
+                              max="100"
+                              step="any"
+                              required
+                              [value]="holding.allocationPercentage"
+                              [attr.aria-label]="
+                                'Contribution percentage for ' + holding.schemeName
+                              "
+                              (input)="updateNpsAllocationPercentage(holding.schemeCode, $event)"
+                            />
+                            <span matTextSuffix>%</span>
+                            <!-- <mat-hint>Used only to split recurring investments.</mat-hint> -->
+                          </mat-form-field>
+                        </div>
+                        <dl class="nps-holding-metrics">
+                          <div>
+                            <dt>Latest NAV</dt>
+                            <dd>
+                              @if (npsNav(holding); as nav) {
+                                {{ nav | currency: 'INR' : 'symbol' : '1.2-4' : 'en-IN' }}
+                              } @else {
+                                Not available
+                              }
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>Current value (units &times; NAV)</dt>
+                            <dd>
+                              {{
+                                npsHoldingValue(holding)
+                                  | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN'
+                              }}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>NAV date</dt>
+                            <dd>
+                              @if (npsNavDate(holding); as navDate) {
+                                {{ navDate | date: 'mediumDate' }}
+                              } @else {
+                                Not available
+                              }
+                            </dd>
+                          </div>
+                        </dl>
+                      </div>
+                    </article>
+                  }
+                  <p
+                    class="nps-allocation-total"
+                    [class.complete]="npsAllocationComplete()"
+                    role="status"
+                  >
+                    Allocation total: {{ npsAllocationTotal() | number: '1.0-4' }}% of 100%
+                  </p>
+                  <p class="nps-allocation-hint">
+                    This split does not affect current scheme values. Values always use total units
+                    &times; latest NAV.
+                  </p>
+                </div>
+              }
+            </section>
           }
           @case ('SSY') {
             <mat-form-field appearance="outline">
@@ -294,7 +436,16 @@ const TYPE_LABELS: Record<InvestmentType, string> = {
             </mat-form-field>
             <mat-form-field appearance="outline">
               <mat-label>Current value / balance</mat-label>
-              <input matInput type="number" min="0" formControlName="currentValue" />
+              <input
+                matInput
+                type="number"
+                min="0"
+                formControlName="currentValue"
+                [readonly]="form.controls.type.value === 'NPS'"
+              />
+              @if (form.controls.type.value === 'NPS') {
+                <mat-hint>Calculated from selected units and latest NPS Trust NAVs.</mat-hint>
+              }
             </mat-form-field>
             @if (form.controls.type.value === 'STOCK') {
               <mat-form-field appearance="outline">
@@ -507,6 +658,96 @@ const TYPE_LABELS: Record<InvestmentType, string> = {
         color: #667085;
         font-size: 0.82rem;
       }
+      .nps-scheme-section,
+      .nps-holdings {
+        display: grid;
+        gap: 12px;
+      }
+      .nps-scheme-section {
+        padding: 16px;
+        border: 1px solid #e1e7ef;
+        border-radius: 16px;
+      }
+      .nps-scheme-section h3,
+      .nps-scheme-section p,
+      .nps-holding dl,
+      .nps-holding dd {
+        margin: 0;
+      }
+      .nps-scheme-section > div:first-child p,
+      .nps-holding span,
+      .nps-holding dt {
+        color: #667085;
+        font-size: 0.76rem;
+      }
+      .nps-holding {
+        display: grid;
+        gap: 12px;
+        padding: 14px;
+        border: 1px solid #dfe5ee;
+        border-radius: 12px;
+        background: #fbfcfe;
+      }
+      .nps-holding header {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        justify-content: space-between;
+      }
+      .nps-holding header > div {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+      .nps-holding-values {
+        display: grid;
+        gap: 10px;
+      }
+      .nps-input-fields {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 240px));
+        gap: 10px;
+      }
+      .nps-holding-metrics {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .nps-holding-metrics div {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+        padding: 10px;
+        border: 1px solid #e4e9f1;
+        border-radius: 10px;
+        background: #fff;
+      }
+      .nps-holding dd {
+        color: #344054;
+        font-size: 0.84rem;
+        font-weight: 650;
+        overflow-wrap: anywhere;
+      }
+      .nps-allocation-total {
+        margin: 0;
+        padding: 10px 12px;
+        border: 1px solid #f5c2c7;
+        border-radius: 10px;
+        background: #fff5f5;
+        color: #b42318;
+        font-size: 0.82rem;
+        font-weight: 700;
+      }
+      .nps-allocation-total.complete {
+        border-color: #a7e2c3;
+        background: #effbf4;
+        color: #047857;
+      }
+      .nps-allocation-hint {
+        margin: -4px 0 0 !important;
+        color: #667085;
+        font-size: 0.76rem;
+      }
       @media (max-width: 700px) {
         .type-picker {
           grid-template-columns: repeat(2, 1fr);
@@ -514,8 +755,16 @@ const TYPE_LABELS: Record<InvestmentType, string> = {
         .form-grid {
           grid-template-columns: 1fr;
         }
+        .nps-input-fields {
+          grid-template-columns: 1fr;
+        }
         .wide {
           grid-column: auto;
+        }
+      }
+      @media (max-width: 480px) {
+        .nps-holding-metrics {
+          grid-template-columns: 1fr;
         }
       }
     `,
@@ -533,6 +782,25 @@ export class InvestmentAccountDialog {
   readonly catalogSearching = signal(false);
   readonly stockResults = signal<StockSearchResult[]>([]);
   readonly fundResults = signal<MutualFundSearchResult[]>([]);
+  readonly npsResults = signal<NpsSearchResult[]>([]);
+  readonly npsHoldings = signal<NpsHoldingDraft[]>([]);
+  readonly npsAllocationTotal = computed(() =>
+    this.npsHoldings()
+      .reduce(
+        (total, holding) => total.plus(holding.allocationPercentage || 0),
+        investmentDecimal(0),
+      )
+      .toDecimalPlaces(4)
+      .toNumber(),
+  );
+  readonly npsAllocationComplete = computed(() => {
+    const holdings = this.npsHoldings();
+    return (
+      holdings.length > 0 &&
+      holdings.every((holding) => Number(holding.allocationPercentage) > 0) &&
+      investmentDecimal(this.npsAllocationTotal()).eq(100)
+    );
+  });
   private catalogRequestId = 0;
   readonly separatorKeysCodes = [ENTER, COMMA] as const;
   readonly types: InvestmentType[] = ['STOCK', 'MUTUAL_FUND', 'NPS', 'PPF', 'SSY'];
@@ -547,8 +815,6 @@ export class InvestmentAccountDialog {
     schemeCode: [''],
     plan: [''],
     option: [''],
-    pfmName: [''],
-    npsHoldings: [''],
     beneficiaryName: [''],
     asOfDate: [this.today],
     investedAmount: ['0'],
@@ -565,6 +831,7 @@ export class InvestmentAccountDialog {
     stepUpMonth: [this.today.slice(0, 7)],
   });
   readonly institutionInput = this.fb.control('');
+  readonly npsSearchInput = this.fb.control('');
   private readonly selectedType = toSignal(this.form.controls.type.valueChanges, {
     initialValue: this.form.controls.type.value,
   });
@@ -634,6 +901,9 @@ export class InvestmentAccountDialog {
     this.institutionInput.reset();
     this.stockResults.set([]);
     this.fundResults.set([]);
+    this.npsResults.set([]);
+    this.npsHoldings.set([]);
+    this.npsSearchInput.reset();
     this.catalogSearching.set(false);
     this.error.set('');
   }
@@ -669,6 +939,117 @@ export class InvestmentAccountDialog {
     } finally {
       if (requestId === this.catalogRequestId) this.catalogSearching.set(false);
     }
+  }
+
+  async searchNpsCatalog(): Promise<void> {
+    const query = this.npsSearchInput.value.trim();
+    if (query.length < 2) {
+      this.error.set('Enter at least two characters from the NPS scheme name or ID.');
+      return;
+    }
+    const requestId = ++this.catalogRequestId;
+    this.catalogSearching.set(true);
+    this.error.set('');
+    try {
+      const results = await this.investments.searchNps(query);
+      if (requestId === this.catalogRequestId && this.form.controls.type.value === 'NPS')
+        this.npsResults.set(results);
+    } catch {
+      if (requestId === this.catalogRequestId)
+        this.error.set('NPS scheme search is temporarily unavailable. Try again.');
+    } finally {
+      if (requestId === this.catalogRequestId) this.catalogSearching.set(false);
+    }
+  }
+
+  hasNpsHolding(schemeCode: string): boolean {
+    return this.npsHoldings().some((holding) => holding.schemeCode === schemeCode);
+  }
+
+  selectNpsScheme(result: NpsSearchResult): void {
+    if (this.hasNpsHolding(result.schemeCode)) return;
+    const selectedTier = this.npsHoldings().find((holding) => holding.tier)?.tier;
+    if (selectedTier && result.tier && result.tier !== selectedTier) {
+      this.error.set(
+        `This is a Tier ${result.tier} scheme. This account already contains Tier ${selectedTier} schemes.`,
+      );
+      return;
+    }
+    this.npsHoldings.update((holdings) => [
+      ...holdings,
+      {
+        ...result,
+        allocationPercentage: holdings.length ? '' : '100',
+        units: '',
+      },
+    ]);
+    this.npsResults.set([]);
+    this.npsSearchInput.reset();
+    this.error.set('');
+    this.syncNpsSnapshot();
+  }
+
+  updateNpsUnits(schemeCode: string, event: Event): void {
+    this.setNpsUnits(schemeCode, (event.target as HTMLInputElement).value);
+  }
+
+  updateNpsAllocationPercentage(schemeCode: string, event: Event): void {
+    this.setNpsAllocationPercentage(schemeCode, (event.target as HTMLInputElement).value);
+  }
+
+  setNpsAllocationPercentage(schemeCode: string, allocationPercentage: string): void {
+    this.npsHoldings.update((holdings) =>
+      holdings.map((holding) =>
+        holding.schemeCode === schemeCode ? { ...holding, allocationPercentage } : holding,
+      ),
+    );
+  }
+
+  setNpsUnits(schemeCode: string, units: string): void {
+    this.npsHoldings.update((holdings) =>
+      holdings.map((holding) =>
+        holding.schemeCode === schemeCode ? { ...holding, units } : holding,
+      ),
+    );
+    this.syncNpsSnapshot();
+  }
+
+  removeNpsHolding(schemeCode: string): void {
+    this.npsHoldings.update((holdings) =>
+      holdings.filter((holding) => holding.schemeCode !== schemeCode),
+    );
+    this.syncNpsSnapshot();
+  }
+
+  npsHoldingValue(holding: NpsHoldingDraft): number {
+    const nav = this.npsNav(holding);
+    const units = Number(holding.units);
+    if (nav === null || !Number.isFinite(units) || units <= 0) return 0;
+    return investmentDecimal(holding.units).mul(nav).toNumber();
+  }
+
+  npsNav(holding: NpsHoldingDraft): number | null {
+    const nav = Number(holding.nav);
+    return Number.isFinite(nav) && nav > 0 ? nav : null;
+  }
+
+  npsNavDate(holding: NpsHoldingDraft): string | null {
+    return /^\d{4}-\d{2}-\d{2}$/.test(holding.navDate) ? holding.navDate : null;
+  }
+
+  private syncNpsSnapshot(): void {
+    const holdings = this.npsHoldings();
+    const value = holdings.reduce(
+      (total, holding) => total.plus(this.npsHoldingValue(holding)),
+      investmentDecimal(0),
+    );
+    this.form.controls.currentValue.setValue(value.toDecimalPlaces(2).toString());
+    const latestNavDate = holdings
+      .map((holding) => holding.navDate)
+      .sort()
+      .at(-1);
+    if (latestNavDate && latestNavDate <= this.today)
+      this.form.controls.asOfDate.setValue(latestNavDate);
   }
 
   selectStock(result: StockSearchResult): void {
@@ -736,6 +1117,22 @@ export class InvestmentAccountDialog {
       this.error.set('Find and select a mutual fund scheme before adding the investment.');
       return;
     }
+    if (this.form.controls.type.value === 'NPS') {
+      if (!this.npsHoldings().length) {
+        this.error.set('Find and select at least one NPS scheme before adding the investment.');
+        return;
+      }
+      if (this.npsHoldings().some((holding) => Number(holding.units) <= 0)) {
+        this.error.set('Enter total units greater than zero for every selected NPS scheme.');
+        return;
+      }
+      if (!this.npsAllocationComplete()) {
+        this.error.set(
+          'Enter an allocation greater than zero for every NPS scheme. The total must be exactly 100%.',
+        );
+        return;
+      }
+    }
     this.saving.set(true);
     this.error.set('');
     try {
@@ -760,24 +1157,22 @@ export class InvestmentAccountDialog {
           option: v.option,
           provider: 'AMFI',
         };
-      if (v.type === 'NPS' && v.schemeCode.trim()) {
-        const additional = v.npsHoldings.split(/\r?\n/).flatMap((line) => {
-          const [schemeCode, units, pfmName] = line.split(',').map((part) => part.trim());
-          return schemeCode && Number(units) > 0
-            ? [{ schemeCode, units, pfmName: pfmName || undefined }]
-            : [];
-        });
+      if (v.type === 'NPS') {
         instrument = {
           kind: 'NPS',
           provider: 'NPS_TRUST',
-          schemeHoldings: [
-            {
-              schemeCode: v.schemeCode.trim(),
-              pfmName: v.pfmName.trim() || undefined,
-              units: v.openingUnits || '0',
-            },
-            ...additional,
-          ],
+          schemeHoldings: this.npsHoldings().map((holding) => ({
+            schemeCode: holding.schemeCode,
+            schemeName: holding.schemeName,
+            pfmName: holding.pfmName,
+            assetClass: holding.assetClass,
+            tier: holding.tier,
+            channel: holding.channel,
+            allocationPercentage: holding.allocationPercentage,
+            units: holding.units,
+            nav: holding.nav,
+            navDate: holding.navDate,
+          })),
         };
       }
       if (v.type === 'PPF' || v.type === 'SSY')

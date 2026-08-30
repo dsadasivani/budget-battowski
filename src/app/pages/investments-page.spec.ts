@@ -10,6 +10,7 @@ import { InvestmentRepository } from '../data/investment.repository';
 import {
   InvestmentStore,
   type MutualFundSearchResult,
+  type NpsSearchResult,
   type StockSearchResult,
 } from '../stores/investment.store';
 
@@ -277,6 +278,114 @@ describe('InvestmentAccountDialog', () => {
     dialog.removeInstitution();
     dialog.institutionInput.setValue('dhan');
     expect(dialog.institutionOptions()).toEqual(['Dhan']);
+  });
+
+  it('searches, selects, and saves official NPS scheme holdings', async () => {
+    const scheme: NpsSearchResult = {
+      schemeCode: 'SM007001',
+      schemeName: 'ICICI PRUDENTIAL PENSION FUND SCHEME E - TIER I',
+      pfmName: 'ICICI Prudential Pension Fund Management Co. Ltd.',
+      nav: '75.2029',
+      navDate: '2026-08-28',
+      tier: 'I',
+      assetClass: 'E',
+      channel: 'POP',
+    };
+    const searchNps = vi.fn(async () => [scheme]);
+    const addInvestment = vi.fn(async () => ({ id: 'investment-1' }));
+    const close = vi.fn();
+    await TestBed.configureTestingModule({
+      imports: [InvestmentAccountDialog],
+      providers: [
+        provideNoopAnimations(),
+        { provide: MatDialogRef, useValue: { close } },
+        {
+          provide: InvestmentStore,
+          useValue: {
+            accounts: signal([]),
+            addInvestment,
+            searchStocks: vi.fn(),
+            searchMutualFunds: vi.fn(),
+            searchNps,
+          },
+        },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(InvestmentAccountDialog);
+    const dialog = fixture.componentInstance;
+    dialog.selectType('NPS');
+    dialog.form.controls.name.setValue('My NPS Tier I');
+    dialog.npsSearchInput.setValue('ICICI scheme E Tier I POP');
+
+    await dialog.searchNpsCatalog();
+    fixture.detectChanges();
+
+    expect(searchNps).toHaveBeenCalledWith('ICICI scheme E Tier I POP');
+    expect(fixture.nativeElement.querySelector('.nps-search-row .catalog-results')).not.toBeNull();
+
+    dialog.selectNpsScheme(scheme);
+    dialog.selectNpsScheme({
+      ...scheme,
+      schemeCode: 'SM007004',
+      schemeName: 'ICICI PRUDENTIAL PENSION FUND SCHEME E - TIER II',
+      tier: 'II',
+    });
+    expect(dialog.npsHoldings()).toHaveLength(1);
+    expect(dialog.error()).toContain('already contains Tier I schemes');
+    dialog.setNpsUnits(scheme.schemeCode, '10');
+    fixture.detectChanges();
+
+    expect(dialog.npsAllocationTotal()).toBe(100);
+    expect(dialog.npsAllocationComplete()).toBe(true);
+    expect(dialog.form.controls.currentValue.value).toBe('752.03');
+    expect(fixture.nativeElement.querySelector('.nps-holding')?.textContent).toContain(
+      scheme.schemeCode,
+    );
+    const metrics = fixture.nativeElement.querySelector('.nps-holding-metrics')?.textContent;
+    expect(metrics).toContain('₹75.2029');
+    expect(metrics).toContain('₹752');
+    expect(metrics).toContain('Aug 28, 2026');
+
+    const valueBeforeAllocationChange = dialog.form.controls.currentValue.value;
+    dialog.setNpsAllocationPercentage(scheme.schemeCode, '99');
+    expect(dialog.form.controls.currentValue.value).toBe(valueBeforeAllocationChange);
+    await dialog.save();
+    expect(dialog.error()).toContain('exactly 100%');
+    expect(addInvestment).not.toHaveBeenCalled();
+
+    dialog.setNpsAllocationPercentage(scheme.schemeCode, '100');
+    await dialog.save();
+
+    expect(addInvestment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'My NPS Tier I',
+        type: 'NPS',
+        instrument: {
+          kind: 'NPS',
+          provider: 'NPS_TRUST',
+          schemeHoldings: [
+            {
+              schemeCode: scheme.schemeCode,
+              schemeName: scheme.schemeName,
+              pfmName: scheme.pfmName,
+              assetClass: 'E',
+              tier: 'I',
+              channel: 'POP',
+              allocationPercentage: '100',
+              units: '10',
+              nav: scheme.nav,
+              navDate: scheme.navDate,
+            },
+          ],
+        },
+        openingSnapshot: expect.objectContaining({
+          asOfDate: scheme.navDate,
+          currentValue: '752.03',
+        }),
+      }),
+    );
+    expect(close).toHaveBeenCalledWith({ id: 'investment-1' });
   });
 
   it('renders through the Material dialog overlay', async () => {

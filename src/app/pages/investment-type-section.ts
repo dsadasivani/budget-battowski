@@ -732,7 +732,11 @@ export class InvestmentTypeSection {
     }
     if (instrument?.kind === 'NPS') {
       const schemes = instrument.schemeHoldings.length;
-      return [account.institution, `${schemes} ${schemes === 1 ? 'scheme' : 'schemes'}`]
+      return [
+        instrument.cra ?? account.institution,
+        this.npsAccountTypeLabel(instrument.accountType),
+        `${schemes} ${schemes === 1 ? 'scheme' : 'schemes'}`,
+      ]
         .filter(Boolean)
         .join(' · ');
     }
@@ -750,5 +754,17 @@ export class InvestmentTypeSection {
         : value === 'YEARLY'
           ? 'year'
           : 'month';
+  }
+
+  private npsAccountTypeLabel(value: string | undefined): string | undefined {
+    return value === 'TIER_I'
+      ? 'Tier I'
+      : value === 'TIER_I_MSF'
+        ? 'Tier I MSF'
+        : value === 'TIER_II'
+          ? 'Tier II'
+          : value === 'TIER_II_TAX_SAVER'
+            ? 'Tier II Tax Saver'
+            : undefined;
   }
 }

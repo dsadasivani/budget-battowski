@@ -2,7 +2,6 @@ import { Injectable } from '@angular/core';
 import type { FirebaseApp } from 'firebase/app';
 import {
   collection,
-  deleteDoc,
   doc,
   getFirestore,
   onSnapshot,
@@ -112,9 +111,15 @@ export class InvestmentRepository {
     await batch.commit();
   }
 
-  async deleteTransaction(transactionId: string): Promise<void> {
+  async deleteTransactionAndSummary(
+    transactionId: string,
+    account: InvestmentAccount,
+  ): Promise<void> {
     const [db, workspaceId] = this.context();
-    await deleteDoc(doc(db, WORKSPACES, workspaceId, TRANSACTIONS, transactionId));
+    const batch = writeBatch(db);
+    batch.delete(doc(db, WORKSPACES, workspaceId, TRANSACTIONS, transactionId));
+    batch.set(doc(db, WORKSPACES, workspaceId, ACCOUNTS, account.id), documentData(account));
+    await batch.commit();
   }
 
   async deleteAccountAndTransactions(

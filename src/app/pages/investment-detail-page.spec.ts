@@ -99,4 +99,164 @@ describe('InvestmentAccountDetailPage deletion', () => {
     expect(snackOpen).toHaveBeenCalledWith('Investment deleted.', 'Dismiss', { duration: 3500 });
     expect(navigate).toHaveBeenCalledWith(['/investments']);
   });
+
+  it('confirms and deletes a transaction without leaving the account page', async () => {
+    const deleteTransaction = vi.fn(async () => undefined);
+    const dialogOpen = vi.fn(() => ({ afterClosed: () => of(true) }));
+    const navigate = vi.fn(async () => true);
+    const snackOpen = vi.fn();
+
+    TestBed.configureTestingModule({
+      providers: [
+        {
+          provide: InvestmentStore,
+          useValue: {
+            accounts: signal([account]),
+            loading: signal(false),
+            transactionsFor: vi.fn(() => [transaction]),
+            deletingAccountId: signal(null),
+            deletingTransactionId: signal(null),
+            canDelete: vi.fn(() => true),
+            canDeleteTransaction: vi.fn(() => true),
+            deleteTransaction,
+            display: (value: string | undefined) => Number(value ?? 0),
+          },
+        },
+        { provide: BudgetStore, useValue: { showPageSkeleton: signal(false) } },
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: { get: () => account.id } } },
+        },
+        { provide: MatDialog, useValue: { open: dialogOpen } },
+        { provide: Router, useValue: { navigate } },
+        { provide: MatSnackBar, useValue: { open: snackOpen } },
+      ],
+    });
+    const page = TestBed.runInInjectionContext(() => new InvestmentAccountDetailPage());
+
+    await page.deleteTransaction(account, transaction);
+
+    expect(dialogOpen).toHaveBeenCalledWith(
+      expect.any(Function),
+      expect.objectContaining({
+        data: expect.objectContaining({
+          title: 'Delete contribution?',
+          confirmLabel: 'Delete transaction',
+        }),
+      }),
+    );
+    expect(deleteTransaction).toHaveBeenCalledWith(account, transaction);
+    expect(snackOpen).toHaveBeenCalledWith('Transaction deleted.', 'Dismiss', { duration: 3500 });
+    expect(navigate).not.toHaveBeenCalled();
+  });
+});
+
+describe('InvestmentAccountDetailPage NPS holdings', () => {
+  it('shows every scheme with its units, NAV, value, and recurring contribution split', async () => {
+    const npsAccount: InvestmentAccount = {
+      ...account,
+      id: 'nps-1',
+      name: 'My NPS',
+      type: 'NPS',
+      instrument: {
+        kind: 'NPS',
+        provider: 'NPS_TRUST',
+        schemeHoldings: [
+          {
+            schemeCode: 'SCHEME_E',
+            schemeName: 'Pension Fund Scheme E',
+            pfmName: 'Example Pension Fund',
+            assetClass: 'E',
+            tier: 'I',
+            channel: 'POP',
+            allocationPercentage: '75',
+            units: '100',
+            nav: '50',
+            navDate: '2026-08-29',
+          },
+          {
+            schemeCode: 'SCHEME_G',
+            schemeName: 'Pension Fund Scheme G',
+            pfmName: 'Example Pension Fund',
+            assetClass: 'G',
+            tier: 'I',
+            channel: 'POP',
+            allocationPercentage: '25',
+            units: '50',
+            nav: '25',
+            navDate: '2026-08-29',
+          },
+        ],
+      },
+      recurringPlan: {
+        enabled: true,
+        amount: '1000',
+        frequency: 'MONTHLY',
+        startDate: '2026-08-01',
+      },
+      summary: { ...account.summary, currentValue: '6250' },
+    };
+    const holdings =
+      npsAccount.instrument?.kind === 'NPS' ? npsAccount.instrument.schemeHoldings : [];
+
+    await TestBed.configureTestingModule({
+      imports: [InvestmentAccountDetailPage],
+      providers: [
+        {
+          provide: InvestmentStore,
+          useValue: {
+            accounts: signal([npsAccount]),
+            loading: signal(false),
+            transactionsFor: vi.fn(() => []),
+            deletingAccountId: signal(null),
+            deletingTransactionId: signal(null),
+            canDelete: vi.fn(() => true),
+            canDeleteTransaction: vi.fn(() => true),
+            display: (value: string | undefined) => Number(value ?? 0),
+            npsHoldingsFor: vi.fn(() => holdings),
+            npsHoldingValue: (holding: (typeof holdings)[number]) =>
+              (Number(holding.units) * Number(holding.nav ?? 0)).toString(),
+            recurringPlanDisplayAmount: vi.fn(() => '1000'),
+            recurringPlanIsUpcoming: vi.fn(() => false),
+          },
+        },
+        { provide: BudgetStore, useValue: { showPageSkeleton: signal(false) } },
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: { get: () => npsAccount.id } } },
+        },
+        { provide: MatDialog, useValue: { open: vi.fn() } },
+        { provide: Router, useValue: { navigate: vi.fn() } },
+        { provide: MatSnackBar, useValue: { open: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(InvestmentAccountDetailPage);
+    fixture.detectChanges();
+    const cards = fixture.nativeElement.querySelectorAll('.nps-scheme-card');
+    const text = fixture.nativeElement.textContent;
+    const schemeLayout = fixture.nativeElement.querySelector('.nps-scheme-grid');
+
+    expect(cards).toHaveLength(2);
+    expect(schemeLayout.classList.contains('list')).toBe(true);
+    expect(text).toContain('Pension Fund Scheme E');
+    expect(text).toContain('Pension Fund Scheme G');
+    expect(text).toContain('75%');
+    expect(text).toContain('25%');
+    expect(text).toContain('₹5,000');
+    expect(text).toContain('₹1,250');
+    expect(fixture.nativeElement.querySelector('.plan-allocations')?.textContent).toContain('₹750');
+
+    fixture.nativeElement
+      .querySelector('button[aria-label="Show NPS schemes in grid view"]')
+      .click();
+    fixture.detectChanges();
+
+    expect(schemeLayout.classList.contains('grid')).toBe(true);
+    expect(
+      fixture.nativeElement
+        .querySelector('button[aria-label="Show NPS schemes in grid view"]')
+        .getAttribute('aria-pressed'),
+    ).toBe('true');
+  });
 });

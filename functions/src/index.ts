@@ -21,8 +21,23 @@ function externalFetch(input: string | URL, init: RequestInit = {}): Promise<Res
 }
 
 type JsonMap = Record<string, unknown>;
+type NpsChannel = 'POP' | 'DIRECT' | 'GS';
+type NpsTier = 'I' | 'II';
+
+interface NpsCatalogItem {
+  schemeCode: string;
+  schemeName: string;
+  pfmName: string;
+  nav: string;
+  navDate: string;
+  tier?: NpsTier;
+  assetClass?: string;
+  channel: NpsChannel;
+}
+
 let upstoxInstrumentCache:
   { expiresAt: number; values: Array<Record<string, unknown>> } | undefined;
+let npsCatalogCache: { expiresAt: number; values: NpsCatalogItem[] } | undefined;
 
 async function upstoxInstruments(): Promise<Array<Record<string, unknown>>> {
   if (upstoxInstrumentCache && upstoxInstrumentCache.expiresAt > Date.now()) {
@@ -114,7 +129,7 @@ function parseAmfi(
   if (headerRow < 0) throw new Error('AMFI_INVALID_RESPONSE');
   const headers = lines[headerRow].split(';');
   const code = headerIndex(headers, ['scheme code']);
-  const nav = headerIndex(headers, ['net asset value', 'nav']);
+  const nav = headerIndex(headers, ['net asset value', 'nav value', 'nav']);
   const date = headerIndex(headers, ['date']);
   if ([code, nav, date].some((index) => index < 0)) throw new Error('AMFI_INVALID_RESPONSE');
   return Object.fromEntries(
@@ -127,10 +142,23 @@ function parseAmfi(
   );
 }
 
-function parseNpsRows(
-  rows: unknown[][],
-  wanted: Set<string>,
-): Record<string, { nav: string; date: string }> {
+function npsChannel(schemeName: string): NpsChannel {
+  const normalized = normalizedHeader(schemeName);
+  if (normalized.endsWith(' direct')) return 'DIRECT';
+  if (normalized.endsWith(' gs')) return 'GS';
+  return 'POP';
+}
+
+function npsTier(schemeName: string): NpsTier | undefined {
+  const match = /\btier\s+(ii|i)\b/i.exec(schemeName);
+  return match?.[1].toUpperCase() as NpsTier | undefined;
+}
+
+function npsAssetClass(schemeName: string): string | undefined {
+  return /\bscheme\s+([ecga])\b/i.exec(schemeName)?.[1].toUpperCase();
+}
+
+function parseNpsRows(rows: unknown[][]): NpsCatalogItem[] {
   const headerRow = rows.findIndex(
     (row) =>
       row.some((cell) => normalizedHeader(cell).includes('scheme')) &&
@@ -139,18 +167,104 @@ function parseNpsRows(
   if (headerRow < 0) throw new Error('NPS_INVALID_RESPONSE');
   const headers = rows[headerRow];
   const code = headerIndex(headers, ['scheme code', 'scheme id']);
-  const nav = headerIndex(headers, ['net asset value', 'nav']);
+  const name = headerIndex(headers, ['scheme name', 'name']);
+  const pfm = headerIndex(headers, ['pfm name', 'pfm', 'pension fund']);
+  const nav = headerIndex(headers, ['net asset value', 'nav value', 'nav']);
   const date = headerIndex(headers, ['nav date', 'date']);
-  if ([code, nav, date].some((index) => index < 0)) throw new Error('NPS_INVALID_RESPONSE');
-  return Object.fromEntries(
-    rows.slice(headerRow + 1).flatMap((row) => {
-      const schemeCode = String(row[code] ?? '').trim();
-      const value = String(row[nav] ?? '').trim();
-      return wanted.has(schemeCode) && Number(value) > 0
-        ? [[schemeCode, { nav: value, date: isoDate(row[date]) }]]
-        : [];
-    }),
-  );
+  if ([code, name, pfm, nav, date].some((index) => index < 0))
+    throw new Error('NPS_INVALID_RESPONSE');
+
+  const values = new Map<string, NpsCatalogItem>();
+  for (const row of rows.slice(headerRow + 1)) {
+    const schemeCode = String(row[code] ?? '').trim();
+    const schemeName = String(row[name] ?? '').trim();
+    const pfmName = String(row[pfm] ?? '').trim();
+    const value = String(row[nav] ?? '').trim();
+    const numericValue = Number(value);
+    const navDate = isoDate(row[date]);
+    if (
+      !schemeCode ||
+      !schemeName ||
+      !pfmName ||
+      !Number.isFinite(numericValue) ||
+      numericValue <= 0 ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(navDate)
+    )
+      continue;
+    values.set(schemeCode, {
+      schemeCode,
+      schemeName,
+      pfmName,
+      nav: value,
+      navDate,
+      tier: npsTier(schemeName),
+      assetClass: npsAssetClass(schemeName),
+      channel: npsChannel(schemeName),
+    });
+  }
+  if (!values.size) throw new Error('NPS_INVALID_RESPONSE');
+  return [...values.values()];
+}
+
+async function npsCatalog(): Promise<NpsCatalogItem[]> {
+  if (npsCatalogCache && npsCatalogCache.expiresAt > Date.now()) return npsCatalogCache.values;
+
+  const upstream = await externalFetch(NPS_NAV_URL);
+  if (!upstream.ok) throw new Error('NPS_UNAVAILABLE');
+  const bytes = Buffer.from(await upstream.arrayBuffer());
+  let rows: unknown[][];
+  try {
+    rows = (await readXlsxFile(bytes)) as unknown as unknown[][];
+  } catch {
+    const text = bytes.toString('utf8');
+    const delimiter = text.includes('\t') ? '\t' : text.includes(';') ? ';' : ',';
+    rows = text
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map((line) => line.split(delimiter));
+  }
+  const values = parseNpsRows(rows);
+  npsCatalogCache = { expiresAt: Date.now() + 6 * 60 * 60_000, values };
+  return values;
+}
+
+function npsSearchKey(value: string): string {
+  return normalizedHeader(value)
+    .replace(/\bnps trust a c\b/g, ' ')
+    .replace(/\bpop\b/g, ' ')
+    .replace(/\b(?:pension|fund|scheme)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function searchNpsCatalog(values: NpsCatalogItem[], query: string): NpsCatalogItem[] {
+  const normalizedQuery = normalizedHeader(query);
+  const searchQuery = npsSearchKey(query);
+  const queryTokens = searchQuery.split(' ').filter(Boolean);
+  const requestedChannel: NpsChannel | undefined = /\bdirect\b/.test(normalizedQuery)
+    ? 'DIRECT'
+    : /\bgs\b/.test(normalizedQuery)
+      ? 'GS'
+      : /\bpop\b/.test(normalizedQuery)
+        ? 'POP'
+        : undefined;
+
+  return values
+    .flatMap((item) => {
+      const key = npsSearchKey(`${item.pfmName} ${item.schemeName}`);
+      const codeMatch = item.schemeCode.toLowerCase() === query.trim().toLowerCase();
+      const allTokensMatch = queryTokens.every((token) => key.includes(token));
+      if (!codeMatch && (!queryTokens.length || !allTokensMatch)) return [];
+      const channelPenalty = requestedChannel && requestedChannel !== item.channel ? 10 : 0;
+      const score = codeMatch ? 0 : key === searchQuery ? 1 : key.startsWith(searchQuery) ? 2 : 3;
+      return [{ item, score: score + channelPenalty }];
+    })
+    .sort(
+      (left, right) =>
+        left.score - right.score || left.item.schemeName.localeCompare(right.item.schemeName),
+    )
+    .slice(0, 20)
+    .map(({ item }) => item);
 }
 
 async function stockQuotes(keys: string[]): Promise<JsonMap> {
@@ -249,21 +363,23 @@ export const investmentProvider = onRequest(
         const wanted = new Set<string>(
           Array.isArray(request.body?.schemeCodes) ? request.body.schemeCodes.map(String) : [],
         );
-        const upstream = await externalFetch(NPS_NAV_URL);
-        if (!upstream.ok) throw new Error('NPS_UNAVAILABLE');
-        const bytes = Buffer.from(await upstream.arrayBuffer());
-        let rows: unknown[][];
-        try {
-          rows = (await readXlsxFile(bytes)) as unknown as unknown[][];
-        } catch {
-          const text = bytes.toString('utf8');
-          const delimiter = text.includes('\t') ? '\t' : text.includes(';') ? ';' : ',';
-          rows = text
-            .split(/\r?\n/)
-            .filter(Boolean)
-            .map((line) => line.split(delimiter));
+        const values = await npsCatalog();
+        response.json({
+          navs: Object.fromEntries(
+            values
+              .filter((item) => wanted.has(item.schemeCode))
+              .map((item) => [item.schemeCode, { nav: item.nav, date: item.navDate }]),
+          ),
+        });
+        return;
+      }
+      if (action === 'nps-search') {
+        const query = String(request.body?.query ?? '').trim();
+        if (query.length < 2) {
+          response.json({ results: [] });
+          return;
         }
-        response.json({ navs: parseNpsRows(rows, wanted) });
+        response.json({ results: searchNpsCatalog(await npsCatalog(), query) });
         return;
       }
       response.status(400).json({ code: 'ACTION_UNSUPPORTED' });
