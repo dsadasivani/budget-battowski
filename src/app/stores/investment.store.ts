@@ -2,9 +2,15 @@ import { Injectable, OnDestroy, computed, effect, inject, signal } from '@angula
 import { getAuth } from 'firebase/auth';
 
 import { BudgetStore } from '../budget.store';
+import {
+  BUNDLED_GOVERNMENT_INTEREST_RATE_SET,
+  GovernmentInterestRateRepository,
+  type GovernmentInterestRateSet,
+} from '../data/government-interest-rate.repository';
 import { InvestmentRepository } from '../data/investment.repository';
 import { matchesMember, normalizeEmail } from '../domain/identity/identity';
 import { calculateGovernmentSavings } from '../domain/investments/government-savings-calculator';
+import { GovernmentInterestRateCoverageError } from '../domain/investments/government-interest-rates';
 import {
   calculateInvestmentSummary,
   availableHoldingOnDate,
@@ -116,8 +122,10 @@ function lastDateInMonth(selectedMonth: string): string {
 export class InvestmentStore implements OnDestroy {
   private readonly budget = inject(BudgetStore);
   private readonly repository = inject(InvestmentRepository);
+  private readonly governmentInterestRates = inject(GovernmentInterestRateRepository);
   private connectedWorkspace?: string;
   private migrationAttempted = new Set<string>();
+  private governmentRateSet: GovernmentInterestRateSet = BUNDLED_GOVERNMENT_INTEREST_RATE_SET;
 
   readonly accounts = signal<InvestmentAccount[]>([]);
   readonly transactions = signal<InvestmentTransaction[]>([]);
@@ -677,32 +685,60 @@ export class InvestmentStore implements OnDestroy {
       (item): item is InvestmentAccount & { type: 'PPF' | 'SSY' } =>
         item.type === 'PPF' || item.type === 'SSY',
     );
+    this.governmentRateSet = await this.governmentInterestRates.load(this.budget.firebase.app);
     const writes: InvestmentAccount[] = [];
+    let updated = 0;
+    let failed = 0;
     for (const account of savings) {
-      if (!account.openingSnapshot) continue;
-      const valuation = calculateGovernmentSavings(
-        account.type,
-        account.openingSnapshot,
-        this.transactionsFor(account.id),
-        today(),
-      );
-      const summary = calculateInvestmentSummary(account, this.transactionsFor(account.id), {
-        currentValue: valuation.currentValue,
-        valuationDate: valuation.valuationDate,
-        lastRefreshedAt: now(),
-      });
-      writes.push({
-        ...account,
-        summary: { ...summary, valuationSource: 'INTERNAL', refreshStatus: 'CURRENT' },
-        updatedDate: now(),
-      });
+      if (!account.openingSnapshot) {
+        failed++;
+        continue;
+      }
+      try {
+        const valuation = calculateGovernmentSavings(
+          account.type,
+          account.openingSnapshot,
+          this.transactionsFor(account.id),
+          today(),
+          this.governmentRateSet.rates,
+        );
+        const summary = calculateInvestmentSummary(account, this.transactionsFor(account.id), {
+          currentValue: valuation.currentValue,
+          valuationDate: valuation.valuationDate,
+          lastRefreshedAt: now(),
+        });
+        writes.push({
+          ...account,
+          summary: {
+            ...summary,
+            valuationSource: 'INTERNAL',
+            refreshStatus: 'CURRENT',
+            appliedGovernmentRate: {
+              ...valuation.appliedRate,
+              configurationSource: this.governmentRateSet.source,
+            },
+          },
+          updatedDate: now(),
+        });
+        updated++;
+      } catch (error: unknown) {
+        if (!(error instanceof GovernmentInterestRateCoverageError)) throw error;
+        const { appliedGovernmentRate: _rate, ...previousSummary } = account.summary;
+        writes.push({
+          ...account,
+          summary: { ...previousSummary, refreshStatus: 'STALE' },
+          updatedDate: now(),
+        });
+        failed++;
+      }
     }
     await this.repository.saveAccounts(writes);
     return {
       provider: 'INTERNAL',
-      success: writes.length === savings.length,
-      updatedCount: writes.length,
-      failedCount: savings.length - writes.length,
+      success: failed === 0,
+      updatedCount: updated,
+      failedCount: failed,
+      errorCode: failed ? 'RATE_NOT_VERIFIED' : undefined,
     };
   }
 
@@ -837,11 +873,19 @@ export class InvestmentStore implements OnDestroy {
         account.openingSnapshot,
         transactions,
         today(),
+        this.governmentRateSet.rates,
       );
       summary = calculateInvestmentSummary(account, transactions, {
         currentValue: valuation.currentValue,
         valuationDate: valuation.valuationDate,
       });
+      summary = {
+        ...summary,
+        appliedGovernmentRate: {
+          ...valuation.appliedRate,
+          configurationSource: this.governmentRateSet.source,
+        },
+      };
     } else {
       summary = calculateInvestmentSummary(account, transactions);
     }

@@ -203,6 +203,36 @@ test('investment V2 accounts and transactions stay workspace scoped and owner li
   );
 });
 
+test('government savings rates are centrally readable and client writes are forbidden', async () => {
+  await testEnvironment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'investmentConfiguration', 'governmentSavingsRates'), {
+      schemaVersion: 1,
+      rates: [],
+      updatedAt: '2026-08-30T00:00:00.000Z',
+    });
+  });
+  const ownerDb = authenticatedDatabase(ownerEmail);
+  const publicRateRef = doc(ownerDb, 'investmentConfiguration', 'governmentSavingsRates');
+
+  await assertSucceeds(getDoc(publicRateRef));
+  await assertFails(
+    getDoc(
+      doc(
+        testEnvironment.unauthenticatedContext().firestore(),
+        'investmentConfiguration',
+        'governmentSavingsRates',
+      ),
+    ),
+  );
+  await assertFails(
+    setDoc(publicRateRef, {
+      schemaVersion: 1,
+      rates: [],
+      updatedAt: '2026-09-01T00:00:00.000Z',
+    }),
+  );
+});
+
 test('payment modes can link only to an account with the same owner', async () => {
   const memberDb = authenticatedDatabase(memberEmail);
   await assertSucceeds(

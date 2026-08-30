@@ -22,8 +22,24 @@ function contribution(id: string, date: string, amount: string): InvestmentTrans
 
 describe('government savings calculation', () => {
   const rates: GovernmentInterestRate[] = [
-    { scheme: 'PPF', annualRate: '12', effectiveFrom: '2025-01-01' },
-    { scheme: 'SSY', annualRate: '12', effectiveFrom: '2025-01-01' },
+    {
+      scheme: 'PPF',
+      annualRate: '12',
+      effectiveFrom: '2025-01-01',
+      effectiveTo: '2027-12-31',
+      sourceUrl: 'https://example.gov.in/ppf-rates',
+      publishedDate: '2024-12-31',
+      verifiedAt: '2026-08-30T00:00:00.000Z',
+    },
+    {
+      scheme: 'SSY',
+      annualRate: '12',
+      effectiveFrom: '2025-01-01',
+      effectiveTo: '2027-12-31',
+      sourceUrl: 'https://example.gov.in/ssy-rates',
+      publishedDate: '2024-12-31',
+      verifiedAt: '2026-08-30T00:00:00.000Z',
+    },
   ];
   it('distinguishes deposits on and after the fifth-day cutoff', () => {
     expect(
@@ -48,6 +64,7 @@ describe('government savings calculation', () => {
 
     expect(result.currentValue).toBe(currentValue);
     expect(result.interestEarned).toBe('0');
+    expect(result.appliedRate).toMatchObject({ scheme, annualRate: '12' });
   });
 
   it('applies current-month transactions without crediting unposted interest', () => {

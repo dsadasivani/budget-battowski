@@ -1,26 +1,20 @@
 import Decimal from 'decimal.js';
 
 import { decimalString, investmentDecimal, moneyString } from './investment-decimal';
+import {
+  GOVERNMENT_INTEREST_RATES,
+  GovernmentInterestRateCoverageError,
+  governmentInterestRateFor,
+} from './government-interest-rates';
 import type {
+  GovernmentInterestRate,
   InvestmentOpeningSnapshot,
   InvestmentTransaction,
   InvestmentType,
 } from './investment.models';
 
-export interface GovernmentInterestRate {
-  scheme: 'PPF' | 'SSY';
-  annualRate: string;
-  effectiveFrom: string;
-  effectiveTo?: string;
-}
-
-// Versioned configuration. New official rate periods are appended; formulas stay unchanged.
-export const GOVERNMENT_INTEREST_RATES: readonly GovernmentInterestRate[] = [
-  { scheme: 'PPF', annualRate: '7.1', effectiveFrom: '2020-04-01' },
-  { scheme: 'SSY', annualRate: '7.6', effectiveFrom: '2020-04-01', effectiveTo: '2023-03-31' },
-  { scheme: 'SSY', annualRate: '8.0', effectiveFrom: '2023-04-01', effectiveTo: '2023-12-31' },
-  { scheme: 'SSY', annualRate: '8.2', effectiveFrom: '2024-01-01' },
-] as const;
+export { GOVERNMENT_INTEREST_RATES } from './government-interest-rates';
+export type { GovernmentInterestRate } from './investment.models';
 
 function endOfMonth(date: string): string {
   const [year, month] = date.split('-').map(Number);
@@ -39,15 +33,8 @@ function rateFor(
   date: string,
   rates: readonly GovernmentInterestRate[],
 ): Decimal {
-  const rate = rates
-    .filter(
-      (item) =>
-        item.scheme === scheme &&
-        item.effectiveFrom <= date &&
-        (!item.effectiveTo || item.effectiveTo >= date),
-    )
-    .at(-1);
-  if (!rate) throw new Error(`NO_${scheme}_RATE_FOR_DATE`);
+  const rate = governmentInterestRateFor(scheme, date, rates);
+  if (!rate) throw new GovernmentInterestRateCoverageError(scheme, date);
   return investmentDecimal(rate.annualRate);
 }
 
@@ -55,6 +42,7 @@ export interface GovernmentSavingsResult {
   currentValue: string;
   interestEarned: string;
   valuationDate: string;
+  appliedRate: GovernmentInterestRate;
 }
 
 export function calculateGovernmentSavings(
@@ -64,6 +52,8 @@ export function calculateGovernmentSavings(
   valuationDate: string,
   rates: readonly GovernmentInterestRate[] = GOVERNMENT_INTEREST_RATES,
 ): GovernmentSavingsResult {
+  const appliedRate = governmentInterestRateFor(scheme, valuationDate, rates);
+  if (!appliedRate) throw new GovernmentInterestRateCoverageError(scheme, valuationDate);
   let balance = investmentDecimal(opening.currentValue ?? opening.investedAmount);
   let pendingInterest = investmentDecimal(0);
   let creditedInterest = investmentDecimal(0);
@@ -109,6 +99,7 @@ export function calculateGovernmentSavings(
     currentValue: moneyString(balance),
     interestEarned: moneyString(creditedInterest),
     valuationDate,
+    appliedRate,
   };
 }
 

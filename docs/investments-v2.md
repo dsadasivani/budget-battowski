@@ -71,7 +71,31 @@ The NPS Trust adapter accepts actual Excel or tabular text despite MIME-type amb
 
 ### PPF and SSY
 
-PPF and SSY have separate scheme types with a shared versioned rate table. The calculator applies the lowest eligible balance from close of the fifth day through month end, accrues monthly interest, and credits at the financial-year boundary. It uses the opening balance as the baseline and actual contributions/withdrawals thereafter. Rate changes are data changes, not formula changes. Before a production release, append newly announced official rate periods to `GOVERNMENT_INTEREST_RATES`; refresh does not scrape government pages.
+PPF and SSY have separate scheme types with a shared versioned rate table. The calculator applies the lowest eligible balance from close of the fifth day through month end, accrues monthly interest, and credits at the financial-year boundary. It uses the opening balance as the baseline and actual contributions/withdrawals thereafter. Rate changes are data changes, not formula changes, and refresh never scrapes government pages.
+
+The app first reads the global Firestore document `investmentConfiguration/governmentSavingsRates`:
+
+```json
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-08-30T00:00:00.000Z",
+  "rates": [
+    {
+      "scheme": "PPF",
+      "annualRate": "7.1",
+      "effectiveFrom": "2026-07-01",
+      "effectiveTo": "2026-09-30",
+      "sourceUrl": "https://dea.gov.in/...",
+      "publishedDate": "2026-06-30",
+      "verifiedAt": "2026-08-30T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+Only authenticated clients may read this document. Client writes are denied; publish it through the Firebase console or a privileged Admin SDK process. Every period requires an explicit end date, an HTTPS official source, publication date, and verification timestamp. Periods for one scheme must not overlap.
+
+If the document is missing, invalid, or unavailable, refresh uses the bundled verified table. If the selected central table is valid but has no period covering the valuation date, the previous balance is retained and the account is marked `STALE` with `RATE_NOT_VERIFIED`; the last known rate is never extended into an unverified quarter. Before each quarter begins, publish its official periods centrally and update the bundled table before the next production release.
 
 ## Legacy migration
 

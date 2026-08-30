@@ -108,6 +108,11 @@ service cloud.firestore {
         request.resource.data.keys().hasOnly(['uid','onboarding','preferences','updatedDate','updatedAt']) &&
         request.resource.data.uid == uid;
     }
+    match /investmentConfiguration/governmentSavingsRates {
+      allow read: if signedIn();
+      // Published centrally with the Admin SDK or Firebase console; clients cannot alter rates.
+      allow write: if false;
+    }
     match /budgetWorkspaces/{workspaceId} {
       allow create: if signedIn() && workspaceSchema(request.resource.data) && request.resource.data.name is string &&
         request.resource.data.members is list &&

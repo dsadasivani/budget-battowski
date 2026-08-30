@@ -29,6 +29,7 @@ export interface InvestmentCalculationOptions {
     | 'valuationSource'
     | 'lastRefreshedAt'
     | 'refreshStatus'
+    | 'appliedGovernmentRate'
   >;
 }
 
@@ -138,6 +139,7 @@ export function calculateInvestmentSummary(
     valuationSource: prior.valuationSource,
     lastRefreshedAt: options.lastRefreshedAt ?? prior.lastRefreshedAt,
     refreshStatus: prior.refreshStatus ?? 'STALE',
+    appliedGovernmentRate: prior.appliedGovernmentRate,
   };
 }
 

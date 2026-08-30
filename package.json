@@ -18,6 +18,7 @@
     "deploy": "npm run build:prod && npx firebase-tools deploy --only hosting --project budget-battowski",
     "firebase:rules:qa": "npx firebase-tools deploy --only firestore:rules --project budget-battowski-qa",
     "firebase:rules": "npx firebase-tools deploy --only firestore:rules --project budget-battowski",
+    "government-rates:publish:qa": "node scripts/publish-government-rates.mjs budget-battowski-qa",
     "qa:seed": "node scripts/qa-seed.mjs",
     "qa:regression": "node scripts/qa-regression.mjs",
     "production:smoke": "node scripts/production-smoke.mjs",

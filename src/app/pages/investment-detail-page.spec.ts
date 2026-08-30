@@ -260,3 +260,70 @@ describe('InvestmentAccountDetailPage NPS holdings', () => {
     ).toBe('true');
   });
 });
+
+describe('InvestmentAccountDetailPage government rate details', () => {
+  it('shows the applied rate, verified period, configuration source, and official publication', async () => {
+    const ppfAccount: InvestmentAccount = {
+      ...account,
+      summary: {
+        ...account.summary,
+        valuationSource: 'INTERNAL',
+        refreshStatus: 'CURRENT',
+        valuationDate: '2026-08-30',
+        appliedGovernmentRate: {
+          scheme: 'PPF',
+          annualRate: '7.1',
+          effectiveFrom: '2026-07-01',
+          effectiveTo: '2026-09-30',
+          sourceUrl: 'https://example.gov.in/ppf-rate',
+          publishedDate: '2026-06-30',
+          verifiedAt: '2026-08-30T00:00:00.000Z',
+          configurationSource: 'FIRESTORE',
+        },
+      },
+    };
+
+    await TestBed.configureTestingModule({
+      imports: [InvestmentAccountDetailPage],
+      providers: [
+        {
+          provide: InvestmentStore,
+          useValue: {
+            accounts: signal([ppfAccount]),
+            loading: signal(false),
+            transactionsFor: vi.fn(() => []),
+            deletingAccountId: signal(null),
+            deletingTransactionId: signal(null),
+            canDelete: vi.fn(() => true),
+            canDeleteTransaction: vi.fn(() => true),
+            display: (value: string | undefined) => Number(value ?? 0),
+            npsHoldingsFor: vi.fn(() => []),
+            npsHoldingValue: vi.fn(() => '0'),
+            recurringPlanDisplayAmount: vi.fn(() => '0'),
+            recurringPlanIsUpcoming: vi.fn(() => false),
+          },
+        },
+        { provide: BudgetStore, useValue: { showPageSkeleton: signal(false) } },
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: { get: () => ppfAccount.id } } },
+        },
+        { provide: MatDialog, useValue: { open: vi.fn() } },
+        { provide: Router, useValue: { navigate: vi.fn() } },
+        { provide: MatSnackBar, useValue: { open: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(InvestmentAccountDetailPage);
+    fixture.detectChanges();
+    const text = fixture.nativeElement.textContent;
+    const source = fixture.nativeElement.querySelector('.account-details a');
+
+    expect(text).toContain('Current calculated value');
+    expect(text).toContain('7.1% p.a.');
+    expect(text).toContain('Jul 1, 2026');
+    expect(text).toContain('Sep 30, 2026');
+    expect(text).toContain('Central configuration');
+    expect(source.getAttribute('href')).toBe('https://example.gov.in/ppf-rate');
+  });
+});

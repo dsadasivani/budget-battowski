@@ -3,6 +3,10 @@ import { TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BudgetStore } from '../budget.store';
+import {
+  BUNDLED_GOVERNMENT_INTEREST_RATE_SET,
+  GovernmentInterestRateRepository,
+} from '../data/government-interest-rate.repository';
 import { InvestmentRepository } from '../data/investment.repository';
 import type {
   InvestmentAccount,
@@ -52,6 +56,8 @@ describe('InvestmentStore', () => {
     async (_transactionId: string, _account: InvestmentAccount) => undefined,
   );
   const saveAccount = vi.fn(async () => undefined);
+  const saveAccounts = vi.fn(async (_accounts: readonly InvestmentAccount[]) => undefined);
+  const loadGovernmentInterestRates = vi.fn(async () => BUNDLED_GOVERNMENT_INTEREST_RATE_SET);
   const selectedMonth = signal('2026-08');
   const selectedMemberEmail = signal('ALL');
   const activeMembers = signal([
@@ -88,7 +94,12 @@ describe('InvestmentStore', () => {
             deleteTransactionAndSummary,
             disconnect: vi.fn(),
             saveAccount,
+            saveAccounts,
           },
+        },
+        {
+          provide: GovernmentInterestRateRepository,
+          useValue: { load: loadGovernmentInterestRates },
         },
       ],
     });
@@ -235,6 +246,92 @@ describe('InvestmentStore', () => {
     ]);
 
     expect(store.effectiveRecurring(store.accounts()[0])).toBe('6000');
+  });
+
+  it('persists the verified applied government rate after refresh', async () => {
+    const governmentAccount: InvestmentAccount = {
+      ...account,
+      id: 'ppf-1',
+      name: 'PPF',
+      type: 'PPF',
+      openingSnapshot: {
+        asOfDate: '2026-08-30',
+        investedAmount: '360000',
+        currentValue: '434324',
+      },
+      summary: { ...account.summary, currentValue: '436894', refreshStatus: 'STALE' },
+    };
+    store.accounts.set([governmentAccount]);
+    store.transactions.set([]);
+
+    await store.refresh();
+
+    expect(saveAccounts).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: governmentAccount.id,
+        summary: expect.objectContaining({
+          currentValue: '434324',
+          refreshStatus: 'CURRENT',
+          appliedGovernmentRate: expect.objectContaining({
+            annualRate: '7.1',
+            effectiveFrom: '2026-07-01',
+            effectiveTo: '2026-09-30',
+            configurationSource: 'BUNDLED',
+          }),
+        }),
+      }),
+    ]);
+    expect(store.refreshResults()).toEqual([
+      { provider: 'INTERNAL', success: true, updatedCount: 1, failedCount: 0 },
+    ]);
+  });
+
+  it('marks a government valuation stale when central rates do not cover today', async () => {
+    loadGovernmentInterestRates.mockResolvedValueOnce({ rates: [], source: 'FIRESTORE' });
+    const governmentAccount: InvestmentAccount = {
+      ...account,
+      id: 'ssy-1',
+      name: 'SSY',
+      type: 'SSY',
+      openingSnapshot: {
+        asOfDate: '2026-08-30',
+        investedAmount: '184500',
+        currentValue: '192843',
+      },
+      summary: {
+        ...account.summary,
+        currentValue: '194161',
+        refreshStatus: 'CURRENT',
+        appliedGovernmentRate: {
+          ...BUNDLED_GOVERNMENT_INTEREST_RATE_SET.rates[5],
+          configurationSource: 'BUNDLED',
+        },
+      },
+    };
+    store.accounts.set([governmentAccount]);
+    store.transactions.set([]);
+
+    await store.refresh();
+
+    expect(saveAccounts).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: governmentAccount.id,
+        summary: expect.not.objectContaining({
+          appliedGovernmentRate: expect.anything(),
+          refreshStatus: 'CURRENT',
+        }),
+      }),
+    ]);
+    expect(saveAccounts.mock.calls.at(-1)?.[0]?.[0].summary.refreshStatus).toBe('STALE');
+    expect(store.refreshResults()).toEqual([
+      {
+        provider: 'INTERNAL',
+        success: false,
+        updatedCount: 0,
+        failedCount: 1,
+        errorCode: 'RATE_NOT_VERIFIED',
+      },
+    ]);
   });
 
   it('shows the configured amount for an upcoming plan and activates it within its start month', () => {

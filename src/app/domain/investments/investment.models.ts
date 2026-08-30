@@ -11,6 +11,22 @@ export type ValuationSource = 'UPSTOX' | 'AMFI' | 'NPS_TRUST' | 'INTERNAL' | 'MA
 export type RefreshStatus = 'CURRENT' | 'STALE' | 'FAILED';
 export type DecimalString = string;
 
+export interface GovernmentInterestRate {
+  scheme: 'PPF' | 'SSY';
+  annualRate: DecimalString;
+  effectiveFrom: string;
+  effectiveTo: string;
+  sourceUrl: string;
+  publishedDate: string;
+  verifiedAt: string;
+}
+
+export type GovernmentInterestRateSource = 'FIRESTORE' | 'BUNDLED';
+
+export interface AppliedGovernmentInterestRate extends GovernmentInterestRate {
+  configurationSource: GovernmentInterestRateSource;
+}
+
 export interface StockInstrument {
   kind: 'STOCK';
   isin?: string;
@@ -125,6 +141,7 @@ export interface InvestmentSummary {
   valuationSource?: ValuationSource;
   lastRefreshedAt?: string;
   refreshStatus?: RefreshStatus;
+  appliedGovernmentRate?: AppliedGovernmentInterestRate;
 }
 
 export interface InvestmentAccount extends OwnedRecord {
@@ -176,7 +193,7 @@ export interface ProviderRefreshResult {
   success: boolean;
   updatedCount: number;
   failedCount: number;
-  errorCode?: 'UNAVAILABLE' | 'INVALID_RESPONSE' | 'NOT_CONFIGURED';
+  errorCode?: 'UNAVAILABLE' | 'INVALID_RESPONSE' | 'NOT_CONFIGURED' | 'RATE_NOT_VERIFIED';
 }
 
 export const EMPTY_INVESTMENT_SUMMARY: InvestmentSummary = {

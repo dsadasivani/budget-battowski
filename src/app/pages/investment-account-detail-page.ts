@@ -501,6 +501,35 @@ import {
                       <dd>{{ item.summary.valuationDate | date: 'mediumDate' }}</dd>
                     </div>
                   }
+                  @if (item.summary.appliedGovernmentRate; as rate) {
+                    <div>
+                      <dt>Applied interest rate</dt>
+                      <dd>{{ rate.annualRate }}% p.a.</dd>
+                    </div>
+                    <div>
+                      <dt>Effective period</dt>
+                      <dd>
+                        {{ rate.effectiveFrom | date: 'mediumDate' }}–{{
+                          rate.effectiveTo | date: 'mediumDate'
+                        }}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Rate verification</dt>
+                      <dd>
+                        {{ rateConfigurationLabel(rate.configurationSource) }} ·
+                        {{ rate.verifiedAt | date: 'mediumDate' }}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Official source</dt>
+                      <dd>
+                        <a [href]="rate.sourceUrl" target="_blank" rel="noopener noreferrer">
+                          Published {{ rate.publishedDate | date: 'mediumDate' }}
+                        </a>
+                      </dd>
+                    </div>
+                  }
                   @if (item.openingSnapshot?.asOfDate) {
                     <div>
                       <dt>Opening snapshot</dt>
@@ -1214,6 +1243,18 @@ import {
       text-align: right;
     }
 
+    .account-details a {
+      color: #0f5f9e;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
+    }
+
+    .account-details a:focus-visible {
+      border-radius: 3px;
+      outline: 2px solid #0f5f9e;
+      outline-offset: 2px;
+    }
+
     .performance-panel dd:not(.negative) {
       color: #047857;
     }
@@ -1472,10 +1513,20 @@ export class InvestmentAccountDetailPage {
   }
 
   valuationStatus(account: InvestmentAccount): string {
+    if (
+      account.summary.refreshStatus === 'CURRENT' &&
+      account.summary.valuationSource === 'INTERNAL'
+    ) {
+      return 'Current calculated value';
+    }
     if (account.summary.refreshStatus === 'CURRENT') return 'Current provider value';
     if (account.summary.refreshStatus === 'FAILED') return 'Value refresh failed';
     if (account.summary.refreshStatus === 'STALE') return 'Saved value';
     return account.summary.valuationSource ? 'Provider value' : 'Manual value';
+  }
+
+  rateConfigurationLabel(source: 'FIRESTORE' | 'BUNDLED'): string {
+    return source === 'FIRESTORE' ? 'Central configuration' : 'Bundled fallback';
   }
 
   holdingLabel(account: InvestmentAccount): string {
