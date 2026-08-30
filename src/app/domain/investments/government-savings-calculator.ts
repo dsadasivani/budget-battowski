@@ -67,12 +67,14 @@ export function calculateGovernmentSavings(
   let balance = investmentDecimal(opening.currentValue ?? opening.investedAmount);
   let pendingInterest = investmentDecimal(0);
   let creditedInterest = investmentDecimal(0);
-  let month = `${opening.asOfDate.slice(0, 7)}-01`;
+  // The opening snapshot owns its as-of month; roll forward from the following month.
+  let month = addMonth(opening.asOfDate);
   const events = [...transactions]
     .filter((item) => item.date > opening.asOfDate && item.date <= valuationDate)
     .sort((a, b) => a.date.localeCompare(b.date));
   while (month <= valuationDate) {
     const monthEnd = endOfMonth(month);
+    const isCompleteMonth = monthEnd <= valuationDate;
     const monthEvents = events.filter((event) => event.date.slice(0, 7) === month.slice(0, 7));
     let eligible = balance;
     for (const event of monthEvents.filter((item) => item.date <= `${month.slice(0, 7)}-05`)) {
@@ -85,15 +87,17 @@ export function calculateGovernmentSavings(
         event.type === 'CONTRIBUTION' ? running.plus(event.amount) : running.minus(event.amount);
       eligible = Decimal.min(eligible, running);
     }
-    pendingInterest = pendingInterest.plus(
-      Decimal.max(0, eligible)
-        .mul(rateFor(scheme, monthEnd, rates))
-        .div(1200),
-    );
+    if (isCompleteMonth) {
+      pendingInterest = pendingInterest.plus(
+        Decimal.max(0, eligible)
+          .mul(rateFor(scheme, monthEnd, rates))
+          .div(1200),
+      );
+    }
     for (const event of monthEvents)
       balance =
         event.type === 'CONTRIBUTION' ? balance.plus(event.amount) : balance.minus(event.amount);
-    if (month.slice(5, 7) === '03' || monthEnd >= valuationDate) {
+    if (isCompleteMonth && month.slice(5, 7) === '03') {
       const credit = pendingInterest.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
       balance = balance.plus(credit);
       creditedInterest = creditedInterest.plus(credit);

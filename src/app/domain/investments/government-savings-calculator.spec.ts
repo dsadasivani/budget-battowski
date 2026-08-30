@@ -33,6 +33,36 @@ describe('government savings calculation', () => {
       eligibleBalanceForMonth('1000', [contribution('a', '2026-04-06', '500')], '2026-04'),
     ).toBe('1000');
   });
+
+  it.each([
+    ['PPF', '434324'],
+    ['SSY', '192843'],
+  ] as const)('preserves a same-day %s opening snapshot', (scheme, currentValue) => {
+    const result = calculateGovernmentSavings(
+      scheme,
+      { asOfDate: '2026-08-30', investedAmount: '1000', currentValue },
+      [],
+      '2026-08-30',
+      rates,
+    );
+
+    expect(result.currentValue).toBe(currentValue);
+    expect(result.interestEarned).toBe('0');
+  });
+
+  it('applies current-month transactions without crediting unposted interest', () => {
+    const result = calculateGovernmentSavings(
+      'PPF',
+      { asOfDate: '2026-03-31', investedAmount: '1000', currentValue: '1000' },
+      [contribution('a', '2026-04-05', '500'), contribution('b', '2026-04-20', '500')],
+      '2026-04-20',
+      rates,
+    );
+
+    expect(result.currentValue).toBe('2000');
+    expect(result.interestEarned).toBe('0');
+  });
+
   it('handles multiple deposits, rate periods, FY credit, and opening snapshots', () => {
     const result = calculateGovernmentSavings(
       'PPF',
@@ -41,7 +71,7 @@ describe('government savings calculation', () => {
       '2027-03-31',
       rates,
     );
-    expect(Number(result.currentValue)).toBeGreaterThan(2180);
-    expect(Number(result.interestEarned)).toBeGreaterThan(180);
+    expect(result.currentValue).toBe('2235');
+    expect(result.interestEarned).toBe('235');
   });
 });
