@@ -117,21 +117,23 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                   <div>
                     <dt>Outstanding</dt>
                     <dd>{{ loan.outstanding | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</dd>
-                    <small>Calculated</small>
+                    <dd class="metric-detail">Calculated</dd>
                   </div>
                   <div>
                     <dt>Current EMI</dt>
                     <dd>{{ loan.emi | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</dd>
-                    <small>{{ loan.annualRate | number: '1.0-2' }}% p.a.</small>
+                    <dd class="metric-detail">{{ loan.annualRate | number: '1.0-2' }}% p.a.</dd>
                   </div>
                   <div>
                     <dt>Remaining</dt>
                     <dd>{{ loan.monthsLeft }} installments</dd>
-                    <small>{{
-                      loan.payoffDate
-                        ? 'Projected ' + (loan.payoffDate | date: 'MMM y')
-                        : 'Needs attention'
-                    }}</small>
+                    <dd class="metric-detail">
+                      {{
+                        loan.payoffDate
+                          ? 'Projected ' + (loan.payoffDate | date: 'MMM y')
+                          : 'Needs attention'
+                      }}
+                    </dd>
                   </div>
                 </dl>
                 <mat-progress-bar
@@ -239,7 +241,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
       margin: 22px 0;
     }
     dt,
-    small {
+    .metric-detail {
       color: #64748b;
       font-size: 0.75rem;
     }
@@ -247,6 +249,9 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
       margin: 4px 0;
       color: #0f172a;
       font-weight: 800;
+    }
+    .metric-detail {
+      font-weight: 400;
     }
     .account-card footer {
       align-items: center;

@@ -4800,7 +4800,7 @@ describe('App accessibility', () => {
     12000,
   );
 
-  it('should pass axe checks on a loan detail screen', async () => {
+  it('should pass axe checks when loan overview and detail data are present', async () => {
     const fixture = TestBed.createComponent(App);
     const router = TestBed.inject(Router);
     const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
@@ -4843,13 +4843,21 @@ describe('App accessibility', () => {
     ]);
     app.loanEvents.set([]);
 
+    await router.navigateByUrl('/loans');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const overviewResults = await runAxe(fixture.nativeElement);
+
+    expect(overviewResults.violations).toEqual([]);
+
     await router.navigateByUrl('/loans/loan-a11y');
     fixture.detectChanges();
     await fixture.whenStable();
 
-    const results = await runAxe(fixture.nativeElement);
+    const detailResults = await runAxe(fixture.nativeElement);
 
-    expect(results.violations).toEqual([]);
+    expect(detailResults.violations).toEqual([]);
   }, 12000);
 });
 
