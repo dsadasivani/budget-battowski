@@ -55,8 +55,11 @@ describe('InvestmentStore', () => {
   const deleteTransactionAndSummary = vi.fn(
     async (_transactionId: string, _account: InvestmentAccount) => undefined,
   );
-  const saveAccount = vi.fn(async () => undefined);
+  const saveAccount = vi.fn(async (_account: InvestmentAccount) => undefined);
   const saveAccounts = vi.fn(async (_accounts: readonly InvestmentAccount[]) => undefined);
+  const saveTransactionAndSummary = vi.fn(
+    async (_transaction: InvestmentTransaction, _account: InvestmentAccount) => undefined,
+  );
   const loadGovernmentInterestRates = vi.fn(async () => BUNDLED_GOVERNMENT_INTEREST_RATE_SET);
   const selectedMonth = signal('2026-08');
   const selectedMemberEmail = signal('ALL');
@@ -95,6 +98,7 @@ describe('InvestmentStore', () => {
             disconnect: vi.fn(),
             saveAccount,
             saveAccounts,
+            saveTransactionAndSummary,
           },
         },
         {
@@ -413,5 +417,89 @@ describe('InvestmentStore', () => {
     expect(saveAccount).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'STOCK', institution: 'Dhan' }),
     );
+  });
+
+  it('stores a default payment mode for every supported investment type', async () => {
+    for (const type of ['STOCK', 'MUTUAL_FUND', 'NPS', 'PPF', 'SSY'] as const) {
+      const created = await store.addInvestment({
+        name: `${type} investment`,
+        type,
+        paymentModeId: 'payment-mode-owner',
+      });
+
+      expect(created.paymentModeId).toBe('payment-mode-owner');
+    }
+
+    expect(saveAccount).toHaveBeenCalledTimes(5);
+    expect(saveAccount.mock.calls.map(([saved]) => saved.type)).toEqual([
+      'STOCK',
+      'MUTUAL_FUND',
+      'NPS',
+      'PPF',
+      'SSY',
+    ]);
+  });
+
+  it('uses cash when a new investment has no explicit payment mode', async () => {
+    const created = await store.addInvestment({
+      name: 'Cash-funded investment',
+      type: 'PPF',
+    });
+
+    expect(created.paymentModeId).toBe('payment-mode-cash');
+    expect(saveAccount).toHaveBeenCalledWith(
+      expect.objectContaining({ paymentModeId: 'payment-mode-cash' }),
+    );
+  });
+
+  it('defaults a transaction to its account payment mode and allows an override', async () => {
+    const linkedAccount = { ...account, paymentModeId: 'payment-mode-default' };
+
+    await store.addTransaction(linkedAccount, {
+      type: 'SIP',
+      date: '2026-08-29',
+      amount: '500',
+      source: 'ADHOC',
+    });
+    await store.addTransaction(linkedAccount, {
+      type: 'SIP',
+      date: '2026-08-30',
+      amount: '750',
+      paymentModeId: 'payment-mode-override',
+      source: 'ADHOC',
+    });
+
+    expect(saveTransactionAndSummary.mock.calls[0][0].paymentModeId).toBe('payment-mode-default');
+    expect(saveTransactionAndSummary.mock.calls[1][0].paymentModeId).toBe('payment-mode-override');
+  });
+
+  it('uses cash for a transaction when an older investment has no linked payment mode', async () => {
+    await store.addTransaction(account, {
+      type: 'SIP',
+      date: '2026-08-29',
+      amount: '500',
+      source: 'RECURRING',
+    });
+
+    expect(saveTransactionAndSummary.mock.calls[0][0].paymentModeId).toBe('payment-mode-cash');
+  });
+
+  it('totals linked investment transactions for the selected month and member', () => {
+    store.transactions.set([
+      { ...transaction, paymentModeId: 'payment-mode-owner' },
+      {
+        ...transaction,
+        id: 'older-transaction',
+        date: '2026-07-28',
+        amount: '900',
+        paymentModeId: 'payment-mode-owner',
+      },
+      { ...transaction, id: 'unlinked-transaction', amount: '400' },
+    ]);
+
+    expect(store.paymentModeUsage('payment-mode-owner')).toEqual({ amount: 1000, count: 1 });
+
+    selectedMonth.set('2026-07');
+    expect(store.paymentModeUsage('payment-mode-owner')).toEqual({ amount: 900, count: 1 });
   });
 });

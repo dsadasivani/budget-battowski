@@ -71,7 +71,10 @@ describe('InvestmentAccountDetailPage deletion', () => {
         },
         {
           provide: BudgetStore,
-          useValue: { showPageSkeleton: signal(false) },
+          useValue: {
+            showPageSkeleton: signal(false),
+            paymentModeLabel: vi.fn(() => ''),
+          },
         },
         {
           provide: ActivatedRoute,
@@ -122,7 +125,13 @@ describe('InvestmentAccountDetailPage deletion', () => {
             display: (value: string | undefined) => Number(value ?? 0),
           },
         },
-        { provide: BudgetStore, useValue: { showPageSkeleton: signal(false) } },
+        {
+          provide: BudgetStore,
+          useValue: {
+            showPageSkeleton: signal(false),
+            paymentModeLabel: vi.fn(() => ''),
+          },
+        },
         {
           provide: ActivatedRoute,
           useValue: { snapshot: { paramMap: { get: () => account.id } } },
@@ -220,7 +229,13 @@ describe('InvestmentAccountDetailPage NPS holdings', () => {
             recurringPlanIsUpcoming: vi.fn(() => false),
           },
         },
-        { provide: BudgetStore, useValue: { showPageSkeleton: signal(false) } },
+        {
+          provide: BudgetStore,
+          useValue: {
+            showPageSkeleton: signal(false),
+            paymentModeLabel: vi.fn(() => ''),
+          },
+        },
         {
           provide: ActivatedRoute,
           useValue: { snapshot: { paramMap: { get: () => npsAccount.id } } },
@@ -303,7 +318,13 @@ describe('InvestmentAccountDetailPage government rate details', () => {
             recurringPlanIsUpcoming: vi.fn(() => false),
           },
         },
-        { provide: BudgetStore, useValue: { showPageSkeleton: signal(false) } },
+        {
+          provide: BudgetStore,
+          useValue: {
+            showPageSkeleton: signal(false),
+            paymentModeLabel: vi.fn(() => ''),
+          },
+        },
         {
           provide: ActivatedRoute,
           useValue: { snapshot: { paramMap: { get: () => ppfAccount.id } } },

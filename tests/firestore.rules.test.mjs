@@ -145,6 +145,24 @@ test('investment V2 accounts and transactions stay workspace scoped and owner li
   const ownerDb = authenticatedDatabase(ownerEmail);
   const memberDb = authenticatedDatabase(memberEmail);
   const otherDb = authenticatedDatabase(otherEmail);
+  await assertSucceeds(
+    setDoc(workspaceRecord(ownerDb, 'paymentModes', 'mode-owner'), {
+      type: 'upi',
+      name: 'Owner UPI',
+      provider: 'Google Pay',
+      ownerUid,
+      memberEmail: ownerEmail,
+    }),
+  );
+  await assertSucceeds(
+    setDoc(workspaceRecord(memberDb, 'paymentModes', 'mode-member'), {
+      type: 'upi',
+      name: 'Member UPI',
+      provider: 'Google Pay',
+      ownerUid: memberUid,
+      memberEmail,
+    }),
+  );
   const accountRef = workspaceRecord(ownerDb, 'investmentAccounts', 'investment-v2');
   const account = {
     schemaVersion: 2,
@@ -164,10 +182,17 @@ test('investment V2 accounts and transactions stay workspace scoped and owner li
     },
     ownerUid,
     memberEmail: ownerEmail,
+    paymentModeId: 'mode-owner',
     createdDate: '2026-08-01T00:00:00.000Z',
     updatedDate: '2026-08-01T00:00:00.000Z',
   };
   await assertSucceeds(setDoc(accountRef, account));
+  await assertFails(
+    setDoc(workspaceRecord(ownerDb, 'investmentAccounts', 'investment-invalid-mode'), {
+      ...account,
+      paymentModeId: 'mode-member',
+    }),
+  );
   await assertSucceeds(getDoc(workspaceRecord(memberDb, 'investmentAccounts', 'investment-v2')));
   await assertFails(getDoc(workspaceRecord(otherDb, 'investmentAccounts', 'investment-v2')));
 
@@ -183,6 +208,22 @@ test('investment V2 accounts and transactions stay workspace scoped and owner li
       source: 'ADHOC',
       ownerUid,
       memberEmail: ownerEmail,
+      paymentModeId: 'mode-owner',
+      createdDate: '2026-08-01T00:00:00.000Z',
+      updatedDate: '2026-08-01T00:00:00.000Z',
+    }),
+  );
+  await assertFails(
+    setDoc(workspaceRecord(ownerDb, 'investmentTransactions', 'invalid-mode-transaction'), {
+      schemaVersion: 2,
+      investmentId: 'investment-v2',
+      type: 'BUY',
+      date: '2026-08-01',
+      amount: '10000',
+      source: 'ADHOC',
+      ownerUid,
+      memberEmail: ownerEmail,
+      paymentModeId: 'mode-member',
       createdDate: '2026-08-01T00:00:00.000Z',
       updatedDate: '2026-08-01T00:00:00.000Z',
     }),

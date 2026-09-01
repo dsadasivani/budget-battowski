@@ -5,6 +5,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { describe, expect, it, vi } from 'vitest';
 
 import { InvestmentAccountDialog } from './investments-page';
+import { CASH_PAYMENT_MODE_ID } from '../budget.models';
 import { BudgetStore } from '../budget.store';
 import { InvestmentRepository } from '../data/investment.repository';
 import {
@@ -42,6 +43,8 @@ describe('InvestmentAccountDialog', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Upstox');
     expect(fixture.nativeElement.textContent).not.toContain('Track a recurring plan');
     expect(fixture.nativeElement.textContent).toContain('Broker / demat account (optional)');
+    expect(fixture.nativeElement.textContent).toContain('Paid via');
+    expect(fixture.componentInstance.form.controls.paymentModeId.value).toBe(CASH_PAYMENT_MODE_ID);
     expect(
       fixture.nativeElement.querySelector('.stock-search-row input[formcontrolname="name"]'),
     ).not.toBeNull();
@@ -165,6 +168,7 @@ describe('InvestmentAccountDialog', () => {
         tradingSymbol: '',
         providerKey: '',
         investedAmount: '0',
+        paymentModeId: CASH_PAYMENT_MODE_ID,
         plan: '',
         option: '',
       }),
@@ -263,6 +267,7 @@ describe('InvestmentAccountDialog', () => {
 
     dialog.form.patchValue({
       name: 'Reliance Industries Limited',
+      paymentModeId: 'payment-mode-owner',
       tradingSymbol: 'RELIANCE',
       providerKey: 'NSE_EQ|INE002A01018',
       isin: 'INE002A01018',
@@ -271,7 +276,11 @@ describe('InvestmentAccountDialog', () => {
     await dialog.save();
 
     expect(addInvestment).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'STOCK', institution: 'Dhan' }),
+      expect.objectContaining({
+        type: 'STOCK',
+        institution: 'Dhan',
+        paymentModeId: 'payment-mode-owner',
+      }),
     );
 
     accounts.update((current) => [...current, { type: 'STOCK', institution: 'Dhan' }]);

@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+import { CommonModule, NgOptimizedImage } from '@angular/common';
 import { COMMA, ENTER } from '@angular/cdk/keycodes';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -17,6 +17,7 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatSnackBar } from '@angular/material/snack-bar';
 
 import { BudgetStore } from '../budget.store';
+import { CASH_PAYMENT_MODE_ID } from '../budget.models';
 import type {
   InvestmentAccount,
   InvestmentFrequencyV2,
@@ -51,6 +52,7 @@ const TYPE_LABELS: Record<InvestmentType, string> = {
   selector: 'app-investment-account-dialog',
   imports: [
     CommonModule,
+    NgOptimizedImage,
     ReactiveFormsModule,
     MatDialogModule,
     MatAutocompleteModule,
@@ -78,6 +80,21 @@ const TYPE_LABELS: Record<InvestmentType, string> = {
             </button>
           }
         </fieldset>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Paid via</mat-label>
+          <mat-select formControlName="paymentModeId" aria-label="Investment payment mode">
+            @for (mode of paymentModes(); track mode.id) {
+              <mat-option [value]="mode.id">
+                <span class="payment-mode-option">
+                  <img [ngSrc]="budget.paymentModeIconSrc(mode)" width="24" height="24" alt="" />
+                  <span>{{ budget.paymentModeShortLabel(mode) }}</span>
+                </span>
+              </mat-option>
+            }
+          </mat-select>
+          <mat-hint>Used as the default when you record investment transactions.</mat-hint>
+        </mat-form-field>
 
         @if (form.controls.type.value === 'STOCK') {
           <div class="instrument-search-row stock-search-row">
@@ -620,6 +637,15 @@ const TYPE_LABELS: Record<InvestmentType, string> = {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 12px;
       }
+      .payment-mode-option {
+        display: inline-flex;
+        min-width: 0;
+        align-items: center;
+        gap: 10px;
+      }
+      .payment-mode-option img {
+        flex: 0 0 auto;
+      }
       .wide {
         grid-column: 1/-1;
       }
@@ -776,10 +802,25 @@ export class InvestmentAccountDialog {
     inject<MatDialogRef<InvestmentAccountDialog, InvestmentAccount>>(MatDialogRef);
   private readonly fb = inject(FormBuilder).nonNullable;
   private readonly investments = inject(InvestmentStore);
+  readonly budget = inject(BudgetStore);
   readonly today = new Date().toISOString().slice(0, 10);
   readonly saving = signal(false);
   readonly error = signal('');
   readonly catalogSearching = signal(false);
+  readonly paymentModes = computed(() => {
+    const ownerUid = this.budget.userUid();
+    const modes = new Map(
+      [...this.budget.activePaymentModes(), ...this.budget.paymentModes()].map((mode) => [
+        mode.id,
+        mode,
+      ]),
+    );
+    return [...modes.values()].filter(
+      (mode) =>
+        !mode.archivedDate &&
+        ((mode.id === 'payment-mode-cash' && mode.type === 'cash') || mode.ownerUid === ownerUid),
+    );
+  });
   readonly stockResults = signal<StockSearchResult[]>([]);
   readonly fundResults = signal<MutualFundSearchResult[]>([]);
   readonly npsResults = signal<NpsSearchResult[]>([]);
@@ -808,6 +849,7 @@ export class InvestmentAccountDialog {
     type: this.fb.control<InvestmentType>('STOCK'),
     name: ['', Validators.required],
     institution: [''],
+    paymentModeId: [CASH_PAYMENT_MODE_ID],
     tradingSymbol: [''],
     exchange: this.fb.control<'NSE' | 'BSE'>('NSE'),
     providerKey: [''],
@@ -1215,6 +1257,7 @@ export class InvestmentAccountDialog {
         name: v.name,
         type: v.type,
         institution: v.institution,
+        paymentModeId: v.paymentModeId,
         instrument,
         openingSnapshot: {
           asOfDate: v.asOfDate,

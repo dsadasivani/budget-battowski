@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+import { CommonModule, NgOptimizedImage } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -23,6 +23,8 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { firstValueFrom } from 'rxjs';
 
+import { BudgetStore } from '../budget.store';
+import { CASH_PAYMENT_MODE_ID } from '../budget.models';
 import {
   decimalString,
   investmentDecimal,
@@ -62,6 +64,7 @@ interface NpsHoldingEditDraft extends NpsSchemeHolding {
   selector: 'app-investment-edit-dialog',
   imports: [
     CommonModule,
+    NgOptimizedImage,
     ReactiveFormsModule,
     MatDialogModule,
     MatButtonModule,
@@ -79,6 +82,20 @@ interface NpsHoldingEditDraft extends NpsSchemeHolding {
         <mat-form-field appearance="outline"
           ><mat-label>Institution</mat-label><input matInput formControlName="institution"
         /></mat-form-field>
+        <mat-form-field appearance="outline">
+          <mat-label>Paid via</mat-label>
+          <mat-select formControlName="paymentModeId" aria-label="Investment payment mode">
+            @for (mode of paymentModes(); track mode.id) {
+              <mat-option [value]="mode.id">
+                <span class="payment-mode-option">
+                  <img [ngSrc]="budget.paymentModeIconSrc(mode)" width="24" height="24" alt="" />
+                  <span>{{ budget.paymentModeShortLabel(mode) }}</span>
+                </span>
+              </mat-option>
+            }
+          </mat-select>
+          <mat-hint>New transactions use this mode unless you choose another.</mat-hint>
+        </mat-form-field>
         @if (data.type === 'STOCK') {
           <mat-form-field appearance="outline"
             ><mat-label>Trading symbol</mat-label><input matInput formControlName="tradingSymbol"
@@ -186,6 +203,15 @@ interface NpsHoldingEditDraft extends NpsSchemeHolding {
         gap: 12px;
         padding-top: 8px;
       }
+      .payment-mode-option {
+        display: inline-flex;
+        min-width: 0;
+        align-items: center;
+        gap: 10px;
+      }
+      .payment-mode-option img {
+        flex: 0 0 auto;
+      }
       .form-error {
         color: #b42318;
       }
@@ -247,6 +273,7 @@ export class InvestmentEditDialog {
   readonly data = inject<InvestmentAccount>(MAT_DIALOG_DATA);
   readonly dialogRef = inject<MatDialogRef<InvestmentEditDialog>>(MatDialogRef);
   private readonly investments = inject(InvestmentStore);
+  readonly budget = inject(BudgetStore);
   private readonly fb = inject(FormBuilder).nonNullable;
   private readonly stock =
     this.data.instrument?.kind === 'STOCK' ? this.data.instrument : undefined;
@@ -270,6 +297,25 @@ export class InvestmentEditDialog {
     };
   });
   readonly error = signal('');
+  readonly paymentModes = computed(() => {
+    const active = [
+      ...new Map(
+        [...this.budget.activePaymentModes(), ...this.budget.paymentModes()].map((mode) => [
+          mode.id,
+          mode,
+        ]),
+      ).values(),
+    ].filter(
+      (mode) =>
+        !mode.archivedDate &&
+        ((mode.id === 'payment-mode-cash' && mode.type === 'cash') ||
+          mode.ownerUid === this.data.ownerUid),
+    );
+    const current = this.budget.paymentModes().find((mode) => mode.id === this.data.paymentModeId);
+    return current && !active.some((mode) => mode.id === current.id)
+      ? [current, ...active]
+      : active;
+  });
   readonly npsHoldings = signal<NpsHoldingEditDraft[]>(
     this.npsOpeningHoldings.map((holding) => ({
       ...holding,
@@ -298,6 +344,7 @@ export class InvestmentEditDialog {
   readonly form = this.fb.group({
     name: [this.data.name, Validators.required],
     institution: [this.data.institution ?? ''],
+    paymentModeId: [this.data.paymentModeId ?? CASH_PAYMENT_MODE_ID],
     tradingSymbol: [this.stock?.tradingSymbol ?? ''],
     exchange: this.fb.control<'NSE' | 'BSE'>(this.stock?.exchange ?? 'NSE'),
     providerKey: [this.stock?.upstoxInstrumentKey ?? ''],
@@ -360,6 +407,7 @@ export class InvestmentEditDialog {
         ...this.data,
         name: value.name.trim(),
         institution: value.institution.trim() || undefined,
+        paymentModeId: value.paymentModeId,
         instrument,
         openingSnapshot,
         needsInstrumentMapping: !instrument,
@@ -595,6 +643,7 @@ function transactionLabels(
   selector: 'app-investment-transaction-dialog',
   imports: [
     CommonModule,
+    NgOptimizedImage,
     ReactiveFormsModule,
     MatDialogModule,
     MatButtonModule,
@@ -619,6 +668,26 @@ function transactionLabels(
           ><mat-label>Date</mat-label
           ><input matInput type="date" formControlName="date" [max]="today" required
         /></mat-form-field>
+        <mat-form-field appearance="outline">
+          <mat-label>Paid via</mat-label>
+          <mat-select formControlName="paymentModeId" aria-label="Transaction payment mode">
+            @for (mode of paymentModes(); track mode.id) {
+              <mat-option [value]="mode.id">
+                <span class="payment-mode-option">
+                  <img [ngSrc]="budget.paymentModeIconSrc(mode)" width="24" height="24" alt="" />
+                  <span>{{ budget.paymentModeShortLabel(mode) }}</span>
+                </span>
+              </mat-option>
+            }
+          </mat-select>
+          <mat-hint>
+            {{
+              data.liquidation
+                ? 'Where the proceeds were received.'
+                : 'How this investment was funded.'
+            }}
+          </mat-hint>
+        </mat-form-field>
         @if (data.account.type === 'STOCK') {
           <mat-form-field appearance="outline"
             ><mat-label>Quantity</mat-label
@@ -823,6 +892,15 @@ function transactionLabels(
         gap: 12px;
         padding-top: 8px;
       }
+      .payment-mode-option {
+        display: inline-flex;
+        min-width: 0;
+        align-items: center;
+        gap: 10px;
+      }
+      .payment-mode-option img {
+        flex: 0 0 auto;
+      }
       .regulated-note,
       .plan-hint {
         display: flex;
@@ -964,6 +1042,7 @@ export class InvestmentTransactionDialog implements OnInit {
   readonly data = inject<TransactionDialogData>(MAT_DIALOG_DATA);
   readonly dialogRef = inject<MatDialogRef<InvestmentTransactionDialog>>(MatDialogRef);
   readonly investments = inject(InvestmentStore);
+  readonly budget = inject(BudgetStore);
   private readonly fb = inject(FormBuilder).nonNullable;
   readonly today = new Date().toISOString().slice(0, 10);
   readonly labels = transactionLabels(this.data.account, this.data.liquidation);
@@ -973,6 +1052,27 @@ export class InvestmentTransactionDialog implements OnInit {
   readonly npsNavFetched = signal(false);
   readonly npsNavMessage = signal('');
   readonly npsNavError = signal('');
+  readonly paymentModes = computed(() => {
+    const active = [
+      ...new Map(
+        [...this.budget.activePaymentModes(), ...this.budget.paymentModes()].map((mode) => [
+          mode.id,
+          mode,
+        ]),
+      ).values(),
+    ].filter(
+      (mode) =>
+        !mode.archivedDate &&
+        ((mode.id === 'payment-mode-cash' && mode.type === 'cash') ||
+          mode.ownerUid === this.data.account.ownerUid),
+    );
+    const current = this.budget
+      .paymentModes()
+      .find((mode) => mode.id === this.data.account.paymentModeId);
+    return current && !active.some((mode) => mode.id === current.id)
+      ? [current, ...active]
+      : active;
+  });
   private readonly initialAmount = this.data.liquidation
     ? ''
     : this.investments.effectiveRecurring(this.data.account);
@@ -986,6 +1086,7 @@ export class InvestmentTransactionDialog implements OnInit {
   );
   readonly form = this.fb.group({
     date: [this.today, Validators.required],
+    paymentModeId: [this.data.account.paymentModeId ?? CASH_PAYMENT_MODE_ID],
     amount: [this.initialAmount],
     quantity: [''],
     units: [''],
@@ -1140,6 +1241,7 @@ export class InvestmentTransactionDialog implements OnInit {
         type: this.labels.type,
         date: value.date,
         amount,
+        paymentModeId: value.paymentModeId,
         quantity: this.data.account.type === 'STOCK' ? value.quantity : undefined,
         units: this.data.account.type === 'MUTUAL_FUND' ? value.units || undefined : undefined,
         price: this.data.account.type === 'STOCK' ? value.unitPrice : undefined,

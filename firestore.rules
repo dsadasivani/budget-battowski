@@ -219,7 +219,7 @@ service cloud.firestore {
         return commonOwned(data) && data.keys().hasOnly([
           'schemaVersion','name','type','status','institution','instrument','recurringPlan',
           'openingSnapshot','summary','legacySourceId','needsInstrumentMapping','ownerUid',
-          'memberEmail','createdDate','updatedDate','version','createdAt','updatedAt'
+          'memberEmail','paymentModeId','createdDate','updatedDate','version','createdAt','updatedAt'
         ]) && data.schemaVersion == 2 && data.name is string &&
           data.type in ['STOCK','MUTUAL_FUND','NPS','PPF','SSY'] &&
           data.status in ['ACTIVE','CLOSED'] && data.summary is map &&
@@ -228,9 +228,11 @@ service cloud.firestore {
       match /investmentAccounts/{id} {
         allow read: if member(workspaceId);
         allow create: if member(workspaceId) && validOwnedCreate(request.resource.data) &&
-          validInvestmentAccount(request.resource.data);
+          validInvestmentAccount(request.resource.data) &&
+          optionalLinkedMode(workspaceId, request.resource.data);
         allow update: if member(workspaceId) && immutableOwner() &&
-          validInvestmentAccount(request.resource.data);
+          validInvestmentAccount(request.resource.data) &&
+          optionalLinkedMode(workspaceId, request.resource.data);
         allow delete: if member(workspaceId) && authOwns(resource.data);
       }
       function investmentAccountPath(workspaceId, investmentId) {
@@ -239,7 +241,7 @@ service cloud.firestore {
       function validInvestmentTransaction(data) {
         return commonOwned(data) && data.keys().hasOnly([
           'schemaVersion','investmentId','type','date','amount','quantity','units','price','nav',
-          'unitsSource','source','notes','schemeAllocations','ownerUid','memberEmail','createdDate',
+          'unitsSource','source','notes','schemeAllocations','ownerUid','memberEmail','paymentModeId','createdDate',
           'updatedDate','version','createdAt','updatedAt'
         ]) && data.schemaVersion == 2 && data.investmentId is string && validDate(data.date) &&
           data.amount is string &&
@@ -254,11 +256,13 @@ service cloud.firestore {
       match /investmentTransactions/{id} {
         allow read: if member(workspaceId);
         allow create: if member(workspaceId) && validInvestmentTransaction(request.resource.data) &&
-          investmentTransactionOwnerValid(workspaceId, request.resource.data);
+          investmentTransactionOwnerValid(workspaceId, request.resource.data) &&
+          optionalLinkedMode(workspaceId, request.resource.data);
         allow update: if member(workspaceId) && immutableOwner() &&
           request.resource.data.investmentId == resource.data.investmentId &&
           validInvestmentTransaction(request.resource.data) &&
-          investmentTransactionOwnerValid(workspaceId, request.resource.data);
+          investmentTransactionOwnerValid(workspaceId, request.resource.data) &&
+          optionalLinkedMode(workspaceId, request.resource.data);
         allow delete: if member(workspaceId) && authOwns(resource.data);
       }
       function validLoanRoundingPolicy(policy) {

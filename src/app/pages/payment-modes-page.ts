@@ -38,6 +38,7 @@ import {
 } from '../budget.models';
 import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 import { MonthMemberControls } from '../shared/month-member-controls';
+import { InvestmentStore } from '../stores/investment.store';
 
 type PaymentModeFilter = PaymentModeType | 'all';
 
@@ -818,7 +819,7 @@ export class PaymentAccountFormSheet {
 
       <div class="mapped-mode-list" aria-label="Mapped payment modes">
         @for (paymentMode of data.mappedModes; track paymentMode.id) {
-          @if (store.paymentModeUsage(paymentMode.id); as usage) {
+          @if (paymentModeUsage(paymentMode.id); as usage) {
             <article class="mapped-mode-card">
               <span
                 class="category-icon payment-provider-mark {{
@@ -1028,6 +1029,13 @@ export class PaymentAccountModesSheet {
     inject<MatBottomSheetRef<PaymentAccountModesSheet>>(MatBottomSheetRef);
   protected readonly data = inject<PaymentAccountModesData>(MAT_BOTTOM_SHEET_DATA);
   protected readonly store = inject(BudgetStore);
+  private readonly investments = inject(InvestmentStore);
+
+  protected paymentModeUsage(paymentModeId: string): { amount: number; count: number } {
+    const legacy = this.store.paymentModeUsage(paymentModeId);
+    const current = this.investments.paymentModeUsage(paymentModeId);
+    return { amount: legacy.amount + current.amount, count: legacy.count + current.count };
+  }
 
   close(): void {
     this.bottomSheetRef.dismiss();
@@ -1432,7 +1440,7 @@ export class PaymentAccountModesSheet {
                     </button>
                   </div>
                   <div class="payment-mode-grid">
-                    @for (account of store.paymentAccountCards(); track account.id) {
+                    @for (account of paymentAccountCards(); track account.id) {
                       <article
                         class="category-card payment-mode-card payment-account-card"
                         [class.selected]="isSelectedAccount(account.id)"
@@ -1514,7 +1522,7 @@ export class PaymentAccountModesSheet {
 
                       <div class="mapped-mode-list" aria-label="Mapped payment modes">
                         @for (paymentMode of account.mappedModes; track paymentMode.id) {
-                          @if (store.paymentModeUsage(paymentMode.id); as usage) {
+                          @if (paymentModeUsage(paymentMode.id); as usage) {
                             <article class="mapped-mode-card">
                               <span
                                 class="category-icon payment-provider-mark {{
@@ -2344,6 +2352,7 @@ export class PaymentModesPage {
   private readonly router = inject(Router, { optional: true });
   private readonly destroyRef = inject(DestroyRef);
   readonly store = inject(BudgetStore);
+  readonly investments = inject(InvestmentStore);
 
   readonly modeOptions = MODE_OPTIONS;
   readonly providerOptions = PROVIDER_OPTIONS;
@@ -2380,26 +2389,42 @@ export class PaymentModesPage {
   });
   readonly filteredPaymentModes = computed(() => {
     const filter = this.selectedFilter();
-    const rows = this.store.paymentModeCards();
+    const rows = this.store.paymentModeCards().map((paymentMode) => {
+      const usage = this.investments.paymentModeUsage(paymentMode.id);
+      return {
+        ...paymentMode,
+        usageAmount: paymentMode.usageAmount + usage.amount,
+        recordCount: paymentMode.recordCount + usage.count,
+      };
+    });
 
     return filter === 'all' ? rows : rows.filter((paymentMode) => paymentMode.type === filter);
   });
+  readonly paymentAccountCards = computed(() =>
+    this.store.paymentAccountCards().map((paymentAccount) => ({
+      ...paymentAccount,
+      usageAmount: paymentAccount.mappedModes.reduce(
+        (total, paymentMode) => total + this.paymentModeUsage(paymentMode.id).amount,
+        0,
+      ),
+    })),
+  );
   readonly mappedPaymentModeCount = computed(
     () =>
       this.store.activePaymentModes().filter((paymentMode) => !!paymentMode.paymentAccountId)
         .length,
   );
   readonly paymentAccountUsageTotal = computed(() =>
-    this.store
-      .paymentAccountCards()
-      .reduce((total, paymentAccount) => total + paymentAccount.usageAmount, 0),
+    this.paymentAccountCards().reduce(
+      (total, paymentAccount) => total + paymentAccount.usageAmount,
+      0,
+    ),
   );
   readonly selectedPaymentAccountCard = computed(() => {
     const selectedId = this.selectedPaymentAccountId();
     return selectedId
-      ? (this.store
-          .paymentAccountCards()
-          .find((paymentAccount) => paymentAccount.id === selectedId) ?? null)
+      ? (this.paymentAccountCards().find((paymentAccount) => paymentAccount.id === selectedId) ??
+          null)
       : null;
   });
   readonly formSubtitle = computed(() =>
@@ -2423,6 +2448,12 @@ export class PaymentModesPage {
       .paymentModes()
       .find((paymentMode) => paymentMode.id === this.editingId());
     return this.store.paymentAccountsForPaymentMode(existing);
+  }
+
+  paymentModeUsage(paymentModeId: string): { amount: number; count: number } {
+    const legacy = this.store.paymentModeUsage(paymentModeId);
+    const current = this.investments.paymentModeUsage(paymentModeId);
+    return { amount: legacy.amount + current.amount, count: legacy.count + current.count };
   }
 
   selectTab(index: number): void {
@@ -2561,9 +2592,9 @@ export class PaymentModesPage {
   }
 
   selectPaymentAccount(paymentAccountId: string): void {
-    const paymentAccount = this.store
-      .paymentAccountCards()
-      .find((account) => account.id === paymentAccountId);
+    const paymentAccount = this.paymentAccountCards().find(
+      (account) => account.id === paymentAccountId,
+    );
     if (!paymentAccount) {
       return;
     }

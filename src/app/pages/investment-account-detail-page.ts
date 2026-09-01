@@ -315,6 +315,9 @@ import {
                       <small>
                         {{ transaction.date | date: 'mediumDate' }} ·
                         {{ transactionSourceLabel(transaction.source) }}
+                        @if (transaction.paymentModeId) {
+                          · {{ budget.paymentModeLabel(transaction.paymentModeId) }}
+                        }
                       </small>
                       @if (transaction.schemeAllocations?.length) {
                         <div class="transaction-schemes" aria-label="NPS scheme allocations">
@@ -490,6 +493,10 @@ import {
                   <div>
                     <dt>Institution</dt>
                     <dd>{{ item.institution || 'Not specified' }}</dd>
+                  </div>
+                  <div>
+                    <dt>Default payment mode</dt>
+                    <dd>{{ budget.paymentModeLabel(item.paymentModeId) || 'Not linked' }}</dd>
                   </div>
                   <div>
                     <dt>Valuation</dt>

@@ -36,6 +36,7 @@ const account: InvestmentAccount = {
   name: 'My NPS',
   type: 'NPS',
   status: 'ACTIVE',
+  paymentModeId: 'payment-mode-owner',
   instrument: { kind: 'NPS', provider: 'NPS_TRUST', schemeHoldings: holdings },
   recurringPlan: {
     enabled: true,
@@ -109,6 +110,7 @@ describe('InvestmentTransactionDialog NPS allocations', () => {
       account,
       expect.objectContaining({
         amount: '1000',
+        paymentModeId: 'payment-mode-owner',
         source: 'RECURRING',
         schemeAllocations: [
           expect.objectContaining({

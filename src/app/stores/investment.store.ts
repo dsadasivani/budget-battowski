@@ -2,6 +2,7 @@ import { Injectable, OnDestroy, computed, effect, inject, signal } from '@angula
 import { getAuth } from 'firebase/auth';
 
 import { BudgetStore } from '../budget.store';
+import { CASH_PAYMENT_MODE_ID } from '../budget.models';
 import {
   BUNDLED_GOVERNMENT_INTEREST_RATE_SET,
   GovernmentInterestRateRepository,
@@ -50,6 +51,7 @@ export interface NewInvestmentInput {
   name: string;
   type: InvestmentType;
   institution?: string;
+  paymentModeId?: string;
   instrument?: InvestmentInstrument;
   openingSnapshot?: InvestmentOpeningSnapshot;
   recurringPlan?: RecurringInvestmentPlan;
@@ -59,6 +61,7 @@ export interface NewTransactionInput {
   type: InvestmentTransactionType;
   date: string;
   amount: string;
+  paymentModeId?: string;
   quantity?: string;
   units?: string;
   price?: string;
@@ -232,6 +235,21 @@ export class InvestmentStore implements OnDestroy {
       .filter((item) => item.investmentId === accountId)
       .sort((a, b) => b.date.localeCompare(a.date));
   }
+  paymentModeUsage(paymentModeId: string): { amount: number; count: number } {
+    return this.visibleTransactions()
+      .filter(
+        (transaction) =>
+          transaction.paymentModeId === paymentModeId &&
+          transaction.date.startsWith(`${this.budget.selectedMonth()}-`),
+      )
+      .reduce(
+        (usage, transaction) => ({
+          amount: usage.amount + this.display(transaction.amount),
+          count: usage.count + 1,
+        }),
+        { amount: 0, count: 0 },
+      );
+  }
   effectiveRecurring(account: InvestmentAccount): string {
     if (!supportsRecurringPlan(account.type)) return '0';
     return effectiveRecurringAmount(
@@ -283,6 +301,7 @@ export class InvestmentStore implements OnDestroy {
       type: input.type,
       status: 'ACTIVE',
       institution: input.institution?.trim() || undefined,
+      paymentModeId: input.paymentModeId || CASH_PAYMENT_MODE_ID,
       instrument: input.instrument,
       openingSnapshot: input.openingSnapshot,
       recurringPlan: supportsRecurringPlan(input.type) ? input.recurringPlan : undefined,
@@ -410,6 +429,7 @@ export class InvestmentStore implements OnDestroy {
       type: input.type,
       date: input.date,
       amount: moneyString(input.amount),
+      paymentModeId: input.paymentModeId || account.paymentModeId || CASH_PAYMENT_MODE_ID,
       quantity,
       units,
       price: input.price,
@@ -998,6 +1018,7 @@ export class InvestmentStore implements OnDestroy {
           },
           legacySourceId: legacy.id,
           needsInstrumentMapping: type === 'MUTUAL_FUND' || type === 'NPS',
+          paymentModeId: legacy.paymentModeId,
           ownerUid: legacy.ownerUid ?? this.budget.userUid() ?? undefined,
           memberEmail: legacy.memberEmail,
           createdDate: timestamp,

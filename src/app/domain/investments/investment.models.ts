@@ -150,6 +150,8 @@ export interface InvestmentAccount extends OwnedRecord {
   type: InvestmentType;
   status: InvestmentStatus;
   institution?: string;
+  /** Default funding or receiving mode for transactions recorded against this account. */
+  paymentModeId?: string;
   instrument?: InvestmentInstrument;
   recurringPlan?: RecurringInvestmentPlan;
   openingSnapshot?: InvestmentOpeningSnapshot;
@@ -166,6 +168,8 @@ export interface InvestmentTransaction extends OwnedRecord {
   type: InvestmentTransactionType;
   date: string;
   amount: DecimalString;
+  /** Payment mode used for this specific movement; retained as historical transaction data. */
+  paymentModeId?: string;
   quantity?: DecimalString;
   units?: DecimalString;
   price?: DecimalString;

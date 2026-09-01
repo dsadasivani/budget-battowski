@@ -67,7 +67,11 @@ import {
   parseWorkspaceExport,
   workspaceExportFilename,
 } from './budget-export.service';
-import { DEFAULT_EXPENSE_CATEGORIES, PAYMENT_BANK_OPTIONS } from './budget.models';
+import {
+  CASH_PAYMENT_MODE_ID,
+  DEFAULT_EXPENSE_CATEGORIES,
+  PAYMENT_BANK_OPTIONS,
+} from './budget.models';
 import type {
   BudgetCategory,
   BudgetCollectionName,
@@ -374,7 +378,7 @@ const DEFAULT_LOAN_EMI_CATEGORY: BudgetCategory = {
   type: 'Expenses',
 };
 const DEFAULT_CASH_PAYMENT_MODE: PaymentMode = {
-  id: 'payment-mode-cash',
+  id: CASH_PAYMENT_MODE_ID,
   type: 'cash',
   name: 'Cash',
   workspaceGlobal: true,
