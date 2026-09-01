@@ -31,6 +31,7 @@ export type PaymentBankName = (typeof PAYMENT_BANK_OPTIONS)[number]['name'];
 export type PaymentModeType = 'cash' | 'upi' | 'credit-card' | 'debit-card' | 'internet-banking';
 export type PaymentModeProvider =
   'PhonePe' | 'Apple Pay' | 'Samsung Pay' | 'Google Pay' | 'Paytm' | 'BHIM';
+export const CASH_PAYMENT_MODE_ID = 'payment-mode-cash';
 export type PaymentCardType =
   'rupay' | 'maestro' | 'diners-club' | 'master-card' | 'american-express' | 'visa';
 

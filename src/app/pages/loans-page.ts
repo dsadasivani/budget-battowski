@@ -31,7 +31,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
     @if (store.showPageSkeleton()) {
       <app-page-skeleton variant="loans" />
     } @else {
-      <section class="page loans-page">
+      <section class="page mobile-loans-page loans-page">
         <header class="page-header desktop-page-header">
           <div>
             <h1>Loans</h1>
@@ -117,21 +117,23 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
                   <div>
                     <dt>Outstanding</dt>
                     <dd>{{ loan.outstanding | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</dd>
-                    <small>Calculated</small>
+                    <dd class="metric-detail">Calculated</dd>
                   </div>
                   <div>
                     <dt>Current EMI</dt>
                     <dd>{{ loan.emi | currency: 'INR' : 'symbol' : '1.0-0' : 'en-IN' }}</dd>
-                    <small>{{ loan.annualRate | number: '1.0-2' }}% p.a.</small>
+                    <dd class="metric-detail">{{ loan.annualRate | number: '1.0-2' }}% p.a.</dd>
                   </div>
                   <div>
                     <dt>Remaining</dt>
                     <dd>{{ loan.monthsLeft }} installments</dd>
-                    <small>{{
-                      loan.payoffDate
-                        ? 'Projected ' + (loan.payoffDate | date: 'MMM y')
-                        : 'Needs attention'
-                    }}</small>
+                    <dd class="metric-detail">
+                      {{
+                        loan.payoffDate
+                          ? 'Projected ' + (loan.payoffDate | date: 'MMM y')
+                          : 'Needs attention'
+                      }}
+                    </dd>
                   </div>
                 </dl>
                 <mat-progress-bar
@@ -239,7 +241,7 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
       margin: 22px 0;
     }
     dt,
-    small {
+    .metric-detail {
       color: #64748b;
       font-size: 0.75rem;
     }
@@ -247,6 +249,9 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
       margin: 4px 0;
       color: #0f172a;
       font-weight: 800;
+    }
+    .metric-detail {
+      font-weight: 400;
     }
     .account-card footer {
       align-items: center;
@@ -284,11 +289,40 @@ import { AppPageSkeletonComponent } from '../shared/page-skeleton';
       }
     }
     @media (max-width: 560px) {
+      .accounts-panel {
+        margin-top: 0;
+      }
+      .account-card {
+        padding: 16px;
+        border-color: var(--bb-border);
+        border-radius: 20px;
+        background: var(--bb-surface-card);
+      }
       dl {
         grid-template-columns: 1fr 1fr;
+        gap: 14px 10px;
+        margin: 18px 0;
       }
       .account-card > header {
         flex-direction: column;
+      }
+      .accuracy {
+        text-align: left;
+      }
+      .account-card footer {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: stretch;
+        gap: 8px;
+      }
+      .account-card footer a,
+      .account-card footer button {
+        width: 100%;
+        min-height: 44px;
+      }
+      .account-card footer span {
+        grid-column: 1 / -1;
+        text-align: center;
       }
     }
   `,

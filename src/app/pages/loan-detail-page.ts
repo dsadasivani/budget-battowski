@@ -43,7 +43,7 @@ function localDate(): string {
     MatTabsModule,
   ],
   template: `
-    <section class="page loan-detail-page">
+    <section class="page mobile-loan-detail-page loan-detail-page">
       @if (account(); as loan) {
         @if (calculation(); as result) {
           <header class="page-header loan-page-header">

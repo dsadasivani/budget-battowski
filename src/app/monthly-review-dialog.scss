@@ -19,6 +19,45 @@
   color: var(--review-ink);
 }
 
+.actual-investments {
+  margin: 0 20px 18px;
+  padding: 16px;
+  border: 1px solid #dfe5ee;
+  border-radius: 14px;
+  background: #fff;
+
+  h3,
+  h4,
+  p {
+    margin: 0;
+  }
+
+  h4 {
+    margin-top: 14px;
+    color: #667085;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+  }
+
+  > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 7px 0;
+  }
+
+  .investment-review-total {
+    margin-top: 8px;
+    border-top: 1px solid #eaecf0;
+  }
+
+  p {
+    margin-top: 12px;
+    color: #667085;
+    font-size: 0.72rem;
+  }
+}
+
 :host ::ng-deep {
   .mat-mdc-dialog-surface {
     overflow: hidden;

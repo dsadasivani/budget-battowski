@@ -17,6 +17,7 @@ import {
   type PaymentMode,
 } from './budget.models';
 import { BudgetStore } from './budget.store';
+import { InvestmentStore } from './stores/investment.store';
 import { MonthlyReviewSourceConflictError } from './domain/errors';
 import {
   buildProcessedImportCsv,
@@ -2766,6 +2767,7 @@ describe('App', () => {
 describe('PaymentModesPage', () => {
   let store: ReturnType<typeof createPaymentModeStore>;
   let bottomSheetOpen: ReturnType<typeof vi.fn>;
+  let investmentPaymentModeUsage: ReturnType<typeof vi.fn>;
   let breakpointObserver: {
     isMatched: ReturnType<typeof vi.fn>;
     observe: ReturnType<typeof vi.fn>;
@@ -2774,6 +2776,7 @@ describe('PaymentModesPage', () => {
   beforeEach(async () => {
     store = createPaymentModeStore();
     bottomSheetOpen = vi.fn();
+    investmentPaymentModeUsage = vi.fn(() => ({ amount: 0, count: 0 }));
     breakpointObserver = {
       isMatched: vi.fn(() => false),
       observe: vi.fn(() => of({ matches: false, breakpoints: {} })),
@@ -2782,11 +2785,37 @@ describe('PaymentModesPage', () => {
       imports: [PaymentModesPage],
       providers: [
         { provide: BudgetStore, useValue: store },
+        {
+          provide: InvestmentStore,
+          useValue: { paymentModeUsage: investmentPaymentModeUsage },
+        },
         { provide: BreakpointObserver, useValue: breakpointObserver },
       ],
     })
       .overrideProvider(MatBottomSheet, { useValue: { open: bottomSheetOpen } })
       .compileComponents();
+  });
+
+  it('includes current investment transactions in payment mode usage', () => {
+    store.paymentModes.set([
+      {
+        id: 'pm-investment-upi',
+        type: 'upi',
+        name: 'UPI',
+        provider: 'Google Pay',
+      },
+    ]);
+    investmentPaymentModeUsage.mockReturnValue({ amount: 2750, count: 2 });
+
+    const page = TestBed.createComponent(PaymentModesPage).componentInstance;
+
+    expect(page.filteredPaymentModes()).toEqual([
+      expect.objectContaining({
+        id: 'pm-investment-upi',
+        usageAmount: 2750,
+        recordCount: 2,
+      }),
+    ]);
   });
 
   it('should save UPI providers with a derived name', async () => {
@@ -4771,7 +4800,7 @@ describe('App accessibility', () => {
     12000,
   );
 
-  it('should pass axe checks on a loan detail screen', async () => {
+  it('should pass axe checks when loan overview and detail data are present', async () => {
     const fixture = TestBed.createComponent(App);
     const router = TestBed.inject(Router);
     const app = fixture.debugElement.injector.get(BudgetStore) as unknown as {
@@ -4814,13 +4843,21 @@ describe('App accessibility', () => {
     ]);
     app.loanEvents.set([]);
 
+    await router.navigateByUrl('/loans');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const overviewResults = await runAxe(fixture.nativeElement);
+
+    expect(overviewResults.violations).toEqual([]);
+
     await router.navigateByUrl('/loans/loan-a11y');
     fixture.detectChanges();
     await fixture.whenStable();
 
-    const results = await runAxe(fixture.nativeElement);
+    const detailResults = await runAxe(fixture.nativeElement);
 
-    expect(results.violations).toEqual([]);
+    expect(detailResults.violations).toEqual([]);
   }, 12000);
 });
 

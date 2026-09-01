@@ -21,7 +21,6 @@ import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } fro
 import { filter } from 'rxjs';
 
 import { appEnvironment } from '../environments/environment';
-import { BudgetStore } from './budget.store';
 import { BudgetFacade } from './core/budget.facade';
 import type { OnboardingProgress, OnboardingStepStatus } from './budget.models';
 import { OnboardingStore } from './stores/onboarding.store';
@@ -76,7 +75,6 @@ type LoginFeature = {
     MatProgressBarModule,
     MatTooltipModule,
   ],
-  providers: [BudgetStore, BudgetFacade],
   templateUrl: './app.html',
   styleUrl: './app.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
