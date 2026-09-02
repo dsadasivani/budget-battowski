@@ -22,7 +22,10 @@ jobs:
           distribution: temurin
           java-version: 21
       - run: npm ci
+      - run: npm --prefix functions ci
       - run: npm run format:check
+      - run: npm --prefix functions test
+      - run: npm run test:sms-api
       - run: npm run build
       - run: npm test -- --watch=false
       - run: npm run test:rules

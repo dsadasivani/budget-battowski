@@ -6,10 +6,17 @@ import { MatIconModule } from '@angular/material/icon';
 import { BudgetStore } from '../budget.store';
 import { AppPageSkeletonComponent } from '../shared/page-skeleton';
 import { OnboardingStore } from '../stores/onboarding.store';
+import { SmsAutomationSettings } from '../sms-automation-settings';
 
 @Component({
   selector: 'app-settings-page',
-  imports: [CommonModule, MatButtonModule, MatIconModule, AppPageSkeletonComponent],
+  imports: [
+    CommonModule,
+    MatButtonModule,
+    MatIconModule,
+    AppPageSkeletonComponent,
+    SmsAutomationSettings,
+  ],
   template: `
     @if (store.showPageSkeleton()) {
       <app-page-skeleton variant="utility" />
@@ -23,6 +30,7 @@ import { OnboardingStore } from '../stores/onboarding.store';
         </header>
 
         <section class="utility-grid">
+          <app-sms-automation-settings />
           <article class="panel-card action-card">
             <span class="icon-chip blue"
               ><mat-icon aria-hidden="true">{{ store.statusIcon() }}</mat-icon></span

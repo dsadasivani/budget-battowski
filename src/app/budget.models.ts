@@ -310,6 +310,47 @@ export interface ExpenseEntry extends OwnedRecord {
   templateId?: string;
   sourceLoanId?: string;
   paymentModeId?: string;
+  source?: 'manual' | 'sms';
+  sourceSmsTransactionId?: string;
+}
+
+export type SmsTransactionDecision = 'pending' | 'accept' | 'discard';
+export type SmsTransactionStatus = 'pending' | 'processed' | 'discarded' | 'failed';
+export type SmsFinancialTransactionType =
+  'debit' | 'credit' | 'refund' | 'transfer' | 'withdrawal' | 'unknown';
+
+export interface SmsTransaction extends PersistedRecord {
+  ownerUid: string;
+  source: 'sms';
+  deviceId: string;
+  sourceEventId: string;
+  sender: string;
+  rawMessage?: string;
+  receivedAt: string;
+  transactionDate?: string;
+  amount?: number;
+  currency?: string;
+  transactionType: SmsFinancialTransactionType;
+  merchant?: string;
+  description?: string;
+  bankName?: string;
+  accountLastFour?: string;
+  referenceNumber?: string;
+  paymentAccountId?: string;
+  paymentModeId?: string;
+  suggestedCategoryId?: string;
+  categoryId?: string;
+  notes?: string;
+  decision: SmsTransactionDecision;
+  status: SmsTransactionStatus;
+  parserId?: string;
+  parserVersion?: string;
+  confidence?: number;
+  duplicateFingerprint?: string;
+  expenseId?: string;
+  createdDate: string;
+  updatedDate: string;
+  processedDate?: string;
 }
 
 export interface InvestmentEntry extends OwnedRecord {

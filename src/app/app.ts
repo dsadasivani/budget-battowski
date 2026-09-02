@@ -274,6 +274,13 @@ export class App {
       mobilePlacement: 'primary',
     },
     {
+      label: 'SMS Transactions',
+      shortLabel: 'SMS',
+      icon: 'sms',
+      path: '/sms-transactions',
+      mobilePlacement: 'utility',
+    },
+    {
       label: 'Income',
       icon: 'payments',
       path: '/income',

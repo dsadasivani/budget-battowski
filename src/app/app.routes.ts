@@ -17,6 +17,11 @@ export const routes: Routes = [
       import('./pages/expenses-page').then((component) => component.ExpensesPage),
   },
   {
+    path: 'sms-transactions',
+    loadComponent: () =>
+      import('./pages/sms-transactions-page').then((component) => component.SmsTransactionsPage),
+  },
+  {
     path: 'income',
     loadComponent: () => import('./pages/income-page').then((component) => component.IncomePage),
   },

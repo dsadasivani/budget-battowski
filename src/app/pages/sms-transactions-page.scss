@@ -1,0 +1,364 @@
+:host {
+  display: block;
+}
+.sms-page {
+  display: grid;
+  gap: 1rem;
+}
+.sms-tabs {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 1px solid #dbe3ef;
+  overflow-x: auto;
+}
+.sms-tabs button {
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: #475569;
+  padding: 0.8rem 1rem;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.sms-tabs button.active {
+  color: #1d4ed8;
+  border-bottom-color: #2563eb;
+}
+.sms-tabs span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  margin-left: 0.3rem;
+  border-radius: 999px;
+  background: #e2e8f0;
+  font-size: 0.75rem;
+}
+.filter-panel {
+  display: grid;
+  grid-template-columns: minmax(16rem, 2fr) repeat(6, minmax(8rem, 1fr));
+  gap: 0.75rem;
+  align-items: end;
+  padding: 1rem;
+}
+label {
+  display: grid;
+  gap: 0.3rem;
+  color: #475569;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+input,
+select,
+textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2.6rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.55rem;
+  background: #fff;
+  color: #172033;
+  padding: 0.55rem 0.7rem;
+  font: inherit;
+}
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible,
+summary:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 2px;
+}
+.input-with-icon {
+  position: relative;
+  display: block;
+}
+.input-with-icon mat-icon {
+  position: absolute;
+  left: 0.55rem;
+  top: 0.55rem;
+  color: #64748b;
+}
+.input-with-icon input {
+  padding-left: 2.3rem;
+}
+.check-filter {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  min-height: 2.6rem;
+}
+.check-filter input,
+.replace-check input {
+  width: 1rem;
+  min-height: 1rem;
+}
+.bulk-bar {
+  position: sticky;
+  top: 0.5rem;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.8rem;
+  background: #172554;
+  color: #fff;
+  box-shadow: 0 8px 24px #0f172a33;
+}
+.bulk-bar select,
+.bulk-bar input {
+  min-height: 2.25rem;
+}
+.bulk-note {
+  min-width: 12rem;
+  flex: 1;
+}
+.replace-check {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #fff;
+}
+.transaction-panel {
+  padding: 0;
+  overflow: hidden;
+}
+.data-table td {
+  vertical-align: middle;
+}
+.data-table td small {
+  display: block;
+  margin-top: 0.2rem;
+  color: #64748b;
+}
+.data-table tr.needs-attention > td {
+  background: #fff7ed;
+}
+.decision-badge {
+  display: inline-block;
+  border-radius: 999px;
+  background: #e2e8f0;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: #334155;
+}
+.decision-badge.accept {
+  background: #dcfce7;
+  color: #166534;
+}
+.decision-badge.discard {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.text-action {
+  display: block;
+  border: 0;
+  background: transparent;
+  padding: 0.2rem 0;
+  color: #1d4ed8;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.editor-row td {
+  padding: 0 !important;
+}
+.transaction-editor {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr 1fr 1.2fr;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  background: #f8fafc;
+  border-block: 1px solid #dbe3ef;
+}
+.detected {
+  display: grid;
+  gap: 0.25rem;
+  align-content: start;
+  color: #475569;
+  font-size: 0.85rem;
+}
+.detected strong {
+  color: #172033;
+}
+.notes-field {
+  min-width: 12rem;
+}
+.transaction-editor details,
+.transaction-editor .row-error,
+.editor-actions {
+  grid-column: 1 / -1;
+}
+details {
+  padding: 0.7rem;
+  border-radius: 0.6rem;
+  background: #fff;
+}
+summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+details p {
+  overflow-wrap: anywhere;
+  color: #475569;
+}
+.editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 0.7rem;
+  padding: 0.75rem 1rem;
+}
+.notice.error,
+.row-error {
+  background: #fef2f2;
+  color: #991b1b;
+}
+.notice.success {
+  background: #ecfdf5;
+  color: #166534;
+}
+.empty-state {
+  min-height: 13rem;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 0.45rem;
+  text-align: center;
+  color: #64748b;
+  padding: 2rem;
+}
+.empty-state mat-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  font-size: 2.5rem;
+}
+.empty-state strong {
+  color: #172033;
+  font-size: 1rem;
+}
+.submit-panel {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 1rem;
+  align-items: center;
+  padding: 1rem 1.25rem;
+}
+.submit-panel h2,
+.submit-panel p {
+  margin: 0;
+}
+.validation-list {
+  grid-column: 1 / -1;
+  border-left: 4px solid #ea580c;
+  background: #fff7ed;
+  color: #9a3412;
+  padding: 0.75rem 1rem;
+}
+.validation-list p {
+  margin-top: 0.35rem;
+}
+.mobile-sms-list {
+  display: none;
+}
+.sms-card {
+  display: grid;
+  gap: 0.55rem;
+  border: 1px solid #dbe3ef;
+  border-radius: 0.8rem;
+  padding: 0.9rem;
+  background: #fff;
+}
+.sms-card.needs-attention {
+  border-color: #fb923c;
+  background: #fff7ed;
+}
+.sms-card header,
+.sms-card header label,
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.sms-card header {
+  justify-content: space-between;
+}
+.sms-card header input {
+  width: 1rem;
+  min-height: 1rem;
+}
+.sms-card p {
+  margin: 0;
+  color: #64748b;
+}
+.card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.card-tags span {
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #334155;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.73rem;
+}
+.card-actions {
+  justify-content: flex-end;
+}
+
+@media (max-width: 1150px) {
+  .filter-panel {
+    grid-template-columns: repeat(3, minmax(10rem, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .filter-panel {
+    grid-template-columns: 1fr 1fr;
+  }
+  .search-field {
+    grid-column: 1 / -1;
+  }
+  .desktop-sms-table {
+    display: none;
+  }
+  .mobile-sms-list {
+    display: grid;
+    gap: 0.75rem;
+    padding: 0.75rem;
+  }
+  .transaction-editor {
+    grid-template-columns: 1fr;
+    margin-top: 0.5rem;
+    border-radius: 0.6rem;
+  }
+  .transaction-editor details,
+  .transaction-editor .row-error,
+  .editor-actions {
+    grid-column: 1;
+  }
+  .submit-panel {
+    grid-template-columns: 1fr;
+  }
+  .validation-list {
+    grid-column: 1;
+  }
+  .bulk-bar {
+    top: 3.8rem;
+  }
+}
+@media (max-width: 480px) {
+  .filter-panel {
+    grid-template-columns: 1fr;
+  }
+  .search-field {
+    grid-column: 1;
+  }
+}

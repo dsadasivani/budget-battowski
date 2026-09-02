@@ -141,6 +141,123 @@ test('create ownership must match the authenticated member', async () => {
   );
 });
 
+test('SMS transactions are workspace scoped, owner immutable, editable, and never client-deleted', async () => {
+  const ownerDb = authenticatedDatabase(ownerEmail);
+  const memberDb = authenticatedDatabase(memberEmail);
+  const otherDb = authenticatedDatabase(otherEmail);
+  const smsRef = workspaceRecord(ownerDb, 'smsTransactions', 'sms-hdfc-debit');
+  await assertSucceeds(
+    setDoc(smsRef, {
+      ownerUid,
+      source: 'sms',
+      deviceId: 'dev_12345678',
+      sourceEventId: 'event-1',
+      sender: 'VM-HDFCBK',
+      receivedAt: '2026-09-01T02:12:00.000Z',
+      transactionDate: '2026-09-01T02:12:00.000Z',
+      amount: 450,
+      currency: 'INR',
+      transactionType: 'debit',
+      merchant: 'Zomato',
+      decision: 'pending',
+      status: 'pending',
+      createdDate: '2026-09-01T02:12:01.000Z',
+      updatedDate: '2026-09-01T02:12:01.000Z',
+    }),
+  );
+  await assertSucceeds(getDoc(workspaceRecord(memberDb, 'smsTransactions', 'sms-hdfc-debit')));
+  await assertFails(getDoc(workspaceRecord(otherDb, 'smsTransactions', 'sms-hdfc-debit')));
+  await assertSucceeds(
+    updateDoc(workspaceRecord(memberDb, 'smsTransactions', 'sms-hdfc-debit'), {
+      categoryId: 'category-food',
+      notes: 'Dinner',
+      decision: 'accept',
+      updatedDate: '2026-09-01T02:13:00.000Z',
+    }),
+  );
+  await assertFails(
+    updateDoc(workspaceRecord(memberDb, 'smsTransactions', 'sms-hdfc-debit'), {
+      ownerUid: memberUid,
+    }),
+  );
+  await assertFails(
+    updateDoc(workspaceRecord(memberDb, 'smsTransactions', 'sms-hdfc-debit'), {
+      rawMessage: 'tampered',
+    }),
+  );
+  await assertFails(deleteDoc(workspaceRecord(ownerDb, 'smsTransactions', 'sms-hdfc-debit')));
+});
+
+test('SMS expense provenance is accepted only for a same-owner workspace transaction', async () => {
+  const ownerDb = authenticatedDatabase(ownerEmail);
+  const memberDb = authenticatedDatabase(memberEmail);
+  await assertSucceeds(
+    setDoc(workspaceRecord(ownerDb, 'paymentModes', 'mode-owner-sms'), {
+      type: 'upi',
+      name: 'Owner UPI',
+      ownerUid,
+      memberEmail: ownerEmail,
+    }),
+  );
+  await assertSucceeds(
+    setDoc(workspaceRecord(ownerDb, 'smsTransactions', 'sms-source'), {
+      ownerUid,
+      source: 'sms',
+      deviceId: 'dev_12345678',
+      sourceEventId: 'event-source',
+      sender: 'VM-HDFCBK',
+      receivedAt: '2026-09-01T02:12:00.000Z',
+      amount: 450,
+      currency: 'INR',
+      transactionType: 'debit',
+      merchant: 'Zomato',
+      decision: 'accept',
+      status: 'pending',
+      createdDate: '2026-09-01T02:12:01.000Z',
+      updatedDate: '2026-09-01T02:12:01.000Z',
+    }),
+  );
+  const expense = {
+    month: '2026-09',
+    date: '2026-09-01',
+    name: 'Zomato',
+    categoryId: 'category-food',
+    amount: 450,
+    type: 'one-time',
+    note: '',
+    paymentModeId: 'mode-owner-sms',
+    ownerUid,
+    memberEmail: ownerEmail,
+    source: 'sms',
+    sourceSmsTransactionId: 'sms-source',
+  };
+  await assertSucceeds(setDoc(workspaceRecord(memberDb, 'expenses', 'sms_sms-source'), expense));
+  await assertFails(
+    setDoc(workspaceRecord(memberDb, 'expenses', 'sms_missing-source'), {
+      ...expense,
+      sourceSmsTransactionId: 'missing-source',
+    }),
+  );
+  await assertFails(
+    updateDoc(workspaceRecord(memberDb, 'expenses', 'sms_sms-source'), {
+      sourceSmsTransactionId: 'another-source',
+    }),
+  );
+});
+
+test('server-only SMS automation collections are inaccessible to application users', async () => {
+  const ownerDb = authenticatedDatabase(ownerEmail);
+  for (const collectionName of [
+    'budgetIngestionDevices',
+    'budgetPairingSessions',
+    'budgetSmsEventReceipts',
+    'budgetApiRateLimits',
+  ]) {
+    await assertFails(getDoc(doc(ownerDb, collectionName, 'server-record')));
+    await assertFails(setDoc(doc(ownerDb, collectionName, 'server-record'), { ownerUid }));
+  }
+});
+
 test('investment V2 accounts and transactions stay workspace scoped and owner linked', async () => {
   const ownerDb = authenticatedDatabase(ownerEmail);
   const memberDb = authenticatedDatabase(memberEmail);

@@ -15,6 +15,7 @@ service cloud.firestore {
         workspace(id).ownerUid == request.auth.uid;
     }
     function optionalString(data, field) { return !(field in data) || data[field] is string; }
+    function optionalNumber(data, field) { return !(field in data) || data[field] is number; }
     function validMonth(value) { return value is string && value.matches('^[0-9]{4}-[0-9]{2}$'); }
     function validDate(value) { return value is string && value.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'); }
     function validVersion(data) { return !('version' in data) || (data.version is int && data.version >= 0); }
@@ -74,10 +75,13 @@ service cloud.firestore {
     function generatedExpenseOwnerValid(workspaceId, data) {
       let templatePath = /databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/templates/$(data.templateId);
       let loanAccountPath = /databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/loanAccounts/$(data.sourceLoanId);
+      let smsTransactionPath = /databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/smsTransactions/$(data.sourceSmsTransactionId);
       return ('templateId' in data && data.templateId is string && exists(templatePath) &&
           sameOwner(get(templatePath).data, data)) ||
         ('sourceLoanId' in data && data.sourceLoanId is string && exists(loanAccountPath) &&
-          sameOwner(get(loanAccountPath).data, data));
+          sameOwner(get(loanAccountPath).data, data)) ||
+        ('sourceSmsTransactionId' in data && data.sourceSmsTransactionId is string &&
+          exists(smsTransactionPath) && sameOwner(get(smsTransactionPath).data, data));
     }
     function generatedInvestmentOwnerValid(workspaceId, data) {
       let sourcePath = /databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/investments/$(data.sourceInvestmentId);
@@ -192,15 +196,69 @@ service cloud.firestore {
         allow read: if member(workspaceId);
         allow create: if member(workspaceId) &&
           (validOwnedCreate(request.resource.data) || generatedExpenseOwnerValid(workspaceId, request.resource.data)) &&
-          validExpense(request.resource.data) && optionalLinkedMode(workspaceId, request.resource.data);
+          validExpense(request.resource.data) && validSmsExpenseSource(workspaceId, request.resource.data) &&
+          optionalLinkedMode(workspaceId, request.resource.data);
         allow update: if member(workspaceId) && immutableOwner() && validExpense(request.resource.data) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['source','sourceSmsTransactionId']) &&
+          validSmsExpenseSource(workspaceId, request.resource.data) &&
           optionalLinkedMode(workspaceId, request.resource.data);
         allow delete: if member(workspaceId);
       }
       function validExpense(data) {
-        return commonOwned(data) && data.keys().hasOnly(['month','date','name','categoryId','amount','type','note','templateId','sourceLoanId','ownerUid','memberEmail','paymentModeId','version','createdAt','updatedAt']) && data.name is string && data.categoryId is string &&
+        return commonOwned(data) && data.keys().hasOnly(['month','date','name','categoryId','amount','type','note','templateId','sourceLoanId','ownerUid','memberEmail','paymentModeId','source','sourceSmsTransactionId','version','createdAt','updatedAt']) && data.name is string && data.categoryId is string &&
           data.amount is number && data.amount >= 0 && data.type in ['recurring','one-time'] &&
-          data.note is string && validMonth(data.month) && (!('date' in data) || validDate(data.date));
+          data.note is string && validMonth(data.month) && (!('date' in data) || validDate(data.date)) &&
+          (!('source' in data) || data.source in ['manual','sms']) &&
+          (!('sourceSmsTransactionId' in data) ||
+            ('source' in data && data.source == 'sms' && data.sourceSmsTransactionId is string));
+      }
+      function validSmsExpenseSource(workspaceId, data) {
+        let path = /databases/$(database)/documents/budgetWorkspaces/$(workspaceId)/smsTransactions/$(data.sourceSmsTransactionId);
+        return !('sourceSmsTransactionId' in data) ||
+          (exists(path) && sameOwner(get(path).data, data));
+      }
+      function validSmsTransaction(data) {
+        return commonOwned(data) && data.keys().hasOnly([
+          'source','deviceId','sourceEventId','sender','rawMessage','receivedAt','transactionDate',
+          'amount','currency','transactionType','merchant','description','bankName',
+          'accountLastFour','referenceNumber','paymentAccountId','paymentModeId',
+          'suggestedCategoryId','categoryId','notes','decision','status','parserId','parserVersion',
+          'confidence','duplicateFingerprint','expenseId','ownerUid','createdDate','updatedDate',
+          'processedDate','version','createdAt','updatedAt'
+        ]) && data.source == 'sms' && data.deviceId is string && data.sourceEventId is string &&
+          data.sender is string && data.receivedAt is string && data.createdDate is string &&
+          data.updatedDate is string && data.transactionType in
+            ['debit','credit','refund','transfer','withdrawal','unknown'] &&
+          data.decision in ['pending','accept','discard'] &&
+          data.status in ['pending','processed','discarded','failed'] &&
+          optionalString(data, 'rawMessage') && optionalString(data, 'transactionDate') &&
+          optionalNumber(data, 'amount') && optionalString(data, 'currency') &&
+          optionalString(data, 'merchant') && optionalString(data, 'description') &&
+          optionalString(data, 'bankName') && optionalString(data, 'accountLastFour') &&
+          optionalString(data, 'referenceNumber') && optionalString(data, 'paymentAccountId') &&
+          optionalString(data, 'paymentModeId') && optionalString(data, 'suggestedCategoryId') &&
+          optionalString(data, 'categoryId') && optionalString(data, 'notes') &&
+          optionalString(data, 'parserId') && optionalString(data, 'parserVersion') &&
+          optionalNumber(data, 'confidence') && optionalString(data, 'duplicateFingerprint') &&
+          optionalString(data, 'expenseId') && optionalString(data, 'processedDate');
+      }
+      function smsPaymentLinksValid(workspaceId, data) {
+        return (!('paymentAccountId' in data) ||
+            (exists(accountPath(workspaceId, data.paymentAccountId)) &&
+              sameOwner(get(accountPath(workspaceId, data.paymentAccountId)).data, data))) &&
+          (!('paymentModeId' in data) || linkedModeValid(workspaceId, data, false));
+      }
+      match /smsTransactions/{id} {
+        allow read: if member(workspaceId);
+        allow create: if member(workspaceId) && validOwnedCreate(request.resource.data) &&
+          validSmsTransaction(request.resource.data) && smsPaymentLinksValid(workspaceId, request.resource.data);
+        allow update: if member(workspaceId) && immutableOwner() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'paymentAccountId','paymentModeId','categoryId','notes','decision','status',
+            'expenseId','processedDate','updatedDate','version','updatedAt'
+          ]) && validSmsTransaction(request.resource.data) &&
+          smsPaymentLinksValid(workspaceId, request.resource.data);
+        allow delete: if false;
       }
       match /investments/{id} {
         allow read: if member(workspaceId);

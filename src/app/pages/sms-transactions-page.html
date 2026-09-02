@@ -1,0 +1,471 @@
+<section class="page sms-page">
+  <header class="page-header desktop-page-header">
+    <div>
+      <h1>SMS Transactions</h1>
+      <p>Review transactions detected from your bank messages before they become expenses.</p>
+    </div>
+    @if (activeTab() === 'pending' && readyTransactions().length) {
+      <button mat-stroked-button type="button" (click)="acceptReady()" [disabled]="sms.saving()">
+        <mat-icon aria-hidden="true">done_all</mat-icon>
+        Accept {{ readyTransactions().length }} ready
+      </button>
+    }
+  </header>
+
+  @if (sms.loading()) {
+    <mat-progress-bar mode="indeterminate" aria-label="Loading SMS transactions" />
+  }
+  @if (sms.error(); as error) {
+    <div class="notice error" role="alert">
+      <mat-icon aria-hidden="true">error</mat-icon>{{ error }}
+    </div>
+  }
+  @if (statusMessage(); as message) {
+    <div class="notice success" role="status">
+      <mat-icon aria-hidden="true">check_circle</mat-icon>{{ message }}
+    </div>
+  }
+
+  <div class="sms-tabs" role="tablist" aria-label="SMS transaction status">
+    <button
+      type="button"
+      role="tab"
+      [attr.aria-selected]="activeTab() === 'pending'"
+      [class.active]="activeTab() === 'pending'"
+      (click)="selectTab('pending')"
+    >
+      Pending <span>{{ sms.pending().length }}</span>
+    </button>
+    <button
+      type="button"
+      role="tab"
+      [attr.aria-selected]="activeTab() === 'processed'"
+      [class.active]="activeTab() === 'processed'"
+      (click)="selectTab('processed')"
+    >
+      Processed <span>{{ sms.processed().length }}</span>
+    </button>
+    <button
+      type="button"
+      role="tab"
+      [attr.aria-selected]="activeTab() === 'discarded'"
+      [class.active]="activeTab() === 'discarded'"
+      (click)="selectTab('discarded')"
+    >
+      Discarded <span>{{ sms.discarded().length }}</span>
+    </button>
+  </div>
+
+  <section class="panel-card filter-panel" aria-label="Transaction filters">
+    <label class="search-field">
+      <span>Search</span>
+      <span class="input-with-icon"
+        ><mat-icon aria-hidden="true">search</mat-icon
+        ><input
+          type="search"
+          placeholder="Merchant, notes, account or reference"
+          [value]="query()"
+          (input)="setText(query, $event)"
+      /></span>
+    </label>
+    <label
+      ><span>From</span
+      ><input type="date" [value]="dateFrom()" (change)="setText(dateFrom, $event)"
+    /></label>
+    <label
+      ><span>To</span><input type="date" [value]="dateTo()" (change)="setText(dateTo, $event)"
+    /></label>
+    <label
+      ><span>Bank</span
+      ><select [value]="bank()" (change)="setText(bank, $event)">
+        <option value="">All banks</option>
+        @for (name of banks(); track name) {
+          <option [value]="name">{{ name }}</option>
+        }
+      </select></label
+    >
+    <label
+      ><span>Paid via</span
+      ><select [value]="paidVia()" (change)="setText(paidVia, $event)">
+        <option value="">All payment modes</option>
+        @for (mode of budget.activePaymentModes(); track mode.id) {
+          <option [value]="mode.id">{{ paymentModeOption(mode) }}</option>
+        }
+      </select></label
+    >
+    <label
+      ><span>Category</span
+      ><select [value]="category()" (change)="setText(category, $event)">
+        <option value="">All categories</option>
+        @for (item of budget.expenseCategories(); track item.id) {
+          <option [value]="item.id">{{ item.name }}</option>
+        }
+      </select></label
+    >
+    @if (activeTab() === 'pending') {
+      <label
+        ><span>Decision</span
+        ><select [value]="decision()" (change)="setDecisionFilter($event)">
+          <option value="">All decisions</option>
+          <option value="pending">Not decided</option>
+          <option value="accept">Accept staged</option>
+          <option value="discard">Discard staged</option>
+        </select></label
+      >
+      <label class="check-filter"
+        ><input
+          type="checkbox"
+          [checked]="needsAttention()"
+          (change)="toggleAttention($event)"
+        /><span>Needs attention</span></label
+      >
+    }
+  </section>
+
+  @if (activeTab() === 'pending' && selectedTransactions().length) {
+    <section class="bulk-bar" aria-label="Bulk transaction actions">
+      <strong>{{ selectedTransactions().length }} selected</strong>
+      <button mat-stroked-button type="button" (click)="stageSelected('accept')">
+        <mat-icon aria-hidden="true">check</mat-icon>Accept
+      </button>
+      <button mat-stroked-button type="button" (click)="stageSelected('discard')">
+        <mat-icon aria-hidden="true">close</mat-icon>Discard
+      </button>
+      <label
+        ><span class="sr-only">Set category for selected transactions</span
+        ><select
+          aria-label="Set category for selected transactions"
+          (change)="setCategory(trackIds(selectedTransactions()), $event)"
+        >
+          <option value="">Set category</option>
+          @for (item of budget.expenseCategories(); track item.id) {
+            <option [value]="item.id">{{ item.name }}</option>
+          }
+        </select></label
+      >
+      <label
+        ><span class="sr-only">Set paid via for selected transactions</span
+        ><select
+          aria-label="Set paid via for selected transactions"
+          (change)="setPaidVia(trackIds(selectedTransactions()), $event)"
+        >
+          <option value="">Set paid via</option>
+          @for (mode of budget.activePaymentModes(); track mode.id) {
+            <option [value]="mode.id">{{ paymentModeOption(mode) }}</option>
+          }
+        </select></label
+      >
+      <label class="bulk-note"
+        ><span class="sr-only">Notes for selected transactions</span
+        ><input
+          type="text"
+          placeholder="Add notes"
+          [value]="bulkNotes()"
+          (input)="setBulkNotes($event)"
+      /></label>
+      <label class="replace-check"
+        ><input
+          type="checkbox"
+          [checked]="replaceBulkNotes()"
+          (change)="setReplaceNotes($event)"
+        />Replace</label
+      >
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="applyBulkNotes()"
+        [disabled]="!bulkNotes().trim()"
+      >
+        Apply notes
+      </button>
+    </section>
+  }
+
+  <section class="panel-card transaction-panel" [attr.aria-busy]="sms.loading() || sms.saving()">
+    <div class="desktop-sms-table data-table-wrap" tabindex="0" aria-label="SMS transactions table">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>
+              <input
+                type="checkbox"
+                aria-label="Select all visible transactions"
+                [checked]="allVisibleSelected()"
+                (change)="toggleAll($event)"
+              />
+            </th>
+            <th>Date</th>
+            <th>Merchant</th>
+            <th>Amount</th>
+            <th>Paid via</th>
+            <th>Category</th>
+            <th>Decision</th>
+            <th><span class="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (transaction of visibleTransactions(); track transaction.id) {
+            <tr [class.needs-attention]="needsRowAttention(transaction)">
+              <td>
+                <input
+                  type="checkbox"
+                  [attr.aria-label]="'Select ' + (transaction.merchant || 'transaction')"
+                  [checked]="isSelected(transaction.id)"
+                  (change)="toggleSelected(transaction.id, $event)"
+                />
+              </td>
+              <td>{{ dateValue(transaction) | date: 'd MMM y' }}</td>
+              <td>
+                <strong>{{
+                  transaction.merchant || transaction.description || 'Unknown merchant'
+                }}</strong
+                ><small
+                  >{{ transaction.bankName || 'Bank' }}
+                  @if (transaction.accountLastFour) {
+                    · ••{{ transaction.accountLastFour }}
+                  }
+                </small>
+              </td>
+              <td>
+                <b>{{
+                  transaction.amount
+                    | currency: transaction.currency || 'INR' : 'symbol' : '1.2-2' : 'en-IN'
+                }}</b
+                ><small>{{ transaction.transactionType }}</small>
+              </td>
+              <td>{{ paymentModeLabel(transaction) }}</td>
+              <td>
+                {{ categoryName(transaction) || 'Not set' }}
+                @if (!transaction.categoryId && transaction.suggestedCategoryId) {
+                  <button class="text-action" type="button" (click)="useSuggestion(transaction)">
+                    Use suggestion
+                  </button>
+                }
+              </td>
+              <td>
+                <span
+                  class="decision-badge"
+                  [class.accept]="transaction.decision === 'accept'"
+                  [class.discard]="transaction.decision === 'discard'"
+                  >{{ decisionLabel(transaction) }}</span
+                >
+              </td>
+              <td>
+                <button
+                  mat-icon-button
+                  type="button"
+                  [attr.aria-label]="'Edit ' + (transaction.merchant || 'transaction')"
+                  (click)="toggleExpanded(transaction.id)"
+                >
+                  <mat-icon aria-hidden="true">{{
+                    expandedId() === transaction.id ? 'expand_less' : 'edit'
+                  }}</mat-icon>
+                </button>
+              </td>
+            </tr>
+            @if (expandedId() === transaction.id) {
+              <tr class="editor-row">
+                <td colspan="8">
+                  <ng-container
+                    [ngTemplateOutlet]="editor"
+                    [ngTemplateOutletContext]="{ $implicit: transaction }"
+                  />
+                </td>
+              </tr>
+            }
+          } @empty {
+            <tr>
+              <td colspan="8">
+                <div class="empty-state">
+                  <mat-icon aria-hidden="true">sms</mat-icon
+                  ><strong>No SMS transactions to review</strong
+                  ><span
+                    >New eligible bank transactions will appear here after your connected Android
+                    device detects them.</span
+                  >
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mobile-sms-list">
+      @for (transaction of visibleTransactions(); track transaction.id) {
+        <article class="sms-card" [class.needs-attention]="needsRowAttention(transaction)">
+          <header>
+            <label
+              ><input
+                type="checkbox"
+                [attr.aria-label]="'Select ' + (transaction.merchant || 'transaction')"
+                [checked]="isSelected(transaction.id)"
+                (change)="toggleSelected(transaction.id, $event)"
+              /><strong>{{
+                transaction.merchant || transaction.description || 'Unknown merchant'
+              }}</strong></label
+            ><b>{{
+              transaction.amount
+                | currency: transaction.currency || 'INR' : 'symbol' : '1.0-2' : 'en-IN'
+            }}</b>
+          </header>
+          <p>
+            {{ dateValue(transaction) | date: 'd MMM' }} · {{ transaction.bankName || 'Bank' }}
+            @if (transaction.accountLastFour) {
+              · ••{{ transaction.accountLastFour }}
+            }
+          </p>
+          <div class="card-tags">
+            <span>{{ categoryName(transaction) || 'Category needed' }}</span
+            ><span>{{ paymentModeLabel(transaction) }}</span
+            ><span>{{ decisionLabel(transaction) }}</span>
+          </div>
+          @if (activeTab() === 'pending') {
+            <div class="card-actions">
+              <button mat-stroked-button type="button" (click)="stage([transaction.id], 'accept')">
+                Accept</button
+              ><button
+                mat-stroked-button
+                type="button"
+                (click)="stage([transaction.id], 'discard')"
+              >
+                Discard</button
+              ><button
+                mat-icon-button
+                type="button"
+                [attr.aria-label]="'Edit ' + (transaction.merchant || 'transaction')"
+                (click)="toggleExpanded(transaction.id)"
+              >
+                <mat-icon aria-hidden="true">edit</mat-icon>
+              </button>
+            </div>
+          }
+          @if (expandedId() === transaction.id) {
+            <ng-container
+              [ngTemplateOutlet]="editor"
+              [ngTemplateOutletContext]="{ $implicit: transaction }"
+            />
+          }
+        </article>
+      } @empty {
+        <div class="empty-state">
+          <mat-icon aria-hidden="true">sms</mat-icon><strong>No SMS transactions to review</strong
+          ><span
+            >New eligible bank transactions will appear here after your connected Android device
+            detects them.</span
+          >
+        </div>
+      }
+    </div>
+  </section>
+
+  @if (activeTab() === 'pending' && stagedTransactions().length) {
+    <section class="submit-panel panel-card" aria-labelledby="submit-decisions-title">
+      <div>
+        <h2 id="submit-decisions-title">
+          Submit {{ stagedTransactions().length }} decision{{
+            stagedTransactions().length === 1 ? '' : 's'
+          }}
+        </h2>
+        <p>Accept and Discard are staged until you submit.</p>
+      </div>
+      @if (submissionIssues().length) {
+        <div class="validation-list" role="alert">
+          <strong
+            >{{ submissionIssues().length }} accepted transaction{{
+              submissionIssues().length === 1 ? '' : 's'
+            }}
+            need attention</strong
+          >
+          @for (issue of submissionIssues(); track issue.transactionId) {
+            <p>
+              <b>{{ issue.merchant }}</b
+              >: {{ issue.messages.join(', ') }}
+            </p>
+          }
+        </div>
+      }
+      <button
+        mat-flat-button
+        type="button"
+        (click)="submitDecisions()"
+        [disabled]="sms.saving() || submissionIssues().length > 0"
+      >
+        Submit decisions
+      </button>
+    </section>
+  }
+</section>
+
+<ng-template #editor let-transaction>
+  <section
+    class="transaction-editor"
+    [attr.aria-label]="'Edit ' + (transaction.merchant || 'transaction')"
+  >
+    <div class="detected">
+      <strong>Detected</strong
+      ><span
+        >{{ transaction.bankName || 'Unknown bank' }}
+        @if (transaction.accountLastFour) {
+          ••{{ transaction.accountLastFour }}
+        }</span
+      ><span
+        >{{ transaction.transactionType }} · {{ transaction.parserId || 'parser' }} ·
+        {{ transaction.confidence || 0 | percent: '1.0-0' }} confidence</span
+      >
+      @if (transaction.referenceNumber) {
+        <span>Reference: {{ transaction.referenceNumber }}</span>
+      }
+    </div>
+    <label
+      ><span>Category</span
+      ><select
+        [value]="transaction.categoryId || ''"
+        (change)="setCategory([transaction.id], $event)"
+      >
+        <option value="">Select category</option>
+        @for (item of budget.expenseCategories(); track item.id) {
+          <option [value]="item.id">{{ item.name }}</option>
+        }
+      </select></label
+    >
+    <label
+      ><span>Paid via</span
+      ><select
+        [value]="transaction.paymentModeId || ''"
+        (change)="setPaidVia([transaction.id], $event)"
+      >
+        <option value="">Select payment mode</option>
+        @for (mode of budget.activePaymentModes(); track mode.id) {
+          <option [value]="mode.id">{{ paymentModeOption(mode) }}</option>
+        }
+      </select></label
+    >
+    <label class="notes-field"
+      ><span>Notes</span
+      ><textarea
+        rows="2"
+        [value]="transaction.notes || ''"
+        (change)="setNotes(transaction.id, $event)"
+      ></textarea>
+    </label>
+    @if (transaction.rawMessage) {
+      <details>
+        <summary>Original SMS</summary>
+        <p>{{ transaction.rawMessage }}</p>
+      </details>
+    }
+    @if (failureMessage(transaction.id); as failure) {
+      <p class="row-error" role="alert">{{ failure }}</p>
+    }
+    @if (activeTab() === 'pending') {
+      <div class="editor-actions">
+        <button mat-stroked-button type="button" (click)="stage([transaction.id], 'discard')">
+          Discard</button
+        ><button mat-flat-button type="button" (click)="stage([transaction.id], 'accept')">
+          Accept
+        </button>
+      </div>
+    }
+  </section>
+</ng-template>

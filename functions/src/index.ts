@@ -5,9 +5,22 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import { defineSecret } from 'firebase-functions/params';
 import { onRequest } from 'firebase-functions/v2/https';
-import readXlsxFile from 'read-excel-file/node';
+
+import { apiRouter } from './api/router.js';
 
 if (!getApps().length) initializeApp();
+
+export const api = onRequest(
+  {
+    region: 'asia-south1',
+    memory: '256MiB',
+    minInstances: 0,
+    cpu: 'gcf_gen1',
+    timeoutSeconds: 30,
+    maxInstances: 10,
+  },
+  apiRouter,
+);
 
 const investmentMarketDataToken = defineSecret('INVESTMENT_MARKET_DATA_TOKEN');
 const AMFI_NAV_URL = 'https://www.amfiindia.com/spages/NAVAll.txt';
@@ -214,6 +227,7 @@ async function npsCatalog(): Promise<NpsCatalogItem[]> {
   const bytes = Buffer.from(await upstream.arrayBuffer());
   let rows: unknown[][];
   try {
+    const { default: readXlsxFile } = await import('read-excel-file/node');
     rows = (await readXlsxFile(bytes)) as unknown as unknown[][];
   } catch {
     const text = bytes.toString('utf8');

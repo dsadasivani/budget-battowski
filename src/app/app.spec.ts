@@ -706,6 +706,7 @@ describe('App', () => {
     const app = fixture.componentInstance;
 
     expect(app.utilityMobileNavItems.map((item) => item.label)).toEqual([
+      'SMS Transactions',
       'Income',
       'Categories',
       'Payment Modes',
@@ -4769,6 +4770,7 @@ describe('App accessibility', () => {
     '/dashboard',
     '/income',
     '/expenses',
+    '/sms-transactions',
     '/planning',
     '/investments',
     '/loans',

@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Budget Battowski MacroDroid connector setup</title>
+    <style>
+      body {
+        margin: 0;
+        background: #f8fafc;
+        color: #172033;
+        font:
+          16px/1.55 system-ui,
+          sans-serif;
+      }
+      main {
+        box-sizing: border-box;
+        max-width: 780px;
+        margin: auto;
+        padding: 2rem 1rem 4rem;
+      }
+      h1 {
+        line-height: 1.15;
+      }
+      h2 {
+        margin-top: 2rem;
+      }
+      .notice {
+        border-left: 4px solid #2563eb;
+        border-radius: 0.4rem;
+        background: #eff6ff;
+        padding: 0.8rem 1rem;
+      }
+      code {
+        background: #e2e8f0;
+        border-radius: 0.25rem;
+        padding: 0.1rem 0.3rem;
+        overflow-wrap: anywhere;
+      }
+      li {
+        margin: 0.45rem 0;
+      }
+      a {
+        color: #1d4ed8;
+      }
+      a:focus-visible {
+        outline: 3px solid #93c5fd;
+        outline-offset: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Budget Battowski SMS connector</h1>
+      <p class="notice">
+        This connector forwards candidate bank SMS messages for review. It never creates an expense
+        automatically.
+      </p>
+      <h2>Connect</h2>
+      <ol>
+        <li>Install MacroDroid and grant its SMS permission.</li>
+        <li>
+          In Budget Battowski, open <strong>Settings → Automatic SMS Transactions</strong> and
+          choose <strong>Connect Android</strong>.
+        </li>
+        <li>
+          Enable the Budget Battowski connector macro. Enter the displayed six-digit code when
+          prompted.
+        </li>
+        <li>Return to Settings and verify that the device appears as Active.</li>
+      </ol>
+      <h2>Connector behavior</h2>
+      <ul>
+        <li>The macro queues each candidate before sending it.</li>
+        <li>Network and server failures remain queued and retry every 15 minutes.</li>
+        <li>Authentication failures stop retrying and require reconnection.</li>
+        <li>
+          A heartbeat runs every three hours. A stale warning means capture may be incomplete.
+        </li>
+        <li>
+          OTP, verification, and obvious promotional messages are excluded. The server validates
+          every message again.
+        </li>
+      </ul>
+      <h2>Privacy</h2>
+      <p>
+        Do not share an already-paired macro export. A distributable connector must have empty
+        device, queue, response, and test-message variables. Budget Battowski never asks you to
+        paste a device token, Firebase UID, or workspace ID.
+      </p>
+      <h2>Troubleshooting</h2>
+      <ul>
+        <li>
+          If standard SMS detection fails, open the SMS Received trigger and try
+          <strong>Monitor Inbox</strong>.
+        </li>
+        <li>MacroDroid does not detect RCS/chat messages through the SMS trigger.</li>
+        <li>
+          If MacroDroid was force-stopped, messages it never received cannot be recovered
+          automatically.
+        </li>
+        <li>
+          If a device was disconnected, generate a new pairing code; revoked credentials cannot be
+          restored.
+        </li>
+      </ul>
+      <p>
+        For the complete macro blueprint and API behavior, see
+        <code>docs/sms-transaction-automation.md</code> in the Budget Battowski repository.
+      </p>
+    </main>
+  </body>
+</html>
